@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
-  "crates/spex-core",
+  "spex-core",
   "crates/spex-transport",
   "crates/spex-bridge",
   "crates/spex-cli",
