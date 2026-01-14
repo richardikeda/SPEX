@@ -1,0 +1,12 @@
+[workspace]
+resolver = "2"
+members = [
+  "crates/spex-core",
+  "crates/spex-transport",
+  "crates/spex-bridge",
+  "crates/spex-cli",
+]
+
+[workspace.package]
+edition = "2021"
+license = "Apache-2.0 OR MIT"
