@@ -1,16 +1,9 @@
-use crate::error::SpexError;
+use crate::types::ProtoSuite;
 
 /// Big-endian helpers (explicit = deterministic)
 fn u16be(v: u16) -> [u8; 2] { v.to_be_bytes() }
 fn u32be(v: u32) -> [u8; 4] { v.to_be_bytes() }
 fn u64be(v: u64) -> [u8; 8] { v.to_be_bytes() }
-
-#[derive(Clone, Copy, Debug)]
-pub struct ProtoSuite {
-    pub major: u16,
-    pub minor: u16,
-    pub ciphersuite_id: u16,
-}
 
 /// AD = thread_id(32) || epoch(u32be) || cfg_hash(32) ||
 ///      proto_suite(major u16be || minor u16be || ciphersuite u16be) ||
@@ -33,14 +26,4 @@ pub fn build_ad(
     out.extend_from_slice(&u64be(seq));
     out.extend_from_slice(sender_userid);
     out
-}
-
-/// Convenience for parsing fixed-size hex inputs in tests.
-pub fn to_fixed<const N: usize>(bytes: &[u8]) -> Result<[u8; N], SpexError> {
-    if bytes.len() != N {
-        return Err(SpexError::InvalidLength("fixed array"));
-    }
-    let mut arr = [0u8; N];
-    arr.copy_from_slice(bytes);
-    Ok(arr)
 }
