@@ -17,21 +17,21 @@ criptografia de ponta a ponta, auditabilidade e integridade dos dados.
 
 ## Estado atual
 
-- Estrutura inicial do workspace e crates base.
-- Componentes principais **a implementar**.
+Ainda não há implementação. Os componentes alvo são:
+- **spex-core**
+- **spex-bridge**
+- **spex-transport**
+- **spex-cli**
 
-## Próximas etapas (v0.1.1)
+## O que falta implementar
 
-- CBOR CTAP2 canonical.
-- Integração MLS.
-- spex-bridge (PUT/GET + validação puzzle/grant).
-- spex-transport (DHT Kademlia).
-- spex-cli (fluxo end-to-end).
+1. **CBOR canonical (CTAP2)**.
+2. **Integração MLS** (extensões).
+3. **Bridge Axum** (PUT/GET + cards + validação puzzle/grant).
+4. **DHT Kademlia** + anti-eclipse.
+5. **CLI end-to-end**.
 
-## Build e testes
+## Test vectors v0.1.1
 
-Quando o workspace estiver disponível, rode:
-
-```bash
-cargo test -p spex-core
-```
+Os vetores de teste da versão **v0.1.1** devem ser usados como referência para validação de
+compatibilidade. É importante observar que eles assumem **CBOR canonical (CTAP2)**.
