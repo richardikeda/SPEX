@@ -1,0 +1,4 @@
+ - Incremente a cada tarefa o contador de versão em VERSION.md e dados que devem ser incrementados em cada tarefa executada. 
+ - A regra do versão é sempre atualizar a ultima posição de 1 a 99 após atingir 99 a posição do meio deve ser incrementado em 1 e em seguinda a ultima posição zerada eg. 0.0.99 a proxima versão 0.1.0 e assim por diante. 
+ - Todas as funções e metodos devem ter comentários em inglês explicando a mesma.
+ - o Arquivo README.md deve ser sempre atualizado ao final das tarefas quando necessário para atualizar a documentação.
