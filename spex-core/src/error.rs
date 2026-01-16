@@ -22,4 +22,7 @@ pub enum SpexError {
 
     #[error("CBOR integer out of range for canonical encoding")]
     CborIntegerOutOfRange,
+
+    #[error("CBOR is not CTAP2 canonical")]
+    CborNotCanonical,
 }
