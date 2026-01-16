@@ -1,4 +1,9 @@
-use crate::{cbor, error::SpexError, hash::{hash_bytes, HashId}};
+use crate::{
+    cbor,
+    error::SpexError,
+    hash::{hash_bytes, HashId},
+    types::Ctap2Cbor,
+};
 use ed25519_dalek::{Signature, SigningKey, VerifyingKey, SECRET_KEY_LENGTH};
 use serde::Serialize;
 
@@ -50,6 +55,29 @@ pub fn ed25519_verify_ctap2_cbor<T: Serialize>(
     sig: &Signature,
 ) -> Result<(), SpexError> {
     let cbor = cbor::to_ctap2_canonical_bytes(value)?;
+    let digest = hash_bytes(hash_id, &cbor);
+    ed25519_verify_hash(verify, &digest, sig)
+}
+
+/// Hash and sign a SPEX CBOR structure using its CTAP2 canonical encoding.
+pub fn ed25519_sign_ctap2_cbor_value(
+    signing: &SigningKey,
+    hash_id: HashId,
+    value: &impl Ctap2Cbor,
+) -> Result<Signature, SpexError> {
+    let cbor = value.to_ctap2_canonical_bytes()?;
+    let digest = hash_bytes(hash_id, &cbor);
+    Ok(ed25519_sign_hash(signing, &digest))
+}
+
+/// Hash and verify a SPEX CBOR structure using its CTAP2 canonical encoding.
+pub fn ed25519_verify_ctap2_cbor_value(
+    verify: &VerifyingKey,
+    hash_id: HashId,
+    value: &impl Ctap2Cbor,
+    sig: &Signature,
+) -> Result<(), SpexError> {
+    let cbor = value.to_ctap2_canonical_bytes()?;
     let digest = hash_bytes(hash_id, &cbor);
     ed25519_verify_hash(verify, &digest, sig)
 }
