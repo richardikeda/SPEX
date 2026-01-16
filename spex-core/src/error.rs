@@ -8,6 +8,12 @@ pub enum SpexError {
     #[error("signature verification failed")]
     SigVerifyFailed,
 
+    #[error("argon2 error: {0}")]
+    Argon2(#[from] argon2::Error),
+
+    #[error("argon2 password hash error: {0}")]
+    Argon2PasswordHash(#[from] argon2::password_hash::Error),
+
     #[error("hex decode failed: {0}")]
     Hex(#[from] hex::FromHexError),
 
