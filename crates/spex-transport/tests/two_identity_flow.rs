@@ -33,6 +33,7 @@ struct RequestToken {
 }
 
 fn build_identity(seed: u8) -> Identity {
+    // Builds an identity from a deterministic seed for test repeatability.
     let signing_key = ed25519_signing_key_from_seed(&[seed; 32]).expect("seed");
     let verifying_key = ed25519_verify_key(&signing_key).to_bytes().to_vec();
     let user_id = hash_bytes(HashId::Sha256, &[seed; 16]);
@@ -48,6 +49,7 @@ fn build_identity(seed: u8) -> Identity {
 }
 
 fn sign_contact_card(identity: &Identity, card: &ContactCard) -> Vec<u8> {
+    // Signs a contact card using the identity's signing key.
     let payload = card.to_ctap2_canonical_bytes().expect("card cbor");
     let digest = hash_bytes(HashId::Sha256, &payload);
     ed25519_sign_hash(&identity.signing_key, &digest)
@@ -56,6 +58,7 @@ fn sign_contact_card(identity: &Identity, card: &ContactCard) -> Vec<u8> {
 }
 
 fn build_contact_card(identity: &Identity) -> ContactCard {
+    // Constructs a signed contact card for the given identity.
     let mut card = ContactCard {
         user_id: identity.user_id.clone(),
         verifying_key: identity.verifying_key.clone(),
@@ -72,6 +75,7 @@ fn build_contact_card(identity: &Identity) -> ContactCard {
 }
 
 fn parse_contact_card(bytes: &[u8]) -> Option<ContactCard> {
+    // Parses a CBOR contact card from bytes into a ContactCard struct.
     let value: serde_cbor::Value = serde_cbor::from_slice(bytes).ok()?;
     let map = match value {
         serde_cbor::Value::Map(map) => map,
@@ -104,6 +108,7 @@ fn parse_contact_card(bytes: &[u8]) -> Option<ContactCard> {
 }
 
 fn expect_bytes(value: serde_cbor::Value) -> Option<Vec<u8>> {
+    // Extracts bytes from a CBOR value when possible.
     match value {
         serde_cbor::Value::Bytes(bytes) => Some(bytes),
         _ => None,
@@ -111,6 +116,7 @@ fn expect_bytes(value: serde_cbor::Value) -> Option<Vec<u8>> {
 }
 
 fn expect_u64(value: serde_cbor::Value) -> Option<u64> {
+    // Extracts a u64 from a CBOR integer value when possible.
     match value {
         serde_cbor::Value::Integer(v) => u64::try_from(v).ok(),
         _ => None,
@@ -119,6 +125,7 @@ fn expect_u64(value: serde_cbor::Value) -> Option<u64> {
 
 #[tokio::test]
 async fn two_identities_exchange_cards_handshake_mls_and_transport() {
+    // Exercises the end-to-end flow across identity, MLS, chunking, and bridge inbox.
     let alice = build_identity(1);
     let bob = build_identity(2);
 

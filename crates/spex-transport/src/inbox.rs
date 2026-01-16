@@ -27,6 +27,7 @@ pub enum InboxSource {
     Bridge,
 }
 
+/// Derives the DHT record key and hashed key for inbox scanning.
 pub fn derive_inbox_scan_key(hash_id: HashId, inbox_scan_key: &[u8]) -> InboxScanRequest {
     let hashed_key = hash_bytes(hash_id, inbox_scan_key);
     InboxScanRequest {
@@ -35,6 +36,7 @@ pub fn derive_inbox_scan_key(hash_id: HashId, inbox_scan_key: &[u8]) -> InboxSca
     }
 }
 
+/// Starts a Kademlia record lookup for the derived inbox scan key.
 pub fn start_inbox_scan(
     kademlia: &mut Kademlia<MemoryStore>,
     request: &InboxScanRequest,
@@ -42,6 +44,7 @@ pub fn start_inbox_scan(
     kademlia.get_record(request.record_key.clone(), Quorum::One)
 }
 
+/// Collects inbox payloads returned from a successful Kademlia lookup.
 pub fn collect_inbox_items(result: GetRecordOk) -> InboxScanResponse {
     let items = result
         .records
@@ -52,6 +55,29 @@ pub fn collect_inbox_items(result: GetRecordOk) -> InboxScanResponse {
         items,
         source: InboxSource::Kademlia,
     }
+}
+
+/// Resolves an inbox scan, falling back to a bridge client when Kademlia yields no items.
+pub async fn resolve_inbox_with_fallback(
+    inbox_scan_key: &[u8],
+    kademlia_result: Option<GetRecordOk>,
+    bridge: Option<&BridgeClient>,
+) -> Result<InboxScanResponse, TransportError> {
+    if let Some(result) = kademlia_result {
+        let response = collect_inbox_items(result);
+        if !response.items.is_empty() || bridge.is_none() {
+            return Ok(response);
+        }
+    }
+
+    if let Some(bridge_client) = bridge {
+        return bridge_client.scan_inbox(inbox_scan_key).await;
+    }
+
+    Ok(InboxScanResponse {
+        items: Vec::new(),
+        source: InboxSource::Kademlia,
+    })
 }
 
 #[derive(Clone, Debug)]
@@ -66,6 +92,7 @@ struct BridgeInboxResponse {
 }
 
 impl BridgeClient {
+    /// Creates a new bridge client for the provided base URL.
     pub fn new(base_url: impl Into<String>) -> Self {
         Self {
             base_url: base_url.into(),
@@ -73,6 +100,7 @@ impl BridgeClient {
         }
     }
 
+    /// Scans the bridge inbox endpoint for payloads matching the inbox scan key.
     pub async fn scan_inbox(
         &self,
         inbox_scan_key: &[u8],
