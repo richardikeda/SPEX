@@ -1,5 +1,6 @@
-use crate::error::SpexError;
+use crate::{cbor, error::SpexError, hash::{hash_bytes, HashId}};
 use ed25519_dalek::{Signature, SigningKey, VerifyingKey, SECRET_KEY_LENGTH};
+use serde::Serialize;
 
 /// Create an Ed25519 SigningKey from a 32-byte seed (test vectors use this).
 pub fn ed25519_signing_key_from_seed(seed32: &[u8]) -> Result<SigningKey, SpexError> {
@@ -28,4 +29,27 @@ pub fn ed25519_verify_hash(
     verify
         .verify_strict(msg_hash, sig)
         .map_err(|_| SpexError::SigVerifyFailed)
+}
+
+/// Hash and sign a CBOR-serializable payload using CTAP2 canonical CBOR encoding.
+pub fn ed25519_sign_ctap2_cbor<T: Serialize>(
+    signing: &SigningKey,
+    hash_id: HashId,
+    value: &T,
+) -> Result<Signature, SpexError> {
+    let cbor = cbor::to_ctap2_canonical_bytes(value)?;
+    let digest = hash_bytes(hash_id, &cbor);
+    Ok(ed25519_sign_hash(signing, &digest))
+}
+
+/// Hash and verify a CBOR-serializable payload using CTAP2 canonical CBOR encoding.
+pub fn ed25519_verify_ctap2_cbor<T: Serialize>(
+    verify: &VerifyingKey,
+    hash_id: HashId,
+    value: &T,
+    sig: &Signature,
+) -> Result<(), SpexError> {
+    let cbor = cbor::to_ctap2_canonical_bytes(value)?;
+    let digest = hash_bytes(hash_id, &cbor);
+    ed25519_verify_hash(verify, &digest, sig)
 }
