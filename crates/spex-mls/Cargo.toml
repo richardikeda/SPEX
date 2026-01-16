@@ -1,0 +1,12 @@
+[package]
+name = "spex-mls"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0 OR MIT"
+
+[dependencies]
+mls-rs = "0.5"
+spex-core = { path = "../../spex-core" }
+
+[dev-dependencies]
+hex = "0.4"
