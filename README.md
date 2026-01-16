@@ -156,6 +156,7 @@ Content-Type: application/json
   },
   "puzzle": {
     "recipient_key": "<BASE64>",
+    "nonce": "<BASE64>",
     "puzzle_input": "<BASE64>",
     "puzzle_output": "<BASE64>",
     "params": {
@@ -163,6 +164,9 @@ Content-Type: application/json
       "iterations": 3,
       "parallelism": 1,
       "output_len": 32
+    },
+    "nonce_params": {
+      "nonce_len": 32
     }
   }
 }
