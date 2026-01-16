@@ -14,6 +14,7 @@ pub mod cbor;
 pub mod error;
 pub mod hash;
 pub mod mls_ext;
+pub mod pow;
 pub mod sign;
 pub mod test_vectors;
 pub mod types;
