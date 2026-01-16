@@ -10,7 +10,7 @@
 //! signing.
 
 use half::f16;
-use serde::Serialize;
+use serde::{de::DeserializeOwned, Serialize};
 use serde_cbor::Value;
 
 use crate::error::SpexError;
@@ -43,11 +43,31 @@ pub fn to_ctap2_canonical_bytes<T: Serialize>(value: &T) -> Result<Vec<u8>, Spex
     ctap2_canonical_value_bytes(&value)
 }
 
+/// Deserialize a CTAP2 canonical CBOR payload into a typed value.
+///
+/// This validates canonical encoding before decoding into the target type.
+pub fn from_ctap2_canonical_slice<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, SpexError> {
+    let value = ctap2_canonical_value_from_slice(bytes)?;
+    Ok(serde_cbor::value::from_value(value)?)
+}
+
 /// Serialize a CBOR value to CTAP2 canonical CBOR bytes.
 pub fn ctap2_canonical_value_bytes(value: &Value) -> Result<Vec<u8>, SpexError> {
     let mut output = Vec::new();
     encode_value(value, &mut output)?;
     Ok(output)
+}
+
+/// Deserialize a CTAP2 canonical CBOR payload into a CBOR value.
+///
+/// The input must already be canonical. Non-canonical encodings are rejected.
+pub fn ctap2_canonical_value_from_slice(bytes: &[u8]) -> Result<Value, SpexError> {
+    let value = serde_cbor::from_slice(bytes)?;
+    let canonical = ctap2_canonical_value_bytes(&value)?;
+    if canonical != bytes {
+        return Err(SpexError::CborNotCanonical);
+    }
+    Ok(value)
 }
 
 fn encode_value(value: &Value, output: &mut Vec<u8>) -> Result<(), SpexError> {
