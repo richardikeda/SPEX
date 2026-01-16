@@ -10,4 +10,10 @@ pub enum SpexError {
 
     #[error("hex decode failed: {0}")]
     Hex(#[from] hex::FromHexError),
+
+    #[error("CBOR canonicalization failed: {0}")]
+    Cbor(#[from] serde_cbor::Error),
+
+    #[error("CBOR integer out of range for canonical encoding")]
+    CborIntegerOutOfRange,
 }
