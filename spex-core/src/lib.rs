@@ -13,6 +13,7 @@ pub mod aead_ad;
 pub mod cbor;
 pub mod error;
 pub mod hash;
+pub mod log;
 pub mod mls_ext;
 pub mod pow;
 pub mod sign;
