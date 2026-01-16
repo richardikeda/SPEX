@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
   "spex-core",
+  "crates/spex-mls",
   "crates/spex-transport",
   "crates/spex-bridge",
   "crates/spex-cli",
