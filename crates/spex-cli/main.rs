@@ -257,6 +257,7 @@ struct RequestToken {
     created_at: u64,
 }
 
+/// Runs the CLI entry point and dispatches commands.
 #[tokio::main]
 async fn main() -> Result<(), CliError> {
     let cli = Cli::parse();
@@ -537,6 +538,7 @@ async fn main() -> Result<(), CliError> {
     Ok(())
 }
 
+/// Creates a new local identity with fresh keys and device metadata.
 fn create_identity() -> IdentityState {
     let mut seed = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut seed);
@@ -554,6 +556,7 @@ fn create_identity() -> IdentityState {
     }
 }
 
+/// Builds a signed contact card payload for the current identity.
 fn build_contact_card(identity: &IdentityState) -> Result<ContactCard, CliError> {
     let user_id = hex::decode(&identity.user_id_hex)?;
     let verifying_key = hex::decode(&identity.verifying_key_hex)?;
@@ -576,6 +579,7 @@ fn build_contact_card(identity: &IdentityState) -> Result<ContactCard, CliError>
     Ok(card)
 }
 
+/// Signs a contact card using the local identity signing key.
 fn sign_contact_card(identity: &IdentityState, card: &ContactCard) -> Result<Vec<u8>, CliError> {
     let signing_key = SigningKey::from_bytes(&hex::decode(&identity.signing_key_hex)?);
     let payload = card.to_ctap2_canonical_bytes()?;
@@ -584,6 +588,7 @@ fn sign_contact_card(identity: &IdentityState, card: &ContactCard) -> Result<Vec
     Ok(signature.to_bytes().to_vec())
 }
 
+/// Verifies the signature embedded in a contact card.
 fn verify_contact_card_signature(card: &ContactCard, signature: &[u8]) -> Result<(), CliError> {
     let verifying_key_bytes: [u8; 32] = card
         .verifying_key
@@ -603,6 +608,7 @@ fn verify_contact_card_signature(card: &ContactCard, signature: &[u8]) -> Result
     ed25519_verify_hash(&verifying_key, &digest, &signature).map_err(|_| CliError::SignatureInvalid)
 }
 
+/// Parses a CBOR contact card into a typed structure.
 fn parse_contact_card(bytes: &[u8]) -> Result<ContactCard, CliError> {
     let value: serde_cbor::Value = serde_cbor::from_slice(bytes)?;
     let map = match value {
@@ -635,6 +641,7 @@ fn parse_contact_card(bytes: &[u8]) -> Result<ContactCard, CliError> {
     Ok(card)
 }
 
+/// Extracts bytes from a CBOR value or returns an invalid card error.
 fn expect_bytes(value: serde_cbor::Value) -> Result<Vec<u8>, CliError> {
     match value {
         serde_cbor::Value::Bytes(bytes) => Ok(bytes),
@@ -642,6 +649,7 @@ fn expect_bytes(value: serde_cbor::Value) -> Result<Vec<u8>, CliError> {
     }
 }
 
+/// Extracts a u64 from a CBOR value or returns an invalid card error.
 fn expect_u64(value: serde_cbor::Value) -> Result<u64, CliError> {
     match value {
         serde_cbor::Value::Integer(v) => u64::try_from(v).map_err(|_| CliError::InvalidCard),
@@ -649,6 +657,7 @@ fn expect_u64(value: serde_cbor::Value) -> Result<u64, CliError> {
     }
 }
 
+/// Parses a base64 request token into its structured representation.
 fn parse_request_token(token: &str) -> Result<RequestToken, CliError> {
     let payload = BASE64_STANDARD
         .decode(token.as_bytes())
@@ -656,21 +665,25 @@ fn parse_request_token(token: &str) -> Result<RequestToken, CliError> {
     Ok(serde_json::from_slice(&payload)?)
 }
 
+/// Computes a SHA-256 fingerprint for the provided bytes.
 fn fingerprint_hex(bytes: &[u8]) -> String {
     let digest = hash_bytes(HashId::Sha256, bytes);
     hex::encode(digest)
 }
 
+/// Generates a random byte string encoded as hex with the requested length.
 fn random_hex(len: usize) -> String {
     hex::encode(random_bytes(len))
 }
 
+/// Generates random bytes for identifiers and secrets.
 fn random_bytes(len: usize) -> Vec<u8> {
     let mut buffer = vec![0u8; len];
     rand::thread_rng().fill_bytes(&mut buffer);
     buffer
 }
 
+/// Returns the current UNIX timestamp in seconds.
 fn now_unix() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -678,6 +691,7 @@ fn now_unix() -> u64 {
         .as_secs()
 }
 
+/// Loads persisted local state from disk.
 fn load_state() -> Result<LocalState, CliError> {
     let path = state_path()?;
     if !path.exists() {
@@ -687,6 +701,7 @@ fn load_state() -> Result<LocalState, CliError> {
     Ok(serde_json::from_str(&contents)?)
 }
 
+/// Persists local state to disk in JSON format.
 fn save_state(state: &LocalState) -> Result<(), CliError> {
     let path = state_path()?;
     if let Some(parent) = path.parent() {
@@ -697,6 +712,7 @@ fn save_state(state: &LocalState) -> Result<(), CliError> {
     Ok(())
 }
 
+/// Restores the checkpoint log from the persisted local state.
 fn load_checkpoint_log(state: &LocalState) -> Result<CheckpointLog, CliError> {
     if state.checkpoint_log.log_base64.is_empty() {
         return Ok(CheckpointLog::new());
@@ -707,6 +723,7 @@ fn load_checkpoint_log(state: &LocalState) -> Result<CheckpointLog, CliError> {
     CheckpointLog::from_cbor_bytes(&bytes).map_err(|err| CliError::Log(err.to_string()))
 }
 
+/// Saves a checkpoint log into the local state as base64 CBOR.
 fn save_checkpoint_log(state: &mut LocalState, log: &CheckpointLog) -> Result<(), CliError> {
     let bytes = log
         .to_cbor_bytes()
@@ -715,6 +732,7 @@ fn save_checkpoint_log(state: &mut LocalState, log: &CheckpointLog) -> Result<()
     Ok(())
 }
 
+/// Determines the path for the persisted local state file.
 fn state_path() -> Result<PathBuf, CliError> {
     if let Ok(path) = std::env::var("SPEX_STATE_PATH") {
         return Ok(PathBuf::from(path));
