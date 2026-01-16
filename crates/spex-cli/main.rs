@@ -5,6 +5,7 @@ use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use spex_core::{
     hash::{hash_bytes, HashId},
+    log::{CheckpointEntry, CheckpointLog, KeyCheckpoint, LogConsistency, RecoveryKey, RevocationDeclaration},
     sign::{ed25519_sign_hash, ed25519_verify_hash},
     types::{ContactCard, Ctap2Cbor, GrantToken},
 };
@@ -39,6 +40,8 @@ enum CliError {
     ThreadNotFound,
     #[error("transport error: {0}")]
     Transport(String),
+    #[error("log error: {0}")]
+    Log(String),
 }
 
 #[derive(Parser)]
@@ -77,6 +80,10 @@ enum Commands {
     Inbox {
         #[command(subcommand)]
         command: InboxCommand,
+    },
+    Log {
+        #[command(subcommand)]
+        command: LogCommand,
     },
 }
 
@@ -144,6 +151,33 @@ enum InboxCommand {
     },
 }
 
+#[derive(Subcommand)]
+enum LogCommand {
+    AppendCheckpoint,
+    CreateRecoveryKey,
+    RevokeKey {
+        #[arg(long)]
+        key_hex: String,
+        #[arg(long)]
+        recovery_hex: Option<String>,
+        #[arg(long)]
+        reason: Option<String>,
+    },
+    Export {
+        #[arg(long)]
+        path: String,
+    },
+    Import {
+        #[arg(long)]
+        path: String,
+    },
+    GossipVerify {
+        #[arg(long)]
+        path: String,
+    },
+    Info,
+}
+
 #[derive(Debug, Serialize, Deserialize, Default)]
 struct LocalState {
     identity: Option<IdentityState>,
@@ -152,6 +186,7 @@ struct LocalState {
     inbox: Vec<InboxItem>,
     requests: Vec<RequestState>,
     grants: Vec<GrantState>,
+    checkpoint_log: CheckpointLogState,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -207,6 +242,11 @@ struct GrantState {
     from_user_id: String,
     role: u64,
     created_at: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Default)]
+struct CheckpointLogState {
+    log_base64: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -390,6 +430,107 @@ async fn main() -> Result<(), CliError> {
                 }
             }
         },
+        Commands::Log { command } => match command {
+            LogCommand::AppendCheckpoint => {
+                let identity = state.identity.as_ref().ok_or(CliError::MissingIdentity)?;
+                let entry = KeyCheckpoint {
+                    user_id: hex::decode(&identity.user_id_hex)?,
+                    verifying_key: hex::decode(&identity.verifying_key_hex)?,
+                    device_id: hex::decode(&identity.device_id_hex)?,
+                    issued_at: now_unix(),
+                };
+                let mut log = load_checkpoint_log(&state)?;
+                log.append(CheckpointEntry::Key(entry));
+                save_checkpoint_log(&mut state, &log)?;
+                println!("checkpoint appended (len: {})", log.entries.len());
+            }
+            LogCommand::CreateRecoveryKey => {
+                let identity = state.identity.as_ref().ok_or(CliError::MissingIdentity)?;
+                let entry = RecoveryKey {
+                    user_id: hex::decode(&identity.user_id_hex)?,
+                    recovery_key: random_bytes(32),
+                    issued_at: now_unix(),
+                };
+                let mut log = load_checkpoint_log(&state)?;
+                log.append(CheckpointEntry::Recovery(entry.clone()));
+                save_checkpoint_log(&mut state, &log)?;
+                println!("recovery key: {}", hex::encode(entry.recovery_key));
+                println!("checkpoint appended (len: {})", log.entries.len());
+            }
+            LogCommand::RevokeKey {
+                key_hex,
+                recovery_hex,
+                reason,
+            } => {
+                let identity = state.identity.as_ref().ok_or(CliError::MissingIdentity)?;
+                let revoked_key = hex::decode(&key_hex)?;
+                let revoked_key_hash = hash_bytes(HashId::Sha256, &revoked_key);
+                let recovery_key_hash = match recovery_hex {
+                    Some(value) => Some(hash_bytes(HashId::Sha256, &hex::decode(value)?)),
+                    None => None,
+                };
+                let entry = RevocationDeclaration {
+                    user_id: hex::decode(&identity.user_id_hex)?,
+                    revoked_key_hash,
+                    revoked_at: now_unix(),
+                    recovery_key_hash,
+                    reason,
+                };
+                let mut log = load_checkpoint_log(&state)?;
+                log.append(CheckpointEntry::Revocation(entry));
+                save_checkpoint_log(&mut state, &log)?;
+                println!("revocation appended (len: {})", log.entries.len());
+            }
+            LogCommand::Export { path } => {
+                let log = load_checkpoint_log(&state)?;
+                let bytes = log
+                    .to_cbor_bytes()
+                    .map_err(|err| CliError::Log(err.to_string()))?;
+                fs::write(path, bytes)?;
+                println!("log exported");
+            }
+            LogCommand::Import { path } => {
+                let bytes = fs::read(path)?;
+                let log = CheckpointLog::from_cbor_bytes(&bytes)
+                    .map_err(|err| CliError::Log(err.to_string()))?;
+                save_checkpoint_log(&mut state, &log)?;
+                println!("log imported (len: {})", log.entries.len());
+            }
+            LogCommand::GossipVerify { path } => {
+                let bytes = fs::read(path)?;
+                let remote = CheckpointLog::from_cbor_bytes(&bytes)
+                    .map_err(|err| CliError::Log(err.to_string()))?;
+                let local = load_checkpoint_log(&state)?;
+                let consistency = local.compare_with(&remote);
+                let local_root = local
+                    .merkle_root()
+                    .map_err(|err| CliError::Log(err.to_string()))?;
+                let remote_root = remote
+                    .merkle_root()
+                    .map_err(|err| CliError::Log(err.to_string()))?;
+                println!("local entries: {}", local.entries.len());
+                println!("remote entries: {}", remote.entries.len());
+                println!("local root: {}", hex::encode(local_root));
+                println!("remote root: {}", hex::encode(remote_root));
+                println!(
+                    "consistency: {}",
+                    match consistency {
+                        LogConsistency::Identical => "identical",
+                        LogConsistency::LocalBehind => "local-behind",
+                        LogConsistency::LocalAhead => "local-ahead",
+                        LogConsistency::Diverged => "diverged",
+                    }
+                );
+            }
+            LogCommand::Info => {
+                let log = load_checkpoint_log(&state)?;
+                let root = log
+                    .merkle_root()
+                    .map_err(|err| CliError::Log(err.to_string()))?;
+                println!("entries: {}", log.entries.len());
+                println!("root: {}", hex::encode(root));
+            }
+        },
     }
 
     save_state(&state)?;
@@ -553,6 +694,24 @@ fn save_state(state: &LocalState) -> Result<(), CliError> {
     }
     let contents = serde_json::to_string_pretty(state)?;
     fs::write(path, contents)?;
+    Ok(())
+}
+
+fn load_checkpoint_log(state: &LocalState) -> Result<CheckpointLog, CliError> {
+    if state.checkpoint_log.log_base64.is_empty() {
+        return Ok(CheckpointLog::new());
+    }
+    let bytes = BASE64_STANDARD
+        .decode(state.checkpoint_log.log_base64.as_bytes())
+        .map_err(|err| CliError::Log(err.to_string()))?;
+    CheckpointLog::from_cbor_bytes(&bytes).map_err(|err| CliError::Log(err.to_string()))
+}
+
+fn save_checkpoint_log(state: &mut LocalState, log: &CheckpointLog) -> Result<(), CliError> {
+    let bytes = log
+        .to_cbor_bytes()
+        .map_err(|err| CliError::Log(err.to_string()))?;
+    state.checkpoint_log.log_base64 = BASE64_STANDARD.encode(bytes);
     Ok(())
 }
 
