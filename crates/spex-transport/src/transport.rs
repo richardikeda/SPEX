@@ -22,6 +22,7 @@ pub struct TransportConfig {
 }
 
 impl Default for TransportConfig {
+    /// Builds a default transport configuration for chunking, gossip, and record TTL.
     fn default() -> Self {
         Self {
             chunking: ChunkingConfig::default(),
@@ -53,7 +54,11 @@ pub struct ChunkDescriptor {
 pub struct BuildTransport;
 
 impl BuildTransport {
-    pub fn new(local_key: &Keypair, listen_addrs: &[Multiaddr]) -> Result<TransportComponents, TransportError> {
+    /// Builds libp2p transport components for Kademlia and gossipsub.
+    pub fn new(
+        local_key: &Keypair,
+        listen_addrs: &[Multiaddr],
+    ) -> Result<TransportComponents, TransportError> {
         let local_peer_id = PeerId::from(local_key.public());
 
         let mut kad_config = KademliaConfig::default();
@@ -82,6 +87,7 @@ impl BuildTransport {
     }
 }
 
+/// Publishes a payload by chunking it, storing chunks in Kademlia, and gossipping a manifest.
 pub fn publish_payload(
     components: &mut TransportComponents,
     config: &TransportConfig,
@@ -105,6 +111,7 @@ pub fn publish_payload(
     Ok(manifest)
 }
 
+/// Writes hash-addressed chunks to Kademlia and announces providers.
 fn publish_chunks(kademlia: &mut Kademlia<MemoryStore>, config: &TransportConfig, chunks: &[Chunk]) {
     for chunk in chunks {
         let record_key = RecordKey::new(&chunk.hash);
@@ -119,6 +126,7 @@ fn publish_chunks(kademlia: &mut Kademlia<MemoryStore>, config: &TransportConfig
     }
 }
 
+/// Publishes the manifest on gossipsub for peer replication.
 fn publish_manifest(
     gossip: &mut Gossipsub,
     config: &TransportConfig,
@@ -129,6 +137,7 @@ fn publish_manifest(
     Ok(())
 }
 
+/// Replicates manifest chunks by storing empty records and providing their hashes.
 pub fn replicate_manifest(
     kademlia: &mut Kademlia<MemoryStore>,
     config: &TransportConfig,
@@ -147,6 +156,7 @@ pub fn replicate_manifest(
     }
 }
 
+/// Performs a random-walk query to discover nearby peers via Kademlia.
 pub fn random_walk(kademlia: &mut Kademlia<MemoryStore>) {
     let mut random_bytes = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut random_bytes);

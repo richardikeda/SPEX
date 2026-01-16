@@ -12,7 +12,9 @@ pub mod transport;
 
 pub use chunking::{chunk_data, reassemble_chunks, Chunk, ChunkingConfig};
 pub use error::TransportError;
-pub use inbox::{BridgeClient, InboxScanRequest, InboxScanResponse};
+pub use inbox::{
+    resolve_inbox_with_fallback, BridgeClient, InboxScanRequest, InboxScanResponse,
+};
 pub use transport::{
     publish_payload, random_walk, replicate_manifest, BuildTransport, ChunkManifest,
     TransportComponents, TransportConfig,

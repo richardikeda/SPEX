@@ -16,6 +16,7 @@ pub struct ChunkingConfig {
 }
 
 impl Default for ChunkingConfig {
+    /// Returns the default chunking configuration used by the transport layer.
     fn default() -> Self {
         Self {
             chunk_size: 32 * 1024,
@@ -24,6 +25,7 @@ impl Default for ChunkingConfig {
     }
 }
 
+/// Splits data into hash-addressed chunks using the provided configuration.
 pub fn chunk_data(config: &ChunkingConfig, data: &[u8]) -> Vec<Chunk> {
     if data.is_empty() {
         return Vec::new();
@@ -39,6 +41,7 @@ pub fn chunk_data(config: &ChunkingConfig, data: &[u8]) -> Vec<Chunk> {
         .collect()
 }
 
+/// Reassembles chunks into the original byte payload based on chunk indices.
 pub fn reassemble_chunks(chunks: &[Chunk]) -> Vec<u8> {
     let mut sorted = chunks.to_vec();
     sorted.sort_by_key(|chunk| chunk.index);

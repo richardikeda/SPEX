@@ -15,6 +15,7 @@ pub enum TransportError {
 }
 
 impl From<libp2p::gossipsub::PublishError> for TransportError {
+    /// Converts a gossipsub publish error into the transport error variant.
     fn from(value: libp2p::gossipsub::PublishError) -> Self {
         Self::GossipPublish(value.to_string())
     }
