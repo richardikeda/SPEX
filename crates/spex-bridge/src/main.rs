@@ -2,6 +2,7 @@ use spex_bridge::init_state;
 use std::net::SocketAddr;
 use tracing_subscriber::EnvFilter;
 
+/// Boots the bridge HTTP server with Axum and Tokio.
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt()

@@ -22,7 +22,9 @@ pub struct AppState {
     clock: Arc<dyn Clock + Send + Sync>,
 }
 
+/// Provides the current time source for grant validation.
 pub trait Clock {
+    /// Returns the current UNIX timestamp in seconds.
     fn now(&self) -> u64;
 }
 
@@ -30,6 +32,7 @@ pub trait Clock {
 struct SystemClock;
 
 impl Clock for SystemClock {
+    /// Returns the system UNIX timestamp in seconds.
     fn now(&self) -> u64 {
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -96,6 +99,7 @@ enum BridgeError {
 }
 
 impl IntoResponse for BridgeError {
+    /// Converts the bridge error into an HTTP response.
     fn into_response(self) -> axum::response::Response {
         let status = match self {
             BridgeError::InvalidRequest(_) => StatusCode::BAD_REQUEST,
@@ -112,6 +116,7 @@ impl IntoResponse for BridgeError {
     }
 }
 
+/// Builds the Axum router for the bridge API.
 pub fn app(state: AppState) -> Router {
     Router::new()
         .route("/cards/:card_hash", put(put_card).get(get_card))
@@ -119,6 +124,7 @@ pub fn app(state: AppState) -> Router {
         .with_state(state)
 }
 
+/// Initializes application state and ensures the database schema is ready.
 pub fn init_state(db_path: impl Into<PathBuf>) -> Result<AppState, BridgeError> {
     let db_path = db_path.into();
     init_db(&db_path).map_err(|err| BridgeError::Storage(err.to_string()))?;
@@ -128,6 +134,7 @@ pub fn init_state(db_path: impl Into<PathBuf>) -> Result<AppState, BridgeError> 
     })
 }
 
+/// Initializes application state with a custom clock implementation.
 pub fn init_state_with_clock(
     db_path: impl Into<PathBuf>,
     clock: Arc<dyn Clock + Send + Sync>,
@@ -137,6 +144,7 @@ pub fn init_state_with_clock(
     Ok(AppState { db_path, clock })
 }
 
+/// Creates the SQLite schema for cards and slots storage.
 fn init_db(path: &FsPath) -> rusqlite::Result<()> {
     let conn = Connection::open(path)?;
     conn.execute(
@@ -150,6 +158,7 @@ fn init_db(path: &FsPath) -> rusqlite::Result<()> {
     Ok(())
 }
 
+/// Stores a card payload after validating its grant, puzzle, and hash.
 async fn put_card(
     State(state): State<AppState>,
     Path(card_hash): Path<String>,
@@ -163,6 +172,7 @@ async fn put_card(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// Fetches a stored card payload by hash.
 async fn get_card(
     State(state): State<AppState>,
     Path(card_hash): Path<String>,
@@ -175,6 +185,7 @@ async fn get_card(
     }))
 }
 
+/// Stores a slot payload after validating its grant and puzzle.
 async fn put_slot(
     State(state): State<AppState>,
     Path(slot_id): Path<String>,
@@ -187,6 +198,7 @@ async fn put_slot(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// Fetches a stored slot payload by slot identifier.
 async fn get_slot(
     State(state): State<AppState>,
     Path(slot_id): Path<String>,
@@ -199,12 +211,14 @@ async fn get_slot(
     }))
 }
 
+/// Validates grant and puzzle information before persistence.
 fn validate_storage_request(state: &AppState, payload: &StorageRequest) -> Result<(), BridgeError> {
     validate_grant(state.clock.now(), &payload.grant)?;
     validate_puzzle(&payload.puzzle)?;
     Ok(())
 }
 
+/// Ensures the grant token is well-formed and not expired.
 fn validate_grant(now: u64, grant: &GrantTokenPayload) -> Result<(), BridgeError> {
     let _user_id = decode_base64(&grant.user_id)?;
     if let Some(expires_at) = grant.expires_at {
@@ -217,6 +231,7 @@ fn validate_grant(now: u64, grant: &GrantTokenPayload) -> Result<(), BridgeError
     Ok(())
 }
 
+/// Validates the provided puzzle output with spex-core PoW verification.
 fn validate_puzzle(payload: &PuzzlePayload) -> Result<(), BridgeError> {
     let recipient_key = decode_base64(&payload.recipient_key)?;
     let puzzle_input = decode_base64(&payload.puzzle_input)?;
@@ -240,6 +255,7 @@ fn validate_puzzle(payload: &PuzzlePayload) -> Result<(), BridgeError> {
     Ok(())
 }
 
+/// Verifies the stored card hash matches the SHA-256 hash of data.
 fn validate_hash(card_hash: &str, data: &[u8]) -> Result<(), BridgeError> {
     let expected = hash::hash_bytes(hash::HashId::Sha256, data);
     let expected_hex = hex::encode(expected);
@@ -249,12 +265,14 @@ fn validate_hash(card_hash: &str, data: &[u8]) -> Result<(), BridgeError> {
     Ok(())
 }
 
+/// Decodes a base64 string into raw bytes.
 fn decode_base64(value: &str) -> Result<Vec<u8>, BridgeError> {
     BASE64
         .decode(value)
         .map_err(|err| BridgeError::InvalidRequest(err.to_string()))
 }
 
+/// Stores binary data in the requested table under the provided key.
 async fn store_entry(
     db_path: &PathBuf,
     table: &str,
@@ -282,6 +300,7 @@ async fn store_entry(
     .map_err(|err| BridgeError::Storage(err.to_string()))
 }
 
+/// Loads binary data for the requested key from the database.
 async fn load_entry(
     db_path: &PathBuf,
     table: &str,
@@ -314,6 +333,7 @@ async fn load_entry(
 mod tests {
     use super::*;
 
+    /// Ensures hash validation accepts a matching SHA-256 hex string.
     #[test]
     fn validate_hash_accepts_matching_hex() {
         let data = b"hello";
