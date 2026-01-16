@@ -12,11 +12,13 @@ struct FixedClock {
 }
 
 impl Clock for FixedClock {
+    /// Returns the fixed timestamp for deterministic tests.
     fn now(&self) -> u64 {
         self.now
     }
 }
 
+/// Builds a valid storage request payload with PoW and grant data.
 fn build_payload(now: u64, data: &[u8]) -> serde_json::Value {
     let recipient_key = b"recipient-key";
     let puzzle_input = b"puzzle-input";
@@ -46,6 +48,7 @@ fn build_payload(now: u64, data: &[u8]) -> serde_json::Value {
     })
 }
 
+/// Verifies storing and retrieving a card succeeds with valid grant/puzzle data.
 #[tokio::test]
 async fn put_get_card_roundtrip() {
     let tmp = tempdir().expect("tempdir");
@@ -90,6 +93,51 @@ async fn put_get_card_roundtrip() {
     assert_eq!(response_json["data"], BASE64.encode(data));
 }
 
+/// Verifies storing and retrieving a slot succeeds with valid grant/puzzle data.
+#[tokio::test]
+async fn put_get_slot_roundtrip() {
+    let tmp = tempdir().expect("tempdir");
+    let clock = Arc::new(FixedClock { now: 1_700_000_000 });
+    let state = init_state_with_clock(tmp.path().join("bridge.db"), clock).unwrap();
+    let app = app(state);
+
+    let data = b"slot-bytes";
+    let payload = build_payload(1_700_000_000, data);
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri("/slot/slot-123")
+                .header("content-type", "application/json")
+                .body(Body::from(payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/slot/slot-123")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let response_json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(response_json["data"], BASE64.encode(data));
+}
+
+/// Ensures expired grants are rejected by the slot endpoint.
 #[tokio::test]
 async fn rejects_expired_grant() {
     let tmp = tempdir().expect("tempdir");
@@ -131,6 +179,7 @@ async fn rejects_expired_grant() {
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
 
+/// Ensures invalid puzzle output is rejected by the slot endpoint.
 #[tokio::test]
 async fn rejects_invalid_puzzle() {
     let tmp = tempdir().expect("tempdir");
