@@ -53,9 +53,26 @@ cargo run -p spex-cli -- card redeem --card <BASE64>
 # enviar pedido de grant
 cargo run -p spex-cli -- request send --to <USER_ID_HEX> --role 1
 
-# aceitar grant recebido (token base64 do request)
+# aceitar ou negar grant recebido (token base64 do request)
 cargo run -p spex-cli -- grant accept --request <BASE64>
+cargo run -p spex-cli -- grant deny --request <BASE64>
+
+# criar thread local com membros (hex separados por vírgula)
+cargo run -p spex-cli -- thread new --members <USER_ID_HEX>,<USER_ID_HEX>
+
+# enviar mensagem local para uma thread
+cargo run -p spex-cli -- msg send --thread <THREAD_ID_HEX> --text "Olá"
+
+# verificar inbox local ou via bridge HTTP
+cargo run -p spex-cli -- inbox poll
+cargo run -p spex-cli -- inbox poll --bridge-url <URL> --inbox-key <HEX_KEY>
 ```
+
+### Persistência local e fingerprints
+
+O `spex-cli` persiste chaves, contatos e threads em `~/.spex/state.json` (ou no caminho definido por
+`SPEX_STATE_PATH`). Ao resgatar um cartão, o CLI imprime o fingerprint da chave pública e alerta em
+caso de mudança de chave para um contato já conhecido.
 
 ## Wire format (CBOR canonical/CTAP2)
 
