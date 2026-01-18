@@ -441,7 +441,8 @@ async fn main() -> Result<(), CliError> {
                     issued_at: now_unix(),
                 };
                 let mut log = load_checkpoint_log(&state)?;
-                log.append(CheckpointEntry::Key(entry));
+                log.append(CheckpointEntry::Key(entry))
+                    .map_err(|err| CliError::Log(err.to_string()))?;
                 save_checkpoint_log(&mut state, &log)?;
                 println!("checkpoint appended (len: {})", log.entries.len());
             }
@@ -453,7 +454,8 @@ async fn main() -> Result<(), CliError> {
                     issued_at: now_unix(),
                 };
                 let mut log = load_checkpoint_log(&state)?;
-                log.append(CheckpointEntry::Recovery(entry.clone()));
+                log.append(CheckpointEntry::Recovery(entry.clone()))
+                    .map_err(|err| CliError::Log(err.to_string()))?;
                 save_checkpoint_log(&mut state, &log)?;
                 println!("recovery key: {}", hex::encode(entry.recovery_key));
                 println!("checkpoint appended (len: {})", log.entries.len());
@@ -478,28 +480,29 @@ async fn main() -> Result<(), CliError> {
                     reason,
                 };
                 let mut log = load_checkpoint_log(&state)?;
-                log.append(CheckpointEntry::Revocation(entry));
+                log.append(CheckpointEntry::Revocation(entry))
+                    .map_err(|err| CliError::Log(err.to_string()))?;
                 save_checkpoint_log(&mut state, &log)?;
                 println!("revocation appended (len: {})", log.entries.len());
             }
             LogCommand::Export { path } => {
                 let log = load_checkpoint_log(&state)?;
-                let bytes = log
-                    .to_cbor_bytes()
+                let encoded = log
+                    .export_base64()
                     .map_err(|err| CliError::Log(err.to_string()))?;
-                fs::write(path, bytes)?;
+                fs::write(path, encoded)?;
                 println!("log exported");
             }
             LogCommand::Import { path } => {
-                let bytes = fs::read(path)?;
-                let log = CheckpointLog::from_cbor_bytes(&bytes)
+                let encoded = fs::read_to_string(path)?;
+                let log = CheckpointLog::import_base64(encoded.trim())
                     .map_err(|err| CliError::Log(err.to_string()))?;
                 save_checkpoint_log(&mut state, &log)?;
                 println!("log imported (len: {})", log.entries.len());
             }
             LogCommand::GossipVerify { path } => {
-                let bytes = fs::read(path)?;
-                let remote = CheckpointLog::from_cbor_bytes(&bytes)
+                let encoded = fs::read_to_string(path)?;
+                let remote = CheckpointLog::import_base64(encoded.trim())
                     .map_err(|err| CliError::Log(err.to_string()))?;
                 let local = load_checkpoint_log(&state)?;
                 let consistency = local.compare_with(&remote);
@@ -717,18 +720,16 @@ fn load_checkpoint_log(state: &LocalState) -> Result<CheckpointLog, CliError> {
     if state.checkpoint_log.log_base64.is_empty() {
         return Ok(CheckpointLog::new());
     }
-    let bytes = BASE64_STANDARD
-        .decode(state.checkpoint_log.log_base64.as_bytes())
-        .map_err(|err| CliError::Log(err.to_string()))?;
-    CheckpointLog::from_cbor_bytes(&bytes).map_err(|err| CliError::Log(err.to_string()))
+    CheckpointLog::import_base64(&state.checkpoint_log.log_base64)
+        .map_err(|err| CliError::Log(err.to_string()))
 }
 
 /// Saves a checkpoint log into the local state as base64 CBOR.
 fn save_checkpoint_log(state: &mut LocalState, log: &CheckpointLog) -> Result<(), CliError> {
-    let bytes = log
-        .to_cbor_bytes()
+    let encoded = log
+        .export_base64()
         .map_err(|err| CliError::Log(err.to_string()))?;
-    state.checkpoint_log.log_base64 = BASE64_STANDARD.encode(bytes);
+    state.checkpoint_log.log_base64 = encoded;
     Ok(())
 }
 
