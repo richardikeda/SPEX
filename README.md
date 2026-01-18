@@ -33,6 +33,16 @@ Implementação inicial em andamento com os seguintes componentes:
 cargo build
 ```
 
+### Build (componentes específicos)
+
+```bash
+# build da bridge HTTP
+cargo build -p spex-bridge
+
+# build do transporte
+cargo build -p spex-transport
+```
+
 ### Testes
 
 ```bash
@@ -77,6 +87,19 @@ cargo run -p spex-cli -- log export --path <LOG_FILE>
 cargo run -p spex-cli -- log import --path <LOG_FILE>
 cargo run -p spex-cli -- log gossip-verify --path <LOG_FILE>
 ```
+
+### Executando a bridge HTTP
+
+```bash
+# inicia a bridge em 127.0.0.1:3000
+cargo run -p spex-bridge
+```
+
+### Fluxo básico de handshake (request/grant)
+
+1. O remetente envia um `RequestToken` (JSON base64) para o destinatário.
+2. O destinatário responde com um `GrantToken` (CBOR canonical base64).
+3. A thread MLS é criada usando o `ThreadConfig` com o grant recebido.
 
 ### Persistência local e fingerprints
 
@@ -156,9 +179,20 @@ para garantir canonicalização e assinaturas determinísticas.
 | `signature` | 5 | bytes | Assinatura opcional. |
 | `extensions` | >=6 | any | Extensões customizadas. |
 
+### RequestToken (JSON base64)
+
+`RequestToken` é serializado como JSON e depois codificado em base64.
+
+| Campo | Tipo | Descrição |
+| --- | --- | --- |
+| `from_user_id` | string (hex) | Usuário que solicita o grant. |
+| `to_user_id` | string (hex) | Usuário que recebe o pedido. |
+| `role` | uint | Papel/nível de acesso solicitado. |
+| `created_at` | uint | Timestamp UNIX (segundos). |
+
 ## Extensões MLS (SPEX)
 
-As extensões MLS usam a faixa privada (0xF0A0/0xF0A1). O wire-format usa:
+As extensões MLS usam a faixa privada (0xF0A0/0xF0A1). O wire-format usa big-endian:
 
 ```
 extension_type(u16) || extension_length(u16) || extension_data
@@ -251,6 +285,7 @@ GET /inbox/<HEX_KEY> HTTP/1.1
 - **Bridge/DHT são não confiáveis**: sempre verifique hashes, assinaturas e contexto MLS.
 - **TLS recomendado**: use HTTPS para evitar vazamento de metadados na bridge.
 - **Expiração de grants**: rejeite grants expirados e trate revogações explicitamente.
+- **Dados em repouso**: proteja o armazenamento local (`~/.spex/state.json`) com permissões restritas.
 
 ## Próximos passos
 

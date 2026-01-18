@@ -123,9 +123,58 @@ fn expect_u64(value: serde_cbor::Value) -> Option<u64> {
     }
 }
 
+fn build_request_token(from_user_id: &[u8], to_user_id: &[u8], role: u64, created_at: u64) -> String {
+    // Builds a base64-encoded request token for the handshake flow.
+    let request = RequestToken {
+        from_user_id: hex::encode(from_user_id),
+        to_user_id: hex::encode(to_user_id),
+        role,
+        created_at,
+    };
+    let request_payload = serde_json::to_vec(&request).expect("request payload");
+    BASE64_STANDARD.encode(&request_payload)
+}
+
+fn decode_request_token(token: &str) -> RequestToken {
+    // Decodes a base64-encoded request token into its JSON payload.
+    serde_json::from_slice(&BASE64_STANDARD.decode(token).expect("request decode")).expect("request parse")
+}
+
+fn build_grant_token(user_id: &[u8], role: u64) -> String {
+    // Builds a base64-encoded grant token for the requester.
+    let grant = GrantToken {
+        user_id: user_id.to_vec(),
+        role,
+        flags: None,
+        expires_at: None,
+        extensions: BTreeMap::new(),
+    };
+    BASE64_STANDARD.encode(grant.to_ctap2_canonical_bytes().expect("grant"))
+}
+
+async fn spawn_bridge_with_items(items: Vec<Vec<u8>>) -> String {
+    // Spawns a mock bridge server that returns the provided payloads for inbox scans.
+    let encoded_items: Vec<String> = items.iter().map(|item| BASE64_STANDARD.encode(item)).collect();
+    let app = Router::new().route(
+        "/inbox/:key",
+        get(move |Path(_key): Path<String>| {
+            let items = encoded_items.clone();
+            async move { Json(json!({ "items": items })) }
+        }),
+    );
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+    let addr = listener.local_addr().expect("addr");
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.expect("serve");
+    });
+
+    format!("http://{}", addr)
+}
+
 #[tokio::test]
-async fn two_identities_exchange_cards_handshake_mls_and_transport() {
-    // Exercises the end-to-end flow across identity, MLS, chunking, and bridge inbox.
+async fn two_identities_exchange_cards_handshake_and_mls() {
+    // Exercises the identity exchange, request/grant handshake, and MLS extensions.
     let alice = build_identity(1);
     let bob = build_identity(2);
 
@@ -165,18 +214,12 @@ async fn two_identities_exchange_cards_handshake_mls_and_transport() {
     ed25519_verify_hash(&bob_verify, &digest, &Signature::from_bytes(&bob_sig))
         .expect("bob signature");
 
-    let request = RequestToken {
-        from_user_id: hex::encode(&alice.user_id),
-        to_user_id: hex::encode(&bob.user_id),
-        role: 1,
-        created_at: 1_700_000_050,
-    };
-    let request_payload = serde_json::to_vec(&request).expect("request payload");
-    let request_token = BASE64_STANDARD.encode(&request_payload);
-    let decoded_request: RequestToken =
-        serde_json::from_slice(&BASE64_STANDARD.decode(request_token).expect("request decode"))
-            .expect("request parse");
+    let request_token = build_request_token(&alice.user_id, &bob.user_id, 1, 1_700_000_050);
+    let decoded_request = decode_request_token(&request_token);
     assert_eq!(decoded_request.to_user_id, hex::encode(&bob.user_id));
+
+    let grant_token = build_grant_token(&alice.user_id, decoded_request.role);
+    assert!(!grant_token.is_empty());
 
     let grant = GrantToken {
         user_id: alice.user_id.clone(),
@@ -185,9 +228,6 @@ async fn two_identities_exchange_cards_handshake_mls_and_transport() {
         expires_at: None,
         extensions: BTreeMap::new(),
     };
-    let grant_token = BASE64_STANDARD.encode(grant.to_ctap2_canonical_bytes().expect("grant"));
-    assert!(!grant_token.is_empty());
-
     let thread_id = hash_bytes(HashId::Sha256, b"thread");
     let thread_cfg = ThreadConfig {
         proto_major: 1,
@@ -195,7 +235,7 @@ async fn two_identities_exchange_cards_handshake_mls_and_transport() {
         ciphersuite_id: 0x0001,
         flags: 0,
         thread_id: thread_id.clone(),
-        grants: vec![grant.clone()],
+        grants: vec![grant],
         extensions: BTreeMap::new(),
     };
     let thread_cfg_bytes = thread_cfg.to_ctap2_canonical_bytes().expect("thread cfg");
@@ -226,7 +266,15 @@ async fn two_identities_exchange_cards_handshake_mls_and_transport() {
     let expected_updated_proto =
         mls_ext::ext_proto_suite_bytes(proto_suite.major, proto_suite.minor, proto_suite.ciphersuite_id, 1);
     assert!(updated_context.extensions().contains(&expected_updated_proto));
+}
 
+#[tokio::test]
+async fn two_identities_send_receive_via_dht_and_bridge() {
+    // Exercises chunking, DHT-style retrieval, and bridge inbox polling.
+    let alice = build_identity(1);
+    let bob = build_identity(2);
+
+    let thread_id = hash_bytes(HashId::Sha256, b"thread");
     let envelope = Envelope {
         thread_id,
         epoch: 1,
@@ -258,23 +306,10 @@ async fn two_identities_exchange_cards_handshake_mls_and_transport() {
     let reassembled = reassemble_chunks(&received_chunks);
     assert_eq!(reassembled, payload);
 
-    let inbox_key = b"inbox-key".to_vec();
-    let inbox_payload = BASE64_STANDARD.encode(&payload);
-    let app = Router::new().route(
-        "/inbox/:key",
-        get(move |Path(_key): Path<String>| {
-            let payload = inbox_payload.clone();
-            async move { Json(json!({ "items": [payload] })) }
-        }),
-    );
+    let inbox_key = bob.user_id.clone();
+    let bridge_url = spawn_bridge_with_items(vec![payload.clone()]).await;
 
-    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
-    let addr = listener.local_addr().expect("addr");
-    tokio::spawn(async move {
-        axum::serve(listener, app).await.expect("serve");
-    });
-
-    let client = BridgeClient::new(format!("http://{}", addr));
+    let client = BridgeClient::new(bridge_url);
     let response = client.scan_inbox(&inbox_key).await.expect("scan");
     assert_eq!(response.items.len(), 1);
     assert_eq!(response.items[0], payload);
