@@ -30,6 +30,8 @@ Implementação inicial em andamento com os seguintes componentes:
 - [Visão geral da arquitetura](docs/overview.md)
 - [CLI (spex-cli)](docs/cli.md)
 - [Integração](docs/integration.md)
+- [Wire format (CBOR)](docs/wire-format.md)
+- [Bridge HTTP API](docs/bridge-api.md)
 
 ## Build e uso
 
@@ -128,6 +130,8 @@ em canais de texto e compatibilidade com o armazenamento local.
 
 Todos os payloads CBOR usam mapas com chaves inteiras e serialização CTAP2
 para garantir canonicalização e assinaturas determinísticas.
+Para detalhes completos (IDs, tipos e exemplos hex/base64), consulte
+[docs/wire-format.md](docs/wire-format.md).
 
 ### ContactCard
 
@@ -217,6 +221,9 @@ extension_data = hash_id(u16) || len(u8) || cfg_hash(len bytes)
 ```
 
 ## HTTP (bridge)
+
+Os detalhes do contrato HTTP, requisitos de puzzle/grant e códigos de status
+estão em [docs/bridge-api.md](docs/bridge-api.md).
 
 ### PUT/GET /cards/:card_hash
 
