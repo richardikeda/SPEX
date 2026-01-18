@@ -32,6 +32,7 @@ Implementação inicial em andamento com os seguintes componentes:
 - [Integração](docs/integration.md)
 - [Wire format (CBOR)](docs/wire-format.md)
 - [Bridge HTTP API](docs/bridge-api.md)
+- [Segurança](docs/security.md)
 
 ## Build e uso
 
