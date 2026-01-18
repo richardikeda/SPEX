@@ -23,6 +23,7 @@ Implementação inicial em andamento com os seguintes componentes:
 - **spex-transport**: chunking por hash, publicação/replicação DHT/Kademlia, gossip, random walks e inbox scanning derivado de `inbox_scan_key` com fallback via bridge HTTP.
     - **spex-bridge**: bridge HTTP com armazenamento SQLite (cards/slots) e validações básicas.
 - **spex-cli**: CLI de referência para identidades, cartões e fluxo básico de pedidos/grants.
+- **spex-core/log**: log append-only com Merkle tree para checkpoints de chaves, recovery keys e declarações de revogação.
 
 ## Build e uso
 
@@ -66,6 +67,15 @@ cargo run -p spex-cli -- msg send --thread <THREAD_ID_HEX> --text "Olá"
 # verificar inbox local ou via bridge HTTP
 cargo run -p spex-cli -- inbox poll
 cargo run -p spex-cli -- inbox poll --bridge-url <URL> --inbox-key <HEX_KEY>
+
+# checkpoints de chaves e log append-only
+cargo run -p spex-cli -- log append-checkpoint
+cargo run -p spex-cli -- log create-recovery-key
+cargo run -p spex-cli -- log revoke-key --key-hex <HEX_KEY> --reason "compromised"
+cargo run -p spex-cli -- log info
+cargo run -p spex-cli -- log export --path <LOG_FILE>
+cargo run -p spex-cli -- log import --path <LOG_FILE>
+cargo run -p spex-cli -- log gossip-verify --path <LOG_FILE>
 ```
 
 ### Persistência local e fingerprints
@@ -73,6 +83,17 @@ cargo run -p spex-cli -- inbox poll --bridge-url <URL> --inbox-key <HEX_KEY>
 O `spex-cli` persiste chaves, contatos e threads em `~/.spex/state.json` (ou no caminho definido por
 `SPEX_STATE_PATH`). Ao resgatar um cartão, o CLI imprime o fingerprint da chave pública e alerta em
 caso de mudança de chave para um contato já conhecido.
+
+## Checkpoints, recovery e revogação de chaves
+
+O SPEX mantém um **log append-only baseado em Merkle tree** para checkpoints de chaves públicas,
+recovery keys e declarações de revogação. Esse log permite comparar consistência (prefixo) entre
+réplicas e verificar integridade usando o root do Merkle tree.
+
+### Exportação/importação do log
+
+O CLI exporta/importa o log em **CBOR canonical codificado em base64**. Isso facilita transporte
+em canais de texto e compatibilidade com o armazenamento local.
 
 ## Wire format (CBOR canonical/CTAP2)
 

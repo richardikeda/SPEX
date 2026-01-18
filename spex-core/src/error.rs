@@ -25,4 +25,7 @@ pub enum SpexError {
 
     #[error("CBOR is not CTAP2 canonical")]
     CborNotCanonical,
+
+    #[error("invalid input: {0}")]
+    InvalidInput(String),
 }
