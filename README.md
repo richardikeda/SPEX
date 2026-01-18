@@ -25,6 +25,12 @@ Implementação inicial em andamento com os seguintes componentes:
 - **spex-cli**: CLI de referência para identidades, cartões e fluxo básico de pedidos/grants.
 - **spex-core/log**: log append-only com Merkle tree para checkpoints de chaves, recovery keys e declarações de revogação.
 
+## Documentação
+
+- [Visão geral da arquitetura](docs/overview.md)
+- [CLI (spex-cli)](docs/cli.md)
+- [Integração](docs/integration.md)
+
 ## Build e uso
 
 ### Build
