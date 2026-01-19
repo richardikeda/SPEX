@@ -19,7 +19,7 @@ criptografia de ponta a ponta, auditabilidade e integridade dos dados.
 
 Implementação inicial em andamento com os seguintes componentes:
 - **spex-core**: tipos, CBOR canonical (CTAP2), hashes, assinatura e provas de trabalho.
-- **spex-mls**: estruturas mínimas para contexto MLS + extensões SPEX, com operações básicas de grupo/commit (mls-rs).
+- **spex-mls**: estruturas mínimas para contexto MLS + extensões SPEX, commits de membros e validação de epoch/configuração (mls-rs).
 - **spex-transport**: chunking por hash, publicação/replicação DHT/Kademlia, gossip, random walks e inbox scanning derivado de `inbox_scan_key` com fallback via bridge HTTP.
     - **spex-bridge**: bridge HTTP com armazenamento SQLite (cards/slots) e validações básicas.
 - **spex-cli**: CLI de referência para identidades, cartões e fluxo básico de pedidos/grants.
