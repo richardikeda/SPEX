@@ -6,9 +6,10 @@ use axum::{
     Json, Router,
 };
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+use ed25519_dalek::{Signature, VerifyingKey};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
-use spex_core::{hash, pow, pow::PowParams};
+use spex_core::{hash, pow, pow::PowParams, sign, types::GrantToken};
 use std::{
     path::{Path as FsPath, PathBuf},
     sync::Arc,
@@ -54,6 +55,8 @@ struct GrantTokenPayload {
     role: u64,
     flags: Option<u64>,
     expires_at: Option<u64>,
+    verifying_key: String,
+    signature: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -93,6 +96,8 @@ enum BridgeError {
     InvalidRequest(String),
     #[error("puzzle validation failed")]
     PuzzleInvalid,
+    #[error("grant signature invalid")]
+    GrantInvalid,
     #[error("grant expired")]
     GrantExpired,
     #[error("hash mismatch")]
@@ -109,6 +114,7 @@ impl IntoResponse for BridgeError {
         let status = match self {
             BridgeError::InvalidRequest(_) => StatusCode::BAD_REQUEST,
             BridgeError::PuzzleInvalid => StatusCode::UNAUTHORIZED,
+            BridgeError::GrantInvalid => StatusCode::UNAUTHORIZED,
             BridgeError::GrantExpired => StatusCode::UNAUTHORIZED,
             BridgeError::HashMismatch => StatusCode::BAD_REQUEST,
             BridgeError::Storage(_) => StatusCode::INTERNAL_SERVER_ERROR,
@@ -211,6 +217,7 @@ async fn put_slot(
 ) -> Result<StatusCode, BridgeError> {
     validate_storage_request(&state, &payload)?;
     let data = decode_base64(&payload.data)?;
+    validate_hash(&slot_id, &data)?;
 
     store_entry(&state.db_path, "slots", "slot_id", &slot_id, data).await?;
     Ok(StatusCode::NO_CONTENT)
@@ -251,14 +258,25 @@ fn validate_storage_request(state: &AppState, payload: &StorageRequest) -> Resul
 
 /// Ensures the grant token is well-formed and not expired.
 fn validate_grant(now: u64, grant: &GrantTokenPayload) -> Result<(), BridgeError> {
-    let _user_id = decode_base64(&grant.user_id)?;
+    let user_id = decode_base64(&grant.user_id)?;
+    let verify_key = decode_verifying_key(&grant.verifying_key)?;
+    let signature = decode_signature(&grant.signature)?;
     if let Some(expires_at) = grant.expires_at {
         if expires_at <= now {
             return Err(BridgeError::GrantExpired);
         }
     }
-    let _ = grant.role;
-    let _ = grant.flags;
+    let token = GrantToken {
+        user_id,
+        role: grant.role,
+        flags: grant.flags,
+        expires_at: grant.expires_at,
+        extensions: Default::default(),
+    };
+    let hash = hash::hash_ctap2_cbor_value(hash::HashId::Sha256, &token)
+        .map_err(|err| BridgeError::InvalidRequest(err.to_string()))?;
+    sign::ed25519_verify_hash(&verify_key, &hash, &signature)
+        .map_err(|_| BridgeError::GrantInvalid)?;
     Ok(())
 }
 
@@ -277,6 +295,9 @@ fn validate_puzzle(payload: &PuzzlePayload) -> Result<(), BridgeError> {
             output_len: custom.output_len,
         })
         .unwrap_or_default();
+    if let Some(custom) = payload.params.as_ref() {
+        validate_pow_params(custom)?;
+    }
 
     let valid = pow::verify_puzzle_output(&recipient_key, &puzzle_input, &puzzle_output, params)
         .map_err(|err| BridgeError::InvalidRequest(err.to_string()))?;
@@ -286,7 +307,7 @@ fn validate_puzzle(payload: &PuzzlePayload) -> Result<(), BridgeError> {
     Ok(())
 }
 
-/// Verifies the stored card hash matches the SHA-256 hash of data.
+/// Verifies the provided hash matches the SHA-256 hash of data.
 fn validate_hash(card_hash: &str, data: &[u8]) -> Result<(), BridgeError> {
     let expected = hash::hash_bytes(hash::HashId::Sha256, data);
     let expected_hex = hex::encode(expected);
@@ -301,6 +322,36 @@ fn decode_base64(value: &str) -> Result<Vec<u8>, BridgeError> {
     BASE64
         .decode(value)
         .map_err(|err| BridgeError::InvalidRequest(err.to_string()))
+}
+
+/// Decodes a base64 string into a fixed-size byte array.
+fn decode_fixed_bytes<const N: usize>(value: &str) -> Result<[u8; N], BridgeError> {
+    let bytes = decode_base64(value)?;
+    bytes
+        .try_into()
+        .map_err(|_| BridgeError::InvalidRequest("invalid length".to_string()))
+}
+
+/// Decodes a base64 signature into an Ed25519 signature struct.
+fn decode_signature(value: &str) -> Result<Signature, BridgeError> {
+    let bytes: [u8; 64] = decode_fixed_bytes(value)?;
+    Ok(Signature::from_bytes(&bytes))
+}
+
+/// Decodes a base64 verifying key into an Ed25519 verifying key struct.
+fn decode_verifying_key(value: &str) -> Result<VerifyingKey, BridgeError> {
+    let bytes: [u8; 32] = decode_fixed_bytes(value)?;
+    VerifyingKey::from_bytes(&bytes)
+        .map_err(|err| BridgeError::InvalidRequest(err.to_string()))
+}
+
+/// Validates that the provided PoW parameters meet minimum requirements.
+fn validate_pow_params(params: &PowParamsPayload) -> Result<(), BridgeError> {
+    let minimum = PowParams::default();
+    if params.memory_kib < minimum.memory_kib || params.iterations < minimum.iterations {
+        return Err(BridgeError::PuzzleInvalid);
+    }
+    Ok(())
 }
 
 /// Stores binary data in the requested table under the provided key.

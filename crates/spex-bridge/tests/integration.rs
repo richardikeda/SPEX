@@ -3,7 +3,8 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use rusqlite::{params, Connection};
 use serde_json::json;
 use spex_bridge::{app, init_state_with_clock, Clock};
-use spex_core::{hash, pow, pow::PowParams};
+use spex_core::{hash, pow, pow::PowParams, sign, types::GrantToken};
+use spex_core::hash::HashId;
 use std::sync::Arc;
 use tempfile::tempdir;
 use tower::ServiceExt;
@@ -19,6 +20,36 @@ impl Clock for FixedClock {
     }
 }
 
+/// Creates a deterministic Ed25519 signing key for tests.
+fn test_signing_key() -> ed25519_dalek::SigningKey {
+    let seed = [5u8; 32];
+    sign::ed25519_signing_key_from_seed(&seed).expect("seed should be 32 bytes")
+}
+
+/// Builds a signed grant payload for bridge storage requests.
+fn build_grant_payload(expires_at: u64) -> serde_json::Value {
+    let signing_key = test_signing_key();
+    let verify_key = sign::ed25519_verify_key(&signing_key);
+    let grant = GrantToken {
+        user_id: b"user".to_vec(),
+        role: 1,
+        flags: None,
+        expires_at: Some(expires_at),
+        extensions: Default::default(),
+    };
+    let hash =
+        hash::hash_ctap2_cbor_value(HashId::Sha256, &grant).expect("grant hash");
+    let signature = sign::ed25519_sign_hash(&signing_key, &hash);
+    json!({
+        "user_id": BASE64.encode(&grant.user_id),
+        "role": grant.role,
+        "flags": grant.flags,
+        "expires_at": grant.expires_at,
+        "verifying_key": BASE64.encode(verify_key.to_bytes()),
+        "signature": BASE64.encode(signature.to_bytes())
+    })
+}
+
 /// Builds a valid storage request payload with PoW and grant data.
 fn build_payload(now: u64, data: &[u8]) -> serde_json::Value {
     let recipient_key = b"recipient-key";
@@ -29,12 +60,7 @@ fn build_payload(now: u64, data: &[u8]) -> serde_json::Value {
 
     json!({
         "data": BASE64.encode(data),
-        "grant": {
-            "user_id": BASE64.encode(b"user"),
-            "role": 1,
-            "flags": null,
-            "expires_at": now + 60
-        },
+        "grant": build_grant_payload(now + 60),
         "puzzle": {
             "recipient_key": BASE64.encode(recipient_key),
             "puzzle_input": BASE64.encode(puzzle_input),
@@ -60,12 +86,7 @@ fn build_payload_with_puzzle(
 ) -> serde_json::Value {
     json!({
         "data": BASE64.encode(data),
-        "grant": {
-            "user_id": BASE64.encode(b"user"),
-            "role": 1,
-            "flags": null,
-            "expires_at": now + 60
-        },
+        "grant": build_grant_payload(now + 60),
         "puzzle": {
             "recipient_key": BASE64.encode(recipient_key),
             "puzzle_input": BASE64.encode(puzzle_input),
@@ -151,6 +172,7 @@ async fn put_get_slot_roundtrip() {
     let app = app(state);
 
     let data = b"slot-bytes";
+    let slot_hash = hex::encode(hash::hash_bytes(HashId::Sha256, data));
     let payload = build_payload(1_700_000_000, data);
 
     let response = app
@@ -158,7 +180,7 @@ async fn put_get_slot_roundtrip() {
         .oneshot(
             Request::builder()
                 .method("PUT")
-                .uri("/slot/slot-123")
+                .uri(format!("/slot/{slot_hash}"))
                 .header("content-type", "application/json")
                 .body(Body::from(payload.to_string()))
                 .unwrap(),
@@ -171,7 +193,7 @@ async fn put_get_slot_roundtrip() {
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/slot/slot-123")
+                .uri(format!("/slot/{slot_hash}"))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -195,14 +217,10 @@ async fn rejects_expired_grant() {
     let app = app(state);
 
     let data = b"slot";
+    let slot_hash = hex::encode(hash::hash_bytes(HashId::Sha256, data));
     let payload = json!({
         "data": BASE64.encode(data),
-        "grant": {
-            "user_id": BASE64.encode(b"user"),
-            "role": 1,
-            "flags": null,
-            "expires_at": 1_699_999_999
-        },
+        "grant": build_grant_payload(1_699_999_999),
         "puzzle": {
             "recipient_key": BASE64.encode(b"recipient"),
             "puzzle_input": BASE64.encode(b"input"),
@@ -217,7 +235,7 @@ async fn rejects_expired_grant() {
         .oneshot(
             Request::builder()
                 .method("PUT")
-                .uri("/slot/slot-1")
+                .uri(format!("/slot/{slot_hash}"))
                 .header("content-type", "application/json")
                 .body(Body::from(payload.to_string()))
                 .unwrap(),
@@ -236,6 +254,7 @@ async fn rejects_invalid_grant() {
     let state = init_state_with_clock(tmp.path().join("bridge.db"), clock).unwrap();
     let app = app(state);
 
+    let slot_hash = hex::encode(hash::hash_bytes(HashId::Sha256, b"slot"));
     let mut payload = build_payload(1_700_000_000, b"slot");
     payload["grant"]["user_id"] = json!("not-base64");
 
@@ -243,7 +262,7 @@ async fn rejects_invalid_grant() {
         .oneshot(
             Request::builder()
                 .method("PUT")
-                .uri("/slot/slot-invalid-grant")
+                .uri(format!("/slot/{slot_hash}"))
                 .header("content-type", "application/json")
                 .body(Body::from(payload.to_string()))
                 .unwrap(),
@@ -262,14 +281,10 @@ async fn rejects_invalid_puzzle() {
     let state = init_state_with_clock(tmp.path().join("bridge.db"), clock).unwrap();
     let app = app(state);
 
+    let slot_hash = hex::encode(hash::hash_bytes(HashId::Sha256, b"slot"));
     let payload = json!({
         "data": BASE64.encode(b"slot"),
-        "grant": {
-            "user_id": BASE64.encode(b"user"),
-            "role": 1,
-            "flags": null,
-            "expires_at": 1_700_000_100
-        },
+        "grant": build_grant_payload(1_700_000_100),
         "puzzle": {
             "recipient_key": BASE64.encode(b"recipient"),
             "puzzle_input": BASE64.encode(b"input"),
@@ -281,7 +296,7 @@ async fn rejects_invalid_puzzle() {
         .oneshot(
             Request::builder()
                 .method("PUT")
-                .uri("/slot/slot-2")
+                .uri(format!("/slot/{slot_hash}"))
                 .header("content-type", "application/json")
                 .body(Body::from(payload.to_string()))
                 .unwrap(),
@@ -316,14 +331,15 @@ async fn rejects_weak_pow() {
         recipient_key,
         puzzle_input,
         &puzzle_output,
-        PowParams::default(),
+        weak_params,
     );
 
+    let slot_hash = hex::encode(hash::hash_bytes(HashId::Sha256, b"slot"));
     let response = app
         .oneshot(
             Request::builder()
                 .method("PUT")
-                .uri("/slot/slot-weak-pow")
+                .uri(format!("/slot/{slot_hash}"))
                 .header("content-type", "application/json")
                 .body(Body::from(payload.to_string()))
                 .unwrap(),
@@ -355,11 +371,12 @@ async fn rejects_incorrect_pow_salt() {
         PowParams::default(),
     );
 
+    let slot_hash = hex::encode(hash::hash_bytes(HashId::Sha256, b"slot"));
     let response = app
         .oneshot(
             Request::builder()
                 .method("PUT")
-                .uri("/slot/slot-wrong-salt")
+                .uri(format!("/slot/{slot_hash}"))
                 .header("content-type", "application/json")
                 .body(Body::from(payload.to_string()))
                 .unwrap(),

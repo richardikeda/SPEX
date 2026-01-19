@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use spex_bridge::{app, init_state_with_clock, Clock};
 use spex_core::{
-    hash::{hash_bytes, HashId},
+    hash::{hash_bytes, hash_ctap2_cbor_value, HashId},
     log::{CheckpointEntry, CheckpointLog, RevocationDeclaration},
     pow,
     sign::{
@@ -50,6 +50,35 @@ impl Clock for FixedClock {
     fn now(&self) -> u64 {
         self.now
     }
+}
+
+/// Builds a deterministic signing key for grant payloads.
+fn test_signing_key() -> ed25519_dalek::SigningKey {
+    ed25519_signing_key_from_seed(&[9u8; 32]).expect("seed")
+}
+
+/// Builds a signed grant payload for bridge storage requests.
+fn build_grant_payload(expires_at: u64) -> serde_json::Value {
+    let signing_key = test_signing_key();
+    let verifying_key = ed25519_verify_key(&signing_key);
+    let grant = GrantToken {
+        user_id: b"user".to_vec(),
+        role: 1,
+        flags: None,
+        expires_at: Some(expires_at),
+        extensions: BTreeMap::new(),
+    };
+    let hash =
+        hash_ctap2_cbor_value(HashId::Sha256, &grant).expect("grant hash");
+    let signature = ed25519_sign_hash(&signing_key, &hash);
+    json!({
+        "user_id": BASE64_STANDARD.encode(&grant.user_id),
+        "role": grant.role,
+        "flags": grant.flags,
+        "expires_at": grant.expires_at,
+        "verifying_key": BASE64_STANDARD.encode(verifying_key.to_bytes()),
+        "signature": BASE64_STANDARD.encode(signature.to_bytes())
+    })
 }
 
 fn build_identity(seed: u8) -> Identity {
@@ -171,12 +200,7 @@ fn build_storage_payload(
     // Builds a bridge storage payload with grant and puzzle data.
     json!({
         "data": BASE64_STANDARD.encode(data),
-        "grant": {
-            "user_id": BASE64_STANDARD.encode(b"user"),
-            "role": 1,
-            "flags": null,
-            "expires_at": now + 60
-        },
+        "grant": build_grant_payload(now + 60),
         "puzzle": {
             "recipient_key": BASE64_STANDARD.encode(recipient_key),
             "puzzle_input": BASE64_STANDARD.encode(puzzle_input),
@@ -288,12 +312,13 @@ async fn full_identity_bridge_mls_flow() {
         &puzzle_output,
     );
 
+    let slot_hash = hex::encode(hash_bytes(HashId::Sha256, b"slot-data"));
     let response = app
         .clone()
         .oneshot(
             Request::builder()
                 .method("PUT")
-                .uri("/slot/slot-1")
+                .uri(format!("/slot/{slot_hash}"))
                 .header("content-type", "application/json")
                 .body(Body::from(payload.to_string()))
                 .unwrap(),
@@ -304,12 +329,7 @@ async fn full_identity_bridge_mls_flow() {
 
     let expired_payload = json!({
         "data": BASE64_STANDARD.encode(b"slot-data"),
-        "grant": {
-            "user_id": BASE64_STANDARD.encode(b"user"),
-            "role": 1,
-            "flags": null,
-            "expires_at": 1_699_999_999
-        },
+        "grant": build_grant_payload(1_699_999_999),
         "puzzle": {
             "recipient_key": BASE64_STANDARD.encode(&bob.user_id),
             "puzzle_input": BASE64_STANDARD.encode(puzzle_input),
@@ -322,7 +342,7 @@ async fn full_identity_bridge_mls_flow() {
         .oneshot(
             Request::builder()
                 .method("PUT")
-                .uri("/slot/slot-expired")
+                .uri(format!("/slot/{slot_hash}"))
                 .header("content-type", "application/json")
                 .body(Body::from(expired_payload.to_string()))
                 .unwrap(),
