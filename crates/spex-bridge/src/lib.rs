@@ -6,7 +6,7 @@ use axum::{
     Json, Router,
 };
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use spex_core::{hash, pow, pow::PowParams};
 use std::{
@@ -78,6 +78,11 @@ struct StoredResponse {
 }
 
 #[derive(Debug, Serialize)]
+struct InboxResponse {
+    items: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
 struct ErrorResponse {
     error: String,
 }
@@ -121,6 +126,7 @@ pub fn app(state: AppState) -> Router {
     Router::new()
         .route("/cards/:card_hash", put(put_card).get(get_card))
         .route("/slot/:slot_id", put(put_slot).get(get_slot))
+        .route("/inbox/:key", get(get_inbox))
         .with_state(state)
 }
 
@@ -153,6 +159,18 @@ fn init_db(path: &FsPath) -> rusqlite::Result<()> {
     )?;
     conn.execute(
         "CREATE TABLE IF NOT EXISTS slots (slot_id TEXT PRIMARY KEY, data BLOB NOT NULL)",
+        [],
+    )?;
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS inbox_keys (inbox_key TEXT PRIMARY KEY)",
+        [],
+    )?;
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS inbox_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            inbox_key TEXT NOT NULL,
+            item BLOB NOT NULL
+        )",
         [],
     )?;
     Ok(())
@@ -208,6 +226,19 @@ async fn get_slot(
         .ok_or(BridgeError::NotFound)?;
     Ok(Json(StoredResponse {
         data: BASE64.encode(data),
+    }))
+}
+
+/// Returns inbox items for the provided inbox scan key.
+async fn get_inbox(
+    State(state): State<AppState>,
+    Path(inbox_key): Path<String>,
+) -> Result<Json<InboxResponse>, BridgeError> {
+    let items = load_inbox_items(&state.db_path, &inbox_key)
+        .await?
+        .ok_or(BridgeError::NotFound)?;
+    Ok(Json(InboxResponse {
+        items: items.into_iter().map(|item| BASE64.encode(item)).collect(),
     }))
 }
 
@@ -323,6 +354,40 @@ async fn load_entry(
         } else {
             Ok(None)
         }
+    })
+    .await
+    .map_err(|err| BridgeError::Storage(err.to_string()))?
+    .map_err(|err| BridgeError::Storage(err.to_string()))
+}
+
+/// Loads inbox items for the given key, returning None when the inbox is missing.
+async fn load_inbox_items(
+    db_path: &PathBuf,
+    inbox_key: &str,
+) -> Result<Option<Vec<Vec<u8>>>, BridgeError> {
+    let db_path = db_path.clone();
+    let inbox_key = inbox_key.to_string();
+    task::spawn_blocking(move || {
+        let conn = Connection::open(db_path)?;
+        let exists: Option<String> = conn
+            .query_row(
+                "SELECT inbox_key FROM inbox_keys WHERE inbox_key = ?1",
+                [inbox_key.clone()],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if exists.is_none() {
+            return Ok(None);
+        }
+        let mut stmt = conn.prepare(
+            "SELECT item FROM inbox_items WHERE inbox_key = ?1 ORDER BY id ASC",
+        )?;
+        let rows = stmt.query_map([inbox_key], |row| row.get(0))?;
+        let mut items = Vec::new();
+        for row in rows {
+            items.push(row?);
+        }
+        Ok(Some(items))
     })
     .await
     .map_err(|err| BridgeError::Storage(err.to_string()))?

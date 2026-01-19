@@ -293,6 +293,11 @@ GET /inbox/<HEX_KEY> HTTP/1.1
 { "items": ["<BASE64_ENVELOPE>", "..."] }
 ```
 
+Responses:
+
+- `200 OK`: retorna um array (pode estar vazio).
+- `404 Not Found`: inbox ainda não existe.
+
 ## Notas de segurança
 
 - **CBOR canonical**: use sempre CTAP2 canonical para assinar/verificar cards e tokens.
