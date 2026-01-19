@@ -16,6 +16,6 @@ pub use inbox::{
     resolve_inbox_with_fallback, BridgeClient, InboxScanRequest, InboxScanResponse,
 };
 pub use transport::{
-    publish_payload, random_walk, replicate_manifest, BuildTransport, ChunkManifest,
-    TransportComponents, TransportConfig,
+    publish_payload, random_walk, random_walk_with_key, replicate_manifest, BuildTransport,
+    ChunkManifest, TransportComponents, TransportConfig,
 };
