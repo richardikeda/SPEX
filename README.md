@@ -58,7 +58,8 @@ cargo build -p spex-transport
 cargo test
 ```
 
-Os testes incluem vetores, além de validações de assinatura para `ContactCard` e `GrantToken`.
+Os testes incluem vetores, integrações (handshake, PoW, MLS, DHT/bridge) e validações de
+assinatura para `ContactCard` e `GrantToken`.
 
 ### Uso rápido (CLI)
 
