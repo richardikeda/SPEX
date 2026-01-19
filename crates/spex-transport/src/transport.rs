@@ -6,10 +6,14 @@ use libp2p::gossipsub::{
 };
 use libp2p::identity::Keypair;
 use libp2p::kad::store::MemoryStore;
-use libp2p::kad::{Kademlia, KademliaConfig, Mode, Quorum, Record, RecordKey};
+use libp2p::kad::{GetRecordOk, Kademlia, KademliaConfig, Mode, QueryId, Quorum, Record, RecordKey};
 use libp2p::{Multiaddr, PeerId};
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
+
+use spex_core::cbor::from_ctap2_canonical_slice;
+use spex_core::hash::hash_bytes;
+use spex_core::types::Envelope;
 
 use crate::chunking::{chunk_data, Chunk, ChunkingConfig};
 use crate::error::TransportError;
@@ -147,6 +151,74 @@ fn publish_manifest(
     Ok(())
 }
 
+/// Parses a gossipsub payload into a chunk manifest.
+pub fn parse_manifest_from_gossip(payload: &[u8]) -> Result<ChunkManifest, TransportError> {
+    let manifest = serde_json::from_slice(payload)?;
+    Ok(manifest)
+}
+
+/// Starts DHT record lookups for each chunk described in the manifest.
+pub fn start_manifest_chunk_queries(
+    kademlia: &mut Kademlia<MemoryStore>,
+    manifest: &ChunkManifest,
+) -> Vec<QueryId> {
+    manifest
+        .chunks
+        .iter()
+        .map(|descriptor| {
+            let record_key = RecordKey::new(&descriptor.hash);
+            kademlia.get_record(record_key, Quorum::One)
+        })
+        .collect()
+}
+
+/// Collects chunk data from DHT record results, validating hashes against the manifest.
+pub fn collect_manifest_chunks(
+    manifest: &ChunkManifest,
+    results: &[GetRecordOk],
+    config: &TransportConfig,
+) -> Result<Vec<Chunk>, TransportError> {
+    let mut payloads = std::collections::HashMap::new();
+    for result in results {
+        for record in &result.records {
+            payloads.insert(record.record.key.as_ref().to_vec(), record.record.value.clone());
+        }
+    }
+
+    let mut ordered = Vec::with_capacity(manifest.chunks.len());
+    for descriptor in &manifest.chunks {
+        let data = payloads
+            .get(&descriptor.hash)
+            .ok_or_else(|| TransportError::MissingChunk(hex::encode(&descriptor.hash)))?;
+        let computed = hash_bytes(config.chunking.hash_id, data);
+        if computed != descriptor.hash {
+            return Err(TransportError::ChunkHashMismatch(descriptor.index));
+        }
+        ordered.push(Chunk {
+            index: descriptor.index,
+            hash: descriptor.hash.clone(),
+            data: data.clone(),
+        });
+    }
+    Ok(ordered)
+}
+
+/// Reassembles chunks into an Envelope, validating the manifest length.
+pub fn reconstruct_envelope(
+    manifest: &ChunkManifest,
+    chunks: &[Chunk],
+) -> Result<Envelope, TransportError> {
+    let payload = crate::chunking::reassemble_chunks(chunks);
+    if payload.len() != manifest.total_len {
+        return Err(TransportError::PayloadLengthMismatch {
+            expected: manifest.total_len,
+            actual: payload.len(),
+        });
+    }
+    let envelope = from_ctap2_canonical_slice(&payload)?;
+    Ok(envelope)
+}
+
 /// Replicates manifest chunks by storing empty records and providing their hashes.
 pub fn replicate_manifest(
     kademlia: &mut Kademlia<MemoryStore>,
@@ -164,6 +236,41 @@ pub fn replicate_manifest(
         let _ = kademlia.put_record(record, Quorum::One);
         let _ = kademlia.start_providing(record_key);
     }
+}
+
+/// Passively replicates retrieved chunks by storing them and announcing providers.
+pub fn passive_replicate_chunks(
+    kademlia: &mut Kademlia<MemoryStore>,
+    config: &TransportConfig,
+    chunks: &[Chunk],
+) {
+    for chunk in chunks {
+        store_chunk_record(kademlia, config, chunk);
+    }
+}
+
+/// Renews the TTL for chunk records by re-storing them with a refreshed expiry.
+pub fn renew_chunk_ttl(
+    kademlia: &mut Kademlia<MemoryStore>,
+    config: &TransportConfig,
+    chunks: &[Chunk],
+) {
+    for chunk in chunks {
+        store_chunk_record(kademlia, config, chunk);
+    }
+}
+
+/// Stores a chunk record with TTL and provider advertisement.
+fn store_chunk_record(kademlia: &mut Kademlia<MemoryStore>, config: &TransportConfig, chunk: &Chunk) {
+    let record_key = RecordKey::new(&chunk.hash);
+    let record = Record {
+        key: record_key.clone(),
+        value: chunk.data.clone(),
+        publisher: None,
+        expires: Some(std::time::Instant::now() + config.record_ttl),
+    };
+    let _ = kademlia.put_record(record, Quorum::One);
+    let _ = kademlia.start_providing(record_key);
 }
 
 /// Performs a random-walk query to discover nearby peers via Kademlia.

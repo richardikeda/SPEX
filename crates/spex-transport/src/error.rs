@@ -1,5 +1,7 @@
 use thiserror::Error;
 
+use spex_core::error::SpexError;
+
 #[derive(Debug, Error)]
 pub enum TransportError {
     #[error("libp2p error: {0}")]
@@ -8,10 +10,18 @@ pub enum TransportError {
     GossipPublish(String),
     #[error("serialization error: {0}")]
     Serialization(#[from] serde_json::Error),
+    #[error("cbor decode error: {0}")]
+    CborDecode(#[from] SpexError),
     #[error("http error: {0}")]
     Http(#[from] reqwest::Error),
     #[error("inbox bridge returned invalid payload")]
     BridgePayload,
+    #[error("missing chunk for hash {0}")]
+    MissingChunk(String),
+    #[error("chunk hash mismatch for index {0}")]
+    ChunkHashMismatch(usize),
+    #[error("payload length mismatch (expected {expected}, got {actual})")]
+    PayloadLengthMismatch { expected: usize, actual: usize },
 }
 
 impl From<libp2p::gossipsub::PublishError> for TransportError {
