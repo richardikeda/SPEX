@@ -7,7 +7,7 @@ validação para payloads, PoW e grants.
 
 - **Base64**: todos os campos binários são transportados em base64 padrão (RFC 4648).
 - **CBOR**: cards e envelopes são CBOR canonical codificados em base64.
-- **Grant**: o servidor valida expiração e formato do `GrantToken` recebido.
+- **Grant**: o servidor valida expiração, assinatura e formato do `GrantToken` recebido.
 - **Puzzle (PoW)**: o servidor valida a saída do puzzle conforme `spex-core`.
 
 ## PUT /cards/:card_hash
@@ -34,7 +34,9 @@ Content-Type: application/json
     "user_id": "<BASE64_USER_ID>",
     "role": 1,
     "flags": 0,
-    "expires_at": 1700003600
+    "expires_at": 1700003600,
+    "verifying_key": "<BASE64_ED25519_PUBLIC_KEY>",
+    "signature": "<BASE64_ED25519_SIGNATURE>"
   },
   "puzzle": {
     "recipient_key": "<BASE64>",
@@ -78,6 +80,7 @@ GET /cards/<SHA256_HEX> HTTP/1.1
 ## PUT /slot/:slot_id
 
 Armazena um blob genérico (por exemplo, payloads de handshake) identificado por `slot_id`.
+O `slot_id` deve ser o SHA-256 hex do blob armazenado.
 
 **Requisitos**
 
@@ -87,7 +90,7 @@ Armazena um blob genérico (por exemplo, payloads de handshake) identificado por
 **Request**
 
 ```http
-PUT /slot/<SLOT_ID> HTTP/1.1
+PUT /slot/<SHA256_HEX> HTTP/1.1
 Content-Type: application/json
 ```
 
@@ -98,7 +101,9 @@ Content-Type: application/json
     "user_id": "<BASE64_USER_ID>",
     "role": 1,
     "flags": 0,
-    "expires_at": 1700003600
+    "expires_at": 1700003600,
+    "verifying_key": "<BASE64_ED25519_PUBLIC_KEY>",
+    "signature": "<BASE64_ED25519_SIGNATURE>"
   },
   "puzzle": {
     "recipient_key": "<BASE64>",
@@ -126,7 +131,7 @@ Content-Type: application/json
 Recupera o blob armazenado pelo `slot_id`.
 
 ```http
-GET /slot/<SLOT_ID> HTTP/1.1
+GET /slot/<SHA256_HEX> HTTP/1.1
 ```
 
 ```json
@@ -163,9 +168,12 @@ GET /inbox/<HEX_KEY> HTTP/1.1
 - `grant.user_id` deve ser base64 válido.
 - `grant.expires_at` é opcional; se presente precisa ser maior que o timestamp atual.
 - `grant.role` e `grant.flags` são validados como inteiros.
+- `grant.verifying_key` e `grant.signature` devem ser base64 válidos e formam uma assinatura
+  Ed25519 do hash CTAP2 canonical do `GrantToken`.
 
 ## Validação de puzzle (PoW)
 
 - Os campos `recipient_key`, `puzzle_input` e `puzzle_output` devem ser base64 válidos.
 - `params` é opcional; caso omitido, o servidor usa parâmetros padrão.
+- `params` (quando informado) deve respeitar o mínimo de memória/iterações aceito pelo servidor.
 - A verificação é feita com `spex-core` (CTAP2/PoW) e retorna `401` se inválida.

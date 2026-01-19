@@ -241,7 +241,9 @@ Content-Type: application/json
     "user_id": "<BASE64_USER_ID>",
     "role": 1,
     "flags": null,
-    "expires_at": 1700000200
+    "expires_at": 1700000200,
+    "verifying_key": "<BASE64_ED25519_PUBLIC_KEY>",
+    "signature": "<BASE64_ED25519_SIGNATURE>"
   },
   "puzzle": {
     "recipient_key": "<BASE64>",
@@ -267,15 +269,17 @@ GET /cards/<SHA256_HEX> HTTP/1.1
 
 ### PUT/GET /slot/:slot_id
 
+O `slot_id` deve ser o SHA-256 hex do blob armazenado.
+
 ```http
-PUT /slot/<SLOT_ID> HTTP/1.1
+PUT /slot/<SHA256_HEX> HTTP/1.1
 Content-Type: application/json
 
 { "...mesmo payload do /cards..." }
 ```
 
 ```http
-GET /slot/<SLOT_ID> HTTP/1.1
+GET /slot/<SHA256_HEX> HTTP/1.1
 ```
 
 ```json
