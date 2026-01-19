@@ -87,6 +87,16 @@ impl BuildTransport {
     }
 }
 
+/// Performs a random-walk query using a caller-provided key for testing or deterministic walks.
+pub fn random_walk_with_key(
+    kademlia: &mut Kademlia<MemoryStore>,
+    random_key_bytes: &[u8],
+) -> RecordKey {
+    let record_key = RecordKey::new(random_key_bytes);
+    let _ = kademlia.get_closest_peers(record_key.clone());
+    record_key
+}
+
 /// Publishes a payload by chunking it, storing chunks in Kademlia, and gossipping a manifest.
 pub fn publish_payload(
     components: &mut TransportComponents,
@@ -160,6 +170,5 @@ pub fn replicate_manifest(
 pub fn random_walk(kademlia: &mut Kademlia<MemoryStore>) {
     let mut random_bytes = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut random_bytes);
-    let random_key = RecordKey::new(&random_bytes);
-    let _ = kademlia.get_closest_peers(random_key);
+    let _ = random_walk_with_key(kademlia, &random_bytes);
 }
