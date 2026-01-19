@@ -12,7 +12,7 @@ fn tv3_group_context_has_spex_extensions() {
     let cfg_hash = hex::decode(test_vectors::TV1_CFG_HASH_SHA256_HEX).unwrap();
     let config = GroupConfig::new(proto_suite, 0, 1, cfg_hash);
 
-    let group = Group::create(config);
+    let group = Group::create(config).expect("group");
     let extensions = group.context().extensions();
 
     assert_eq!(extensions.len(), 2);
@@ -36,7 +36,7 @@ fn tv3_group_context_commit_rebuilds_extensions() {
     };
     let initial_cfg_hash = vec![0xAA; 32];
     let config = GroupConfig::new(initial_suite, 1, 2, initial_cfg_hash);
-    let mut group = Group::create(config);
+    let mut group = Group::create(config).expect("group");
 
     let proto_suite = ProtoSuite {
         major: 0,
@@ -50,7 +50,7 @@ fn tv3_group_context_commit_rebuilds_extensions() {
     commit.cfg_hash_id = Some(1);
     commit.cfg_hash = Some(cfg_hash);
 
-    let context = group.apply_commit(commit);
+    let context = group.apply_commit(commit).expect("commit");
     let extensions = context.extensions();
 
     assert_eq!(group.epoch(), 1);

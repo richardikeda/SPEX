@@ -5,11 +5,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use spex_core::{
     hash::{hash_bytes, HashId},
-    mls_ext,
     sign::{ed25519_sign_hash, ed25519_signing_key_from_seed, ed25519_verify_hash, ed25519_verify_key},
     types::{ContactCard, Ctap2Cbor, Envelope, GrantToken, ProtoSuite, ThreadConfig},
 };
-use spex_mls::{Commit, Group, GroupConfig};
+use spex_mls::{cfg_hash_for_thread_config, mls_extensions, Commit, Group, GroupConfig};
 use spex_transport::chunking::{chunk_data, reassemble_chunks, Chunk, ChunkingConfig};
 use spex_transport::inbox::BridgeClient;
 use std::collections::{BTreeMap, HashMap};
@@ -238,9 +237,7 @@ async fn two_identities_exchange_cards_handshake_and_mls() {
         grants: vec![grant],
         extensions: BTreeMap::new(),
     };
-    let thread_cfg_bytes = thread_cfg.to_ctap2_canonical_bytes().expect("thread cfg");
-
-    let cfg_hash = hash_bytes(HashId::Sha256, &thread_cfg_bytes);
+    let cfg_hash = cfg_hash_for_thread_config(HashId::Sha256, &thread_cfg).expect("cfg hash");
     let proto_suite = ProtoSuite {
         major: 1,
         minor: 1,
@@ -251,21 +248,19 @@ async fn two_identities_exchange_cards_handshake_and_mls() {
         0,
         HashId::Sha256 as u16,
         cfg_hash.clone(),
-    ));
+    ))
+    .expect("group");
 
     let context = group.context();
-    let expected_proto_ext =
-        mls_ext::ext_proto_suite_bytes(proto_suite.major, proto_suite.minor, proto_suite.ciphersuite_id, 0);
-    let expected_cfg_ext = mls_ext::ext_cfg_hash_bytes(HashId::Sha256 as u16, &cfg_hash);
-    assert!(context.extensions().contains(&expected_proto_ext));
-    assert!(context.extensions().contains(&expected_cfg_ext));
+    let expected_extensions = mls_extensions(proto_suite, 0, HashId::Sha256 as u16, &cfg_hash);
+    assert!(context.extensions().contains(&expected_extensions[0]));
+    assert!(context.extensions().contains(&expected_extensions[1]));
 
     let mut commit = Commit::new(1);
     commit.flags = Some(1);
-    let updated_context = group.apply_commit(commit);
-    let expected_updated_proto =
-        mls_ext::ext_proto_suite_bytes(proto_suite.major, proto_suite.minor, proto_suite.ciphersuite_id, 1);
-    assert!(updated_context.extensions().contains(&expected_updated_proto));
+    let updated_context = group.apply_commit(commit).expect("commit");
+    let expected_updated_extensions = mls_extensions(proto_suite, 1, HashId::Sha256 as u16, &cfg_hash);
+    assert!(updated_context.extensions().contains(&expected_updated_extensions[0]));
 }
 
 #[tokio::test]

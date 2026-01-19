@@ -16,21 +16,21 @@ fn group_membership_commits_update_roster() {
     let proto_suite = test_proto_suite();
     let cfg_hash = vec![0x11; 32];
     let config = GroupConfig::new(proto_suite, 0, 1, cfg_hash);
-    let mut group = Group::create(config);
+    let mut group = Group::create(config).expect("group");
 
-    let add_alice = group.add_member("alice");
+    let add_alice = group.add_member("alice").expect("add alice");
     assert_eq!(add_alice.epoch, 1);
     assert_eq!(add_alice.added_members, vec!["alice".to_string()]);
     assert_eq!(group.members(), &[String::from("alice")]);
 
-    let add_bob = group.add_member("bob");
+    let add_bob = group.add_member("bob").expect("add bob");
     assert_eq!(add_bob.epoch, 2);
     assert_eq!(
         group.members(),
         &[String::from("alice"), String::from("bob")]
     );
 
-    let remove_alice = group.remove_member("alice");
+    let remove_alice = group.remove_member("alice").expect("remove alice");
     assert_eq!(remove_alice.epoch, 3);
     assert_eq!(remove_alice.removed_members, vec!["alice".to_string()]);
     assert_eq!(group.members(), &[String::from("bob")]);
@@ -42,8 +42,8 @@ fn group_message_validation_rejects_divergent_metadata() {
     let proto_suite = test_proto_suite();
     let cfg_hash = vec![0x22; 32];
     let config = GroupConfig::new(proto_suite, 0, 1, cfg_hash.clone());
-    let mut group = Group::create(config);
-    group.add_member("alice");
+    let mut group = Group::create(config).expect("group");
+    group.add_member("alice").expect("add alice");
 
     let valid_message = GroupMessage::new(
         group.epoch(),
