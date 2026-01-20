@@ -316,7 +316,8 @@ Responses:
 
 - **CBOR canonical**: use sempre CTAP2 canonical para assinar/verificar cards e tokens.
 - **Verificação de cartão**: valide assinatura e trate mudança de chave como evento crítico.
-- **PoW/anti-abuso**: valide puzzles, limite taxa e atualize parâmetros conforme a ameaça.
+- **PoW/anti-abuso**: valide puzzles, limite taxa e exija parâmetros mínimos (memória ≥64 MiB,
+  iterações ≥3) antes de aceitar requests.
 - **Bridge/DHT são não confiáveis**: sempre verifique hashes, assinaturas e contexto MLS.
 - **TLS recomendado**: use HTTPS para evitar vazamento de metadados na bridge.
 - **Expiração de grants**: rejeite grants expirados e trate revogações explicitamente.

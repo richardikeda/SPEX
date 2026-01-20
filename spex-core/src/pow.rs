@@ -18,6 +18,13 @@ pub struct PowParams {
 impl Default for PowParams {
     /// Returns the default Argon2id PoW parameters.
     fn default() -> Self {
+        Self::minimum()
+    }
+}
+
+impl PowParams {
+    /// Returns the minimum PoW parameters accepted by the verifier.
+    pub fn minimum() -> Self {
         Self {
             memory_kib: 64 * 1024,
             iterations: 3,
@@ -25,9 +32,13 @@ impl Default for PowParams {
             output_len: 32,
         }
     }
-}
 
-impl PowParams {
+    /// Returns true when the parameters meet or exceed the minimum requirements.
+    pub fn meets_minimum(self) -> bool {
+        let minimum = Self::minimum();
+        self.memory_kib >= minimum.memory_kib && self.iterations >= minimum.iterations
+    }
+
     /// Builds an Argon2id instance from the configured parameters.
     fn to_argon2(self) -> Result<Argon2<'static>, SpexError> {
         let params = Params::new(
@@ -112,6 +123,11 @@ pub fn verify_puzzle_output(
     expected: &[u8],
     params: PowParams,
 ) -> Result<bool, SpexError> {
+    if !params.meets_minimum() {
+        return Err(SpexError::InvalidInput(
+            "pow params below minimum requirements".to_string(),
+        ));
+    }
     if expected.len() != params.output_len {
         return Err(SpexError::InvalidLength("argon2 output"));
     }
