@@ -6,13 +6,16 @@ use libp2p::gossipsub::{
 };
 use libp2p::identity::Keypair;
 use libp2p::kad::store::MemoryStore;
-use libp2p::kad::{GetRecordOk, Kademlia, KademliaConfig, Mode, QueryId, Quorum, Record, RecordKey};
+use libp2p::kad::{
+    Behaviour as Kademlia, Config as KademliaConfig, GetRecordOk, Mode, QueryId, Quorum, Record,
+    RecordKey,
+};
 use libp2p::{Multiaddr, PeerId};
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 
 use spex_core::cbor::from_ctap2_canonical_slice;
-use spex_core::hash::hash_bytes;
+use spex_core::hash::{hash_bytes, HashId};
 use spex_core::types::Envelope;
 
 use crate::chunking::{chunk_data, Chunk, ChunkingConfig};
@@ -36,7 +39,6 @@ impl Default for TransportConfig {
     }
 }
 
-#[derive(Debug)]
 pub struct TransportComponents {
     pub local_peer_id: PeerId,
     pub kademlia: Kademlia<MemoryStore>,
@@ -65,10 +67,10 @@ impl BuildTransport {
     ) -> Result<TransportComponents, TransportError> {
         let local_peer_id = PeerId::from(local_key.public());
 
-        let mut kad_config = KademliaConfig::default();
-        kad_config.set_mode(Some(Mode::Server));
+        let kad_config = KademliaConfig::default();
         let store = MemoryStore::new(local_peer_id);
-        let kademlia = Kademlia::with_config(local_peer_id, store, kad_config);
+        let mut kademlia = Kademlia::with_config(local_peer_id, store, kad_config);
+        kademlia.set_mode(Some(Mode::Server));
 
         let gossip_config = GossipsubConfigBuilder::default()
             .heartbeat_interval(Duration::from_secs(5))
@@ -96,8 +98,8 @@ pub fn random_walk_with_key(
     kademlia: &mut Kademlia<MemoryStore>,
     random_key_bytes: &[u8],
 ) -> RecordKey {
-    let record_key = RecordKey::new(random_key_bytes);
-    let _ = kademlia.get_closest_peers(record_key.clone());
+    let record_key = RecordKey::new(&random_key_bytes.to_vec());
+    let _ = kademlia.get_closest_peers(record_key.to_vec());
     record_key
 }
 
@@ -157,6 +159,22 @@ pub fn parse_manifest_from_gossip(payload: &[u8]) -> Result<ChunkManifest, Trans
     Ok(manifest)
 }
 
+/// Recovers the first valid chunk manifest from a list of gossipsub payloads.
+pub fn recover_manifest_from_gossip(
+    payloads: &[Vec<u8>],
+) -> Result<ChunkManifest, TransportError> {
+    for payload in payloads {
+        if let Ok(manifest) = parse_manifest_from_gossip(payload) {
+            if validate_manifest(&manifest).is_ok() {
+                return Ok(manifest);
+            }
+        }
+    }
+    Err(TransportError::InvalidManifest(
+        "no valid gossipsub manifest found".to_string(),
+    ))
+}
+
 /// Starts DHT record lookups for each chunk described in the manifest.
 pub fn start_manifest_chunk_queries(
     kademlia: &mut Kademlia<MemoryStore>,
@@ -167,7 +185,7 @@ pub fn start_manifest_chunk_queries(
         .iter()
         .map(|descriptor| {
             let record_key = RecordKey::new(&descriptor.hash);
-            kademlia.get_record(record_key, Quorum::One)
+            kademlia.get_record(record_key)
         })
         .collect()
 }
@@ -178,9 +196,10 @@ pub fn collect_manifest_chunks(
     results: &[GetRecordOk],
     config: &TransportConfig,
 ) -> Result<Vec<Chunk>, TransportError> {
+    validate_manifest(manifest)?;
     let mut payloads = std::collections::HashMap::new();
     for result in results {
-        for record in &result.records {
+        if let GetRecordOk::FoundRecord(record) = result {
             payloads.insert(record.record.key.as_ref().to_vec(), record.record.value.clone());
         }
     }
@@ -203,18 +222,54 @@ pub fn collect_manifest_chunks(
     Ok(ordered)
 }
 
-/// Reassembles chunks into an Envelope, validating the manifest length.
-pub fn reconstruct_envelope(
+/// Reassembles chunk data in manifest order, validating hashes and length.
+pub fn reassemble_chunks_with_manifest(
     manifest: &ChunkManifest,
     chunks: &[Chunk],
-) -> Result<Envelope, TransportError> {
-    let payload = crate::chunking::reassemble_chunks(chunks);
+    config: &TransportConfig,
+) -> Result<Vec<u8>, TransportError> {
+    validate_manifest(manifest)?;
+
+    let mut by_hash = std::collections::HashMap::new();
+    for chunk in chunks {
+        let computed = hash_bytes(config.chunking.hash_id, &chunk.data);
+        if computed != chunk.hash {
+            return Err(TransportError::ChunkHashMismatch(chunk.index));
+        }
+        by_hash.entry(chunk.hash.clone()).or_insert_with(|| chunk.clone());
+    }
+
+    let mut ordered = Vec::with_capacity(manifest.chunks.len());
+    for descriptor in &manifest.chunks {
+        let chunk = by_hash
+            .get(&descriptor.hash)
+            .ok_or_else(|| TransportError::MissingChunk(hex::encode(&descriptor.hash)))?;
+        if chunk.index != descriptor.index {
+            return Err(TransportError::ChunkIndexMismatch {
+                expected: descriptor.index,
+                actual: chunk.index,
+            });
+        }
+        ordered.push(chunk.clone());
+    }
+
+    let payload = crate::chunking::reassemble_chunks(&ordered);
     if payload.len() != manifest.total_len {
         return Err(TransportError::PayloadLengthMismatch {
             expected: manifest.total_len,
             actual: payload.len(),
         });
     }
+    Ok(payload)
+}
+
+/// Reassembles chunks into an Envelope, validating hashes and manifest length.
+pub fn reconstruct_envelope(
+    manifest: &ChunkManifest,
+    chunks: &[Chunk],
+    config: &TransportConfig,
+) -> Result<Envelope, TransportError> {
+    let payload = reassemble_chunks_with_manifest(manifest, chunks, config)?;
     let envelope = from_ctap2_canonical_slice(&payload)?;
     Ok(envelope)
 }
@@ -277,5 +332,50 @@ fn store_chunk_record(kademlia: &mut Kademlia<MemoryStore>, config: &TransportCo
 pub fn random_walk(kademlia: &mut Kademlia<MemoryStore>) {
     let mut random_bytes = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut random_bytes);
-    let _ = random_walk_with_key(kademlia, &random_bytes);
+    let _ = robust_random_walk_with_seed(kademlia, &random_bytes, 3);
+}
+
+/// Performs a robust random walk by issuing multiple Kademlia queries from a seed.
+pub fn robust_random_walk_with_seed(
+    kademlia: &mut Kademlia<MemoryStore>,
+    seed: &[u8],
+    steps: usize,
+) -> Vec<RecordKey> {
+    let steps = steps.max(1);
+    let mut record_keys = Vec::with_capacity(steps);
+    for step in 0..steps {
+        let mut material = Vec::with_capacity(seed.len() + 8);
+        material.extend_from_slice(seed);
+        material.extend_from_slice(&(step as u64).to_be_bytes());
+        let derived = hash_bytes(HashId::Sha256, &material);
+        let record_key = RecordKey::new(&derived);
+        let _ = kademlia.get_closest_peers(record_key.to_vec());
+        record_keys.push(record_key);
+    }
+    record_keys
+}
+
+/// Validates manifest structure by checking uniqueness of indices and hashes.
+fn validate_manifest(manifest: &ChunkManifest) -> Result<(), TransportError> {
+    if manifest.chunks.is_empty() && manifest.total_len > 0 {
+        return Err(TransportError::InvalidManifest(
+            "empty manifest for non-empty payload".to_string(),
+        ));
+    }
+    let mut indices = std::collections::HashSet::new();
+    let mut hashes = std::collections::HashSet::new();
+    for descriptor in &manifest.chunks {
+        if !indices.insert(descriptor.index) {
+            return Err(TransportError::InvalidManifest(format!(
+                "duplicate chunk index {}",
+                descriptor.index
+            )));
+        }
+        if !hashes.insert(descriptor.hash.clone()) {
+            return Err(TransportError::InvalidManifest(
+                "duplicate chunk hash".to_string(),
+            ));
+        }
+    }
+    Ok(())
 }

@@ -1,7 +1,7 @@
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use base64::Engine;
-use libp2p::kad::{record::Key as RecordKey, GetRecordOk, Kademlia, QueryId, Quorum};
 use libp2p::kad::store::MemoryStore;
+use libp2p::kad::{Behaviour as Kademlia, GetRecordOk, QueryId, RecordKey};
 use serde::{Deserialize, Serialize};
 
 use spex_core::hash::{hash_bytes, HashId};
@@ -41,16 +41,15 @@ pub fn start_inbox_scan(
     kademlia: &mut Kademlia<MemoryStore>,
     request: &InboxScanRequest,
 ) -> QueryId {
-    kademlia.get_record(request.record_key.clone(), Quorum::One)
+    kademlia.get_record(request.record_key.clone())
 }
 
 /// Collects inbox payloads returned from a successful Kademlia lookup.
 pub fn collect_inbox_items(result: GetRecordOk) -> InboxScanResponse {
-    let items = result
-        .records
-        .into_iter()
-        .map(|record| record.record.value)
-        .collect();
+    let items = match result {
+        GetRecordOk::FoundRecord(record) => vec![record.record.value],
+        GetRecordOk::FinishedWithNoAdditionalRecord { .. } => Vec::new(),
+    };
     InboxScanResponse {
         items,
         source: InboxSource::Kademlia,
@@ -97,9 +96,14 @@ struct BridgeInboxResponse {
 impl BridgeClient {
     /// Creates a new bridge client for the provided base URL.
     pub fn new(base_url: impl Into<String>) -> Self {
+        // Disables proxy usage to ensure local bridge calls stay on-loopback.
+        let client = reqwest::Client::builder()
+            .no_proxy()
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
         Self {
             base_url: base_url.into(),
-            client: reqwest::Client::new(),
+            client,
         }
     }
 

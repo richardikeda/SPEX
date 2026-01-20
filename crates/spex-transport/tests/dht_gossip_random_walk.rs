@@ -6,8 +6,9 @@ use spex_core::cbor::from_ctap2_canonical_slice;
 use spex_core::hash::{hash_bytes, HashId};
 use spex_core::types::{Ctap2Cbor, Envelope};
 use spex_transport::{
-    chunk_data, publish_payload, random_walk_with_key, reassemble_chunks, BuildTransport, Chunk,
-    ChunkManifest, ChunkingConfig, TransportConfig,
+    chunk_data, random_walk_with_key, reassemble_chunks, reassemble_chunks_with_manifest,
+    recover_manifest_from_gossip, robust_random_walk_with_seed, BuildTransport, Chunk,
+    ChunkManifest, ChunkingConfig, TransportConfig, TransportError,
 };
 
 fn build_envelope_payload() -> (Envelope, Vec<u8>) {
@@ -97,13 +98,34 @@ fn build_malicious_peers(count: usize) -> Vec<(PeerId, Multiaddr)> {
         .collect()
 }
 
+fn build_manifest_from_chunks(chunks: &[Chunk], total_len: usize) -> ChunkManifest {
+    // Builds a manifest from chunk descriptors without publishing to the network.
+    ChunkManifest {
+        chunks: chunks
+            .iter()
+            .map(|chunk| spex_transport::transport::ChunkDescriptor {
+                index: chunk.index,
+                hash: chunk.hash.clone(),
+            })
+            .collect(),
+        total_len,
+    }
+}
+
+fn build_malicious_manifest_payload(manifest: &ChunkManifest) -> Vec<u8> {
+    // Builds a manifest payload with a corrupted hash to simulate malicious gossip.
+    let mut corrupted = manifest.clone();
+    if let Some(first) = corrupted.chunks.first_mut() {
+        first.hash = hash_bytes(HashId::Sha256, b"malicious");
+    }
+    serde_json::to_vec(&corrupted).expect("manifest payload")
+}
+
 #[test]
 fn two_nodes_publish_retrieve_and_reassemble_from_dht_and_gossip() {
     // Publishes a fragmented payload, fetches it via DHT+gossip, deduplicates, and reassembles.
     let (envelope, payload) = build_envelope_payload();
 
-    let local_key = Keypair::generate_ed25519();
-    let mut publisher = BuildTransport::new(&local_key, &[]).expect("transport");
     let config = TransportConfig {
         chunking: ChunkingConfig {
             chunk_size: 8,
@@ -112,9 +134,8 @@ fn two_nodes_publish_retrieve_and_reassemble_from_dht_and_gossip() {
         ..TransportConfig::default()
     };
 
-    let manifest = publish_payload(&mut publisher, &config, &payload).expect("publish");
-
     let chunks = chunk_data(&config.chunking, &payload);
+    let manifest = build_manifest_from_chunks(&chunks, payload.len());
     let dht_store = build_dht_store(&chunks);
     let noisy_chunks = fetch_chunks_with_noise(&manifest, &dht_store);
     let ordered_chunks = reorder_and_dedupe_chunks(&manifest, &noisy_chunks);
@@ -127,6 +148,52 @@ fn two_nodes_publish_retrieve_and_reassemble_from_dht_and_gossip() {
     let decoded: Envelope =
         from_ctap2_canonical_slice(&reassembled).expect("reassembled envelope");
     assert_eq!(decoded, envelope);
+}
+
+#[test]
+fn recover_manifest_from_gossip_filters_malicious_payloads() {
+    // Recovers a valid manifest while ignoring malformed or malicious gossipsub payloads.
+    let (_envelope, payload) = build_envelope_payload();
+    let config = TransportConfig {
+        chunking: ChunkingConfig {
+            chunk_size: 8,
+            ..ChunkingConfig::default()
+        },
+        ..TransportConfig::default()
+    };
+
+    let chunks = chunk_data(&config.chunking, &payload);
+    let manifest = build_manifest_from_chunks(&chunks, payload.len());
+    let malicious_payload = build_malicious_manifest_payload(&manifest);
+    let invalid_payload = b"{not-valid-json}".to_vec();
+    let recovered = recover_manifest_from_gossip(&[
+        invalid_payload,
+        malicious_payload,
+        serde_json::to_vec(&manifest).expect("manifest payload"),
+    ])
+    .expect("recovered manifest");
+
+    assert_eq!(recovered.total_len, manifest.total_len);
+    assert_eq!(recovered.chunks.len(), manifest.chunks.len());
+}
+
+#[test]
+fn reassemble_chunks_with_manifest_rejects_malicious_chunk() {
+    // Ensures hash verification fails when a malicious chunk payload is provided.
+    let (_envelope, payload) = build_envelope_payload();
+    let config = TransportConfig::default();
+    let chunks = chunk_data(&config.chunking, &payload);
+    let mut malicious = chunks.clone();
+    malicious[0].data = b"tampered".to_vec();
+
+    let manifest = build_manifest_from_chunks(&chunks, payload.len());
+
+    let err =
+        reassemble_chunks_with_manifest(&manifest, &malicious, &config).expect_err("hash mismatch");
+    match err {
+        TransportError::ChunkHashMismatch(_) => {}
+        other => panic!("unexpected error: {other:?}"),
+    }
 }
 
 #[test]
@@ -150,4 +217,28 @@ fn random_walk_avoids_eclipse_from_malicious_peers() {
 
     assert_eq!(record_key, libp2p::kad::RecordKey::new(&honest_key));
     assert!(!malicious_keys.contains(record_key.as_ref()));
+}
+
+#[test]
+fn robust_random_walk_avoids_malicious_peer_ids() {
+    // Performs multiple random-walk steps and ensures derived keys avoid malicious peer IDs.
+    let local_key = Keypair::generate_ed25519();
+    let mut components = BuildTransport::new(&local_key, &[]).expect("transport");
+    let malicious = build_malicious_peers(3);
+    let malicious_keys: HashSet<Vec<u8>> = malicious
+        .iter()
+        .map(|(peer_id, _)| peer_id.to_bytes())
+        .collect();
+
+    for (peer_id, addr) in malicious {
+        components.kademlia.add_address(&peer_id, addr);
+    }
+
+    let seed = b"robust-walk-seed";
+    let record_keys = robust_random_walk_with_seed(&mut components.kademlia, seed, 3);
+
+    assert_eq!(record_keys.len(), 3);
+    for key in record_keys {
+        assert!(!malicious_keys.contains(key.as_ref()));
+    }
 }
