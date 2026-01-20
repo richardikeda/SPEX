@@ -3,7 +3,7 @@ use serde::Serialize;
 
 use crate::{cbor, error::SpexError, types::Ctap2Cbor};
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HashId {
     Sha256 = 1,
     #[cfg(feature = "blake3_hash")]

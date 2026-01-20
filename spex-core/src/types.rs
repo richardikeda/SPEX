@@ -2,7 +2,7 @@ use crate::{cbor, error::SpexError};
 use serde_cbor::Value;
 use std::collections::BTreeMap;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ProtoSuite {
     pub major: u16,
     pub minor: u16,

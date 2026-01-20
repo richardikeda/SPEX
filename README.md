@@ -19,7 +19,7 @@ criptografia de ponta a ponta, auditabilidade e integridade dos dados.
 
 Implementação inicial em andamento com os seguintes componentes:
 - **spex-core**: tipos, CBOR canonical (CTAP2), hashes, assinatura e provas de trabalho.
-- **spex-mls**: suporte MLS (mls-rs) com criação de grupos, commits, distribuição de secrets, cifragem/decifragem e APIs para `cfg_hash` e extensões MLS integradas ao handshake.
+- **spex-mls**: integração MLS (mls-rs) com APIs `MlsRsClient`/`MlsRsGroup` para criação de grupos, commits (add/remove) e validação de `cfg_hash`/`proto_suite`, além de suporte simplificado de secrets, cifragem/decifragem e extensões MLS integradas ao handshake.
 - **spex-transport**: chunking por hash, publicação/replicação DHT/Kademlia (incluindo replicação passiva e renovação de TTL), gossip com recebimento de manifestos, recuperação de chunks e reconstrução de envelopes, além de random walks e inbox scanning derivado de `inbox_scan_key` com fallback via bridge HTTP.
     - **spex-bridge**: bridge HTTP com armazenamento SQLite (cards/slots), validações básicas, rate limiting por identidade, ajuste dinâmico de dificuldade PoW e logs de abuso com timestamp/IP/slot.
 - **spex-cli**: CLI de referência para identidades, cartões, puzzles PoW em requests, grants assinados, rotação/revogação de chaves e envio de mensagens MLS + AEAD com publicação fragmentada.

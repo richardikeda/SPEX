@@ -1,5 +1,14 @@
 use std::fmt;
 
+use mls_rs::{
+    client_builder::{BaseConfig, IntoConfigOutput, WithCryptoProvider, WithIdentityProvider},
+    identity::basic::{BasicCredential, BasicIdentityProvider},
+    identity::SigningIdentity,
+    CipherSuite, CipherSuiteProvider, Client, CryptoProvider, Extension, ExtensionList,
+    Group as MlsRsGroupState, MlsMessage, ProtocolVersion,
+};
+use mls_rs::extension::ExtensionType;
+use mls_rs_crypto_rustcrypto::RustCryptoProvider;
 use spex_core::{
     error::SpexError,
     hash::{hash_bytes, hash_ctap2_cbor_value, HashId},
@@ -374,7 +383,7 @@ pub enum ValidationError {
     ProtoSuiteMismatch,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Debug)]
 pub enum MlsError {
     UnsupportedHashId(u16),
     Validation(ValidationError),
@@ -494,4 +503,294 @@ fn xor_with_keystream(payload: &[u8], keystream: &[u8]) -> Vec<u8> {
         .zip(keystream.iter())
         .map(|(byte, key)| byte ^ key)
         .collect()
+}
+
+type MlsRsConfig = IntoConfigOutput<WithIdentityProvider<
+    BasicIdentityProvider,
+    WithCryptoProvider<RustCryptoProvider, BaseConfig>,
+>>;
+
+/// Defines the MLS extension type for the SPEX proto suite metadata.
+const SPEX_PROTO_SUITE_EXTENSION: ExtensionType = ExtensionType::new(mls_ext::EXT_SPEX_PROTO_SUITE);
+/// Defines the MLS extension type for the SPEX cfg_hash metadata.
+const SPEX_CFG_HASH_EXTENSION: ExtensionType = ExtensionType::new(mls_ext::EXT_SPEX_CFG_HASH);
+
+/// Represents failures when integrating with the MLS-rs implementation.
+#[derive(Debug)]
+pub enum MlsRsError {
+    UnsupportedProtocolVersion { major: u16, minor: u16 },
+    UnsupportedCipherSuite(u16),
+    UnsupportedCfgHashId(u16),
+    InvalidExtension(&'static str),
+    UnknownMember,
+    Validation(ValidationError),
+    LibraryError(String),
+}
+
+impl fmt::Display for MlsRsError {
+    /// Formats MLS-rs integration errors for display.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::UnsupportedProtocolVersion { major, minor } => {
+                write!(f, "unsupported protocol version {major}.{minor}")
+            }
+            Self::UnsupportedCipherSuite(value) => write!(f, "unsupported cipher suite: {value}"),
+            Self::UnsupportedCfgHashId(value) => write!(f, "unsupported cfg_hash id: {value}"),
+            Self::InvalidExtension(reason) => write!(f, "invalid MLS extension: {reason}"),
+            Self::UnknownMember => write!(f, "unknown MLS member"),
+            Self::Validation(err) => write!(f, "validation error: {err:?}"),
+            Self::LibraryError(err) => write!(f, "mls-rs error: {err}"),
+        }
+    }
+}
+
+impl std::error::Error for MlsRsError {}
+
+impl From<mls_rs::error::MlsError> for MlsRsError {
+    /// Wraps an MLS-rs error in a local integration error.
+    fn from(err: mls_rs::error::MlsError) -> Self {
+        Self::LibraryError(err.to_string())
+    }
+}
+
+/// Stores a configured MLS-rs client for SPEX operations.
+#[derive(Clone)]
+pub struct MlsRsClient {
+    client: Client<MlsRsConfig>,
+    proto_suite: ProtoSuite,
+}
+
+impl MlsRsClient {
+    /// Creates a new MLS-rs client using the provided SPEX protocol suite and identity.
+    pub fn new(proto_suite: ProtoSuite, identity: Vec<u8>) -> Result<Self, MlsRsError> {
+        let crypto = RustCryptoProvider::default();
+        let cipher_suite = cipher_suite_from_proto_suite(proto_suite, &crypto)?;
+        let protocol_version = protocol_version_from_proto_suite(proto_suite)?;
+        let cipher_suite_provider = crypto
+            .cipher_suite_provider(cipher_suite)
+            .ok_or(MlsRsError::UnsupportedCipherSuite(proto_suite.ciphersuite_id))?;
+        let (secret_key, public_key) = cipher_suite_provider
+            .signature_key_generate()
+            .map_err(|err| MlsRsError::LibraryError(format!("{err:?}")))?;
+        let credential = BasicCredential::new(identity).into_credential();
+        let signing_identity = SigningIdentity::new(credential, public_key);
+
+        let client = Client::builder()
+            .crypto_provider(crypto)
+            .identity_provider(BasicIdentityProvider::new())
+            .extension_types([SPEX_PROTO_SUITE_EXTENSION, SPEX_CFG_HASH_EXTENSION])
+            .used_protocol_version(protocol_version)
+            .signing_identity(signing_identity, secret_key, cipher_suite)
+            .build();
+
+        Ok(Self { client, proto_suite })
+    }
+
+    /// Generates a key package message that can be used to add this client to a group.
+    pub fn key_package_message(&self) -> Result<MlsMessage, MlsRsError> {
+        Ok(self
+            .client
+            .generate_key_package_message(ExtensionList::new(), ExtensionList::new(), None)?)
+    }
+
+    /// Creates a new MLS group with SPEX extensions populated from the provided configuration.
+    pub fn create_group(&self, config: GroupConfig) -> Result<MlsRsGroup, MlsRsError> {
+        validate_cfg_hash_id(config.cfg_hash_id)?;
+        if config.proto_suite != self.proto_suite {
+            return Err(MlsRsError::Validation(ValidationError::ProtoSuiteMismatch));
+        }
+        let group_context_extensions = build_group_context_extensions(&config)?;
+        let group = self
+            .client
+            .create_group(group_context_extensions, ExtensionList::new(), None)?;
+
+        Ok(MlsRsGroup {
+            group,
+            config,
+        })
+    }
+}
+
+/// Wraps an MLS-rs group and exposes SPEX-specific helpers.
+pub struct MlsRsGroup {
+    group: MlsRsGroupState<MlsRsConfig>,
+    config: GroupConfig,
+}
+
+impl MlsRsGroup {
+    /// Adds a member to the MLS group using the provided client key package.
+    pub fn add_member(&mut self, member: &MlsRsClient) -> Result<mls_rs::group::CommitOutput, MlsRsError> {
+        let key_package = member.key_package_message()?;
+        let commit = self.group.commit_builder().add_member(key_package)?.build()?;
+        self.group.apply_pending_commit()?;
+        Ok(commit)
+    }
+
+    /// Removes a member identified by their basic credential identifier.
+    pub fn remove_member_by_identity(&mut self, identity: &[u8]) -> Result<mls_rs::group::CommitOutput, MlsRsError> {
+        let member_index = self.member_index_by_identity(identity).ok_or(MlsRsError::UnknownMember)?;
+        let commit = self.group.commit_builder().remove_member(member_index)?.build()?;
+        self.group.apply_pending_commit()?;
+        Ok(commit)
+    }
+
+    /// Returns the current MLS epoch.
+    pub fn epoch(&self) -> u64 {
+        self.group.current_epoch()
+    }
+
+    /// Returns the roster of member identifiers in the group.
+    pub fn member_identities(&self) -> Vec<Vec<u8>> {
+        self.group
+            .roster()
+            .members_iter()
+            .filter_map(|member| member.signing_identity.credential.as_basic().map(|basic| basic.identifier.clone()))
+            .collect()
+    }
+
+    /// Validates that the MLS group context extensions match the configured cfg_hash and proto suite.
+    pub fn validate_cfg_hash_proto_suite(&self) -> Result<(), MlsRsError> {
+        validate_group_context_extensions(self.group.context(), &self.config)
+    }
+
+    /// Looks up the member index for a given identifier.
+    fn member_index_by_identity(&self, identity: &[u8]) -> Option<u32> {
+        self.group
+            .roster()
+            .members_iter()
+            .find_map(|member| {
+                member
+                    .signing_identity
+                    .credential
+                    .as_basic()
+                    .and_then(|basic| (basic.identifier == identity).then_some(member.index))
+            })
+    }
+}
+
+/// Builds MLS group context extensions for SPEX metadata.
+fn build_group_context_extensions(config: &GroupConfig) -> Result<ExtensionList, MlsRsError> {
+    if config.cfg_hash.len() > 255 {
+        return Err(MlsRsError::InvalidExtension("cfg_hash length exceeds 255 bytes"));
+    }
+    let proto_extension = mls_ext::ext_proto_suite_bytes(
+        config.proto_suite.major,
+        config.proto_suite.minor,
+        config.proto_suite.ciphersuite_id,
+        config.flags,
+    );
+    let cfg_extension = mls_ext::ext_cfg_hash_bytes(config.cfg_hash_id, &config.cfg_hash);
+    let proto_data = strip_extension_data(&proto_extension, mls_ext::EXT_SPEX_PROTO_SUITE)?;
+    let cfg_data = strip_extension_data(&cfg_extension, mls_ext::EXT_SPEX_CFG_HASH)?;
+
+    let mut list = ExtensionList::new();
+    list.set(Extension::new(SPEX_PROTO_SUITE_EXTENSION, proto_data));
+    list.set(Extension::new(SPEX_CFG_HASH_EXTENSION, cfg_data));
+    Ok(list)
+}
+
+/// Extracts extension payload data from a serialized SPEX extension.
+fn strip_extension_data(raw: &[u8], expected_type: u16) -> Result<Vec<u8>, MlsRsError> {
+    if raw.len() < 4 {
+        return Err(MlsRsError::InvalidExtension("extension payload is too short"));
+    }
+    let ext_type = u16::from_be_bytes([raw[0], raw[1]]);
+    if ext_type != expected_type {
+        return Err(MlsRsError::InvalidExtension("extension type mismatch"));
+    }
+    let length = u16::from_be_bytes([raw[2], raw[3]]) as usize;
+    if raw.len() != 4 + length {
+        return Err(MlsRsError::InvalidExtension("extension length mismatch"));
+    }
+    Ok(raw[4..].to_vec())
+}
+
+/// Parses a SPEX proto suite extension payload into a ProtoSuite value and flags.
+fn parse_proto_suite_extension(data: &[u8]) -> Result<(ProtoSuite, u8), MlsRsError> {
+    if data.len() != 7 {
+        return Err(MlsRsError::InvalidExtension("proto suite extension length mismatch"));
+    }
+    let major = u16::from_be_bytes([data[0], data[1]]);
+    let minor = u16::from_be_bytes([data[2], data[3]]);
+    let ciphersuite_id = u16::from_be_bytes([data[4], data[5]]);
+    let flags = data[6];
+    Ok((
+        ProtoSuite {
+            major,
+            minor,
+            ciphersuite_id,
+        },
+        flags,
+    ))
+}
+
+/// Parses a SPEX cfg_hash extension payload into a hash id and cfg hash bytes.
+fn parse_cfg_hash_extension(data: &[u8]) -> Result<(u16, Vec<u8>), MlsRsError> {
+    if data.len() < 3 {
+        return Err(MlsRsError::InvalidExtension("cfg_hash extension is too short"));
+    }
+    let hash_id = u16::from_be_bytes([data[0], data[1]]);
+    let length = data[2] as usize;
+    if data.len() != 3 + length {
+        return Err(MlsRsError::InvalidExtension("cfg_hash extension length mismatch"));
+    }
+    Ok((hash_id, data[3..].to_vec()))
+}
+
+/// Validates cfg_hash/proto_suite in the MLS group context extensions.
+fn validate_group_context_extensions(
+    context: &mls_rs::group::GroupContext,
+    config: &GroupConfig,
+) -> Result<(), MlsRsError> {
+    let extensions = context.extensions();
+    let proto_ext = extensions
+        .get(SPEX_PROTO_SUITE_EXTENSION)
+        .ok_or(MlsRsError::InvalidExtension("missing proto suite extension"))?;
+    let cfg_ext = extensions
+        .get(SPEX_CFG_HASH_EXTENSION)
+        .ok_or(MlsRsError::InvalidExtension("missing cfg_hash extension"))?;
+
+    let (proto_suite, flags) = parse_proto_suite_extension(&proto_ext.extension_data)?;
+    if proto_suite != config.proto_suite || flags != config.flags {
+        return Err(MlsRsError::Validation(ValidationError::ProtoSuiteMismatch));
+    }
+
+    let (hash_id, cfg_hash) = parse_cfg_hash_extension(&cfg_ext.extension_data)?;
+    if hash_id != config.cfg_hash_id || cfg_hash != config.cfg_hash {
+        return Err(MlsRsError::Validation(ValidationError::CfgHashMismatch));
+    }
+
+    Ok(())
+}
+
+/// Validates that the configured hash identifier is supported.
+fn validate_cfg_hash_id(cfg_hash_id: u16) -> Result<(), MlsRsError> {
+    match hash_id_from_u16(cfg_hash_id) {
+        Ok(_) => Ok(()),
+        Err(_) => Err(MlsRsError::UnsupportedCfgHashId(cfg_hash_id)),
+    }
+}
+
+/// Converts a SPEX protocol suite into an MLS protocol version.
+fn protocol_version_from_proto_suite(proto_suite: ProtoSuite) -> Result<ProtocolVersion, MlsRsError> {
+    match (proto_suite.major, proto_suite.minor) {
+        (0, 1) => Ok(ProtocolVersion::MLS_10),
+        _ => Err(MlsRsError::UnsupportedProtocolVersion {
+            major: proto_suite.major,
+            minor: proto_suite.minor,
+        }),
+    }
+}
+
+/// Converts a SPEX protocol suite into a supported MLS cipher suite.
+fn cipher_suite_from_proto_suite(
+    proto_suite: ProtoSuite,
+    crypto: &RustCryptoProvider,
+) -> Result<CipherSuite, MlsRsError> {
+    let cipher_suite = CipherSuite::new(proto_suite.ciphersuite_id);
+    if crypto.supported_cipher_suites().contains(&cipher_suite) {
+        Ok(cipher_suite)
+    } else {
+        Err(MlsRsError::UnsupportedCipherSuite(proto_suite.ciphersuite_id))
+    }
 }
