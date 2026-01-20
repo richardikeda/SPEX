@@ -2,7 +2,7 @@ use axum::{
     extract::{ConnectInfo, Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
-    routing::{get, put},
+    routing::put,
     Json, Router,
 };
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
@@ -81,6 +81,7 @@ struct RateLimitSnapshot {
 enum RequestKind {
     Card,
     Slot,
+    Inbox,
 }
 
 impl RequestKind {
@@ -89,6 +90,7 @@ impl RequestKind {
         match self {
             RequestKind::Card => "card",
             RequestKind::Slot => "slot",
+            RequestKind::Inbox => "inbox",
         }
     }
 }
@@ -115,6 +117,14 @@ struct StorageRequest {
     data: String,
     grant: GrantTokenPayload,
     puzzle: PuzzlePayload,
+}
+
+#[derive(Debug, Deserialize)]
+struct InboxStoreRequest {
+    data: String,
+    grant: GrantTokenPayload,
+    puzzle: PuzzlePayload,
+    ttl_seconds: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -217,7 +227,7 @@ pub fn app(state: AppState) -> Router {
     Router::new()
         .route("/cards/:card_hash", put(put_card).get(get_card))
         .route("/slot/:slot_id", put(put_slot).get(get_slot))
-        .route("/inbox/:key", get(get_inbox))
+        .route("/inbox/:key", put(put_inbox).get(get_inbox))
         .with_state(state)
 }
 
@@ -331,7 +341,7 @@ async fn put_card(
     let minimum_pow = required_pow_params(&snapshot, &state.limits);
     let result = (|| -> Result<(), BridgeError> {
         enforce_rate_limits(&snapshot, &state.limits, data_len)?;
-        validate_storage_request(&state, &payload, &minimum_pow, true)?;
+        validate_grant_and_puzzle(&state, &payload.grant, &payload.puzzle, &minimum_pow, true)?;
         validate_hash(&card_hash, &data)?;
         Ok(())
     })();
@@ -421,7 +431,7 @@ async fn put_slot(
     let minimum_pow = required_pow_params(&snapshot, &state.limits);
     let result = (|| -> Result<(), BridgeError> {
         enforce_rate_limits(&snapshot, &state.limits, data_len)?;
-        validate_storage_request(&state, &payload, &minimum_pow, false)?;
+        validate_grant_and_puzzle(&state, &payload.grant, &payload.puzzle, &minimum_pow, false)?;
         validate_hash(&slot_id, &data)?;
         Ok(())
     })();
@@ -474,6 +484,61 @@ async fn get_slot(
     }))
 }
 
+/// Stores an inbox envelope for a given inbox key with a bounded time-to-live.
+async fn put_inbox(
+    State(state): State<AppState>,
+    Path(inbox_key): Path<String>,
+    connect_info: Option<ConnectInfo<SocketAddr>>,
+    Json(payload): Json<InboxStoreRequest>,
+) -> Result<StatusCode, BridgeError> {
+    let data = decode_base64(&payload.data)?;
+    let data_len = data.len();
+    let identity = identity_from_grant(&payload.grant)?;
+    let now = state.clock.now();
+    let ip = extract_ip(connect_info);
+    let snapshot = load_rate_limit_snapshot(&state.db_path, &identity, now, state.limits).await?;
+    let minimum_pow = required_pow_params(&snapshot, &state.limits);
+    let result = (|| -> Result<u64, BridgeError> {
+        enforce_rate_limits(&snapshot, &state.limits, data_len)?;
+        validate_grant_and_puzzle(&state, &payload.grant, &payload.puzzle, &minimum_pow, true)?;
+        compute_inbox_expiration(now, payload.ttl_seconds)
+    })();
+
+    match result {
+        Ok(expires_at) => {
+            store_inbox_item(&state.db_path, &inbox_key, data, expires_at).await?;
+            record_request_log(
+                &state.db_path,
+                now,
+                &identity,
+                &ip,
+                None,
+                data_len,
+                RequestKind::Inbox,
+                RequestOutcome::Accepted,
+            )
+            .await?;
+            update_reputation(&state.db_path, &identity, RequestOutcome::Accepted).await?;
+            Ok(StatusCode::NO_CONTENT)
+        }
+        Err(err) => {
+            record_request_log(
+                &state.db_path,
+                now,
+                &identity,
+                &ip,
+                None,
+                data_len,
+                RequestKind::Inbox,
+                RequestOutcome::Rejected,
+            )
+            .await?;
+            update_reputation(&state.db_path, &identity, RequestOutcome::Rejected).await?;
+            Err(err)
+        }
+    }
+}
+
 /// Returns inbox items for the provided inbox scan key.
 async fn get_inbox(
     State(state): State<AppState>,
@@ -503,17 +568,18 @@ async fn get_inbox(
     }))
 }
 
-/// Validates puzzle information and optionally enforces grant validation before persistence.
-fn validate_storage_request(
+/// Validates grant and puzzle data before persistence.
+fn validate_grant_and_puzzle(
     state: &AppState,
-    payload: &StorageRequest,
+    grant: &GrantTokenPayload,
+    puzzle: &PuzzlePayload,
     minimum_pow: &PowParams,
     validate_grant_token: bool,
 ) -> Result<(), BridgeError> {
     if validate_grant_token {
-        validate_grant(state.clock.now(), &payload.grant)?;
+        validate_grant(state.clock.now(), grant)?;
     }
-    validate_puzzle(&payload.puzzle, minimum_pow)?;
+    validate_puzzle(puzzle, minimum_pow)?;
     Ok(())
 }
 
@@ -819,6 +885,8 @@ async fn load_entry(
 
 const DEFAULT_INBOX_PAGE_LIMIT: usize = 100;
 const MAX_INBOX_PAGE_LIMIT: usize = 500;
+const DEFAULT_INBOX_TTL_SECONDS: u64 = 86_400;
+const MAX_INBOX_TTL_SECONDS: u64 = 604_800;
 
 /// Normalizes the inbox page size to a safe default and maximum cap.
 fn normalize_inbox_limit(limit: Option<usize>) -> usize {
@@ -891,6 +959,42 @@ async fn load_inbox_items(
         }
         let next_cursor = if has_more { last_id } else { None };
         Ok(Some(InboxPage { items, next_cursor }))
+    })
+    .await
+    .map_err(|err| BridgeError::Storage(err.to_string()))?
+    .map_err(|err: rusqlite::Error| BridgeError::Storage(err.to_string()))
+}
+
+/// Calculates the expiration timestamp for an inbox item from a requested TTL.
+fn compute_inbox_expiration(now: u64, ttl_seconds: Option<u64>) -> Result<u64, BridgeError> {
+    let ttl = ttl_seconds.unwrap_or(DEFAULT_INBOX_TTL_SECONDS);
+    if ttl == 0 || ttl > MAX_INBOX_TTL_SECONDS {
+        return Err(BridgeError::InvalidRequest("invalid inbox ttl".to_string()));
+    }
+    now.checked_add(ttl)
+        .ok_or_else(|| BridgeError::InvalidRequest("invalid inbox ttl".to_string()))
+}
+
+/// Persists an inbox item and ensures the inbox key exists.
+async fn store_inbox_item(
+    db_path: &PathBuf,
+    inbox_key: &str,
+    item: Vec<u8>,
+    expires_at: u64,
+) -> Result<(), BridgeError> {
+    let db_path = db_path.clone();
+    let inbox_key = inbox_key.to_string();
+    task::spawn_blocking(move || {
+        let conn = Connection::open(db_path)?;
+        conn.execute(
+            "INSERT OR IGNORE INTO inbox_keys (inbox_key) VALUES (?1)",
+            params![inbox_key],
+        )?;
+        conn.execute(
+            "INSERT INTO inbox_items (inbox_key, item, expires_at) VALUES (?1, ?2, ?3)",
+            params![inbox_key, item, expires_at as i64],
+        )?;
+        Ok::<(), rusqlite::Error>(())
     })
     .await
     .map_err(|err| BridgeError::Storage(err.to_string()))?

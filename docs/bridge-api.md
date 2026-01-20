@@ -20,6 +20,7 @@ validação para payloads, PoW e grants.
 | `GET` | `/cards/:card_hash` | Recupera um `ContactCard` por hash. |
 | `PUT` | `/slot/:slot_id` | Armazena blob genérico por hash. |
 | `GET` | `/slot/:slot_id` | Recupera blob armazenado. |
+| `PUT` | `/inbox/:key` | Armazena envelope para inbox scanning. |
 | `GET` | `/inbox/:key` | Lista envelopes para inbox scanning. |
 
 ## PUT /cards/:card_hash
@@ -156,6 +157,58 @@ GET /slot/<SHA256_HEX> HTTP/1.1
 
 - `200 OK`: payload encontrado.
 - `404 Not Found`: slot não existe.
+- `500 Internal Server Error`: falha de armazenamento.
+
+## PUT /inbox/:key
+
+Armazena um envelope (CBOR base64) associado ao `inbox_key`. O payload segue o mesmo formato de
+`/cards` e `/slot`, com um campo adicional para definir expiração.
+
+**Requisitos**
+
+- `grant` válido e não expirado.
+- `puzzle` válido para o `recipient_key` informado.
+- `ttl_seconds` deve estar entre 1s e 604.800s (padrão 86.400s).
+
+**Request**
+
+```http
+PUT /inbox/<HEX_KEY> HTTP/1.1
+Content-Type: application/json
+```
+
+```json
+{
+  "data": "<BASE64_ENVELOPE>",
+  "grant": {
+    "user_id": "<BASE64_USER_ID>",
+    "role": 1,
+    "flags": 0,
+    "expires_at": 1700003600,
+    "verifying_key": "<BASE64_ED25519_PUBLIC_KEY>",
+    "signature": "<BASE64_ED25519_SIGNATURE>"
+  },
+  "puzzle": {
+    "recipient_key": "<BASE64>",
+    "puzzle_input": "<BASE64>",
+    "puzzle_output": "<BASE64>",
+    "params": {
+      "memory_kib": 4096,
+      "iterations": 3,
+      "parallelism": 1,
+      "output_len": 32
+    }
+  },
+  "ttl_seconds": 3600
+}
+```
+
+**Status codes**
+
+- `204 No Content`: armazenamento concluído.
+- `400 Bad Request`: payload inválido.
+- `401 Unauthorized`: puzzle inválido ou grant expirado.
+- `429 Too Many Requests`: limites de mensagens ou bytes excedidos.
 - `500 Internal Server Error`: falha de armazenamento.
 
 ## GET /inbox/:key
