@@ -35,7 +35,7 @@ fn tv3_group_context_commit_rebuilds_extensions() {
         ciphersuite_id: 2,
     };
     let initial_cfg_hash = vec![0xAA; 32];
-    let config = GroupConfig::new(initial_suite, 1, 2, initial_cfg_hash);
+    let config = GroupConfig::new(initial_suite, 1, 1, initial_cfg_hash);
     let mut group = Group::create(config).expect("group");
 
     let proto_suite = ProtoSuite {
@@ -50,8 +50,10 @@ fn tv3_group_context_commit_rebuilds_extensions() {
     commit.cfg_hash_id = Some(1);
     commit.cfg_hash = Some(cfg_hash);
 
-    let context = group.apply_commit(commit).expect("commit");
-    let extensions = context.extensions();
+    let extensions = {
+        let context = group.apply_commit(commit).expect("commit");
+        context.extensions().to_vec()
+    };
 
     assert_eq!(group.epoch(), 1);
     assert_eq!(extensions.len(), 2);

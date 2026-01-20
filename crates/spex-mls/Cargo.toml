@@ -5,7 +5,8 @@ edition = "2021"
 license = "Apache-2.0 OR MIT"
 
 [dependencies]
-mls-rs = "0.5"
+mls-rs = "0.51"
+mls-rs-crypto-rustcrypto = "0.19"
 spex-core = { path = "../../spex-core" }
 
 [dev-dependencies]

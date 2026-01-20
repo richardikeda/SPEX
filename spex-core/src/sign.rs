@@ -4,7 +4,7 @@ use crate::{
     hash::{hash_bytes, HashId},
     types::Ctap2Cbor,
 };
-use ed25519_dalek::{Signature, SigningKey, VerifyingKey, SECRET_KEY_LENGTH};
+use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey, SECRET_KEY_LENGTH};
 use serde::Serialize;
 
 /// Create an Ed25519 SigningKey from a 32-byte seed (test vectors use this).

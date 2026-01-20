@@ -116,7 +116,11 @@ fn encode_value(value: &Value, output: &mut Vec<u8>) -> Result<(), SpexError> {
             encode_value(tagged, output)?;
         }
         Value::Float(float) => encode_float(*float, output),
-        Value::Simple(simple) => encode_simple(*simple, output)?,
+        Value::__Hidden => {
+            return Err(SpexError::InvalidInput(
+                "unsupported CBOR value variant".to_string(),
+            ))
+        }
     }
     Ok(())
 }
@@ -155,17 +159,6 @@ fn encode_u64(major: u8, value: u64, output: &mut Vec<u8>) -> Result<(), SpexErr
         _ => {
             output.push(major | 27);
             output.extend_from_slice(&value.to_be_bytes());
-        }
-    }
-    Ok(())
-}
-
-fn encode_simple(simple: u8, output: &mut Vec<u8>) -> Result<(), SpexError> {
-    match simple {
-        0..=23 => output.push(MAJOR_SIMPLE | simple),
-        24..=0xff => {
-            output.push(MAJOR_SIMPLE | 24);
-            output.push(simple);
         }
     }
     Ok(())
