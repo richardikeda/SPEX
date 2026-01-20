@@ -46,8 +46,9 @@ Esse fluxo estabelece autorização mínima antes de criar grupos MLS ou publica
 ## Persistência local
 
 O CLI persiste chaves, contatos e threads em `~/.spex/state.json` (ou `SPEX_STATE_PATH`).
-Esse arquivo deve ser protegido com permissões restritas e, quando possível, armazenado em
-volume criptografado.
+O arquivo é criptografado com uma chave no keychain do SO; quando o keychain não está disponível,
+defina `SPEX_STATE_PASSPHRASE` para manter o estado protegido (o cliente não salva o arquivo sem
+proteção).
 
 ## Fingerprints
 

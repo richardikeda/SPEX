@@ -128,8 +128,10 @@ retornam `BridgeError` em falhas de inicialização.
 ### Persistência local e fingerprints
 
 O `spex-cli` persiste chaves, contatos e threads em `~/.spex/state.json` (ou no caminho definido por
-`SPEX_STATE_PATH`). Ao resgatar um cartão, o CLI imprime o fingerprint da chave pública e alerta em
-caso de mudança de chave para um contato já conhecido.
+`SPEX_STATE_PATH`). O arquivo é criptografado com chave armazenada no keychain do SO; se não houver
+keychain disponível, defina `SPEX_STATE_PASSPHRASE` para usar uma passphrase (o CLI se recusa a
+salvar o estado sem proteção). Ao resgatar um cartão, o CLI imprime o fingerprint da chave pública e
+alerta em caso de mudança de chave para um contato já conhecido.
 
 ## Checkpoints, recovery e revogação de chaves
 

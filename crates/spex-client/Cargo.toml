@@ -8,7 +8,9 @@ base64 = "0.21"
 chacha20poly1305 = "0.10"
 dirs = "5.0"
 ed25519-dalek = "2.1"
+argon2 = "0.5"
 hex = "0.4"
+keyring = "2.0"
 rand = "0.8"
 serde = { version = "1.0", features = ["derive"] }
 serde_cbor = "0.11"
@@ -21,4 +23,5 @@ spex-transport = { path = "../spex-transport" }
 
 [dev-dependencies]
 axum = { version = "0.7", features = ["macros"] }
+tempfile = "3.10"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
