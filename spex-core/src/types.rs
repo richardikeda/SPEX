@@ -1,6 +1,9 @@
 use crate::{cbor, error::SpexError};
+use serde::de::{self, MapAccess, Visitor};
+use serde::{Deserialize, Deserializer};
 use serde_cbor::Value;
 use std::collections::BTreeMap;
+use std::fmt;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ProtoSuite {
@@ -147,6 +150,69 @@ pub struct Envelope {
     pub extensions: BTreeMap<u64, Value>,
 }
 
+impl<'de> Deserialize<'de> for Envelope {
+    /// Deserializes a CTAP2 canonical CBOR map into an Envelope.
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_map(EnvelopeVisitor)
+    }
+}
+
+struct EnvelopeVisitor;
+
+impl<'de> Visitor<'de> for EnvelopeVisitor {
+    type Value = Envelope;
+
+    /// Describes the expected CBOR map structure for an Envelope.
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("a CBOR map with integer keys for Envelope fields")
+    }
+
+    /// Parses the CBOR map entries and builds an Envelope value.
+    fn visit_map<M>(self, mut map: M) -> Result<Envelope, M::Error>
+    where
+        M: MapAccess<'de>,
+    {
+        let mut thread_id = None;
+        let mut epoch = None;
+        let mut seq = None;
+        let mut sender_user_id = None;
+        let mut ciphertext = None;
+        let mut signature = None;
+        let mut extensions = BTreeMap::new();
+
+        while let Some(key) = map.next_key::<i128>()? {
+            let value: Value = map.next_value()?;
+            match key {
+                0 => thread_id = Some(value_as_bytes(value, "thread_id")?),
+                1 => epoch = Some(value_as_u32(value, "epoch")?),
+                2 => seq = Some(value_as_u64(value, "seq")?),
+                3 => sender_user_id = Some(value_as_bytes(value, "sender_user_id")?),
+                4 => ciphertext = Some(value_as_bytes(value, "ciphertext")?),
+                5 => signature = Some(value_as_bytes(value, "signature")?),
+                key if key >= 0 => {
+                    extensions.insert(key as u64, value);
+                }
+                _ => {
+                    return Err(de::Error::custom("negative extension key"));
+                }
+            }
+        }
+
+        Ok(Envelope {
+            thread_id: thread_id.ok_or_else(|| de::Error::missing_field("thread_id"))?,
+            epoch: epoch.ok_or_else(|| de::Error::missing_field("epoch"))?,
+            seq: seq.ok_or_else(|| de::Error::missing_field("seq"))?,
+            sender_user_id: sender_user_id.ok_or_else(|| de::Error::missing_field("sender_user_id"))?,
+            ciphertext: ciphertext.ok_or_else(|| de::Error::missing_field("ciphertext"))?,
+            signature,
+            extensions,
+        })
+    }
+}
+
 impl Ctap2Cbor for Envelope {
     fn to_cbor_value(&self) -> Value {
         let mut map = BTreeMap::new();
@@ -162,6 +228,33 @@ impl Ctap2Cbor for Envelope {
             map.insert(Value::Integer(*key as i128), value.clone());
         }
         Value::Map(map.into_iter().collect())
+    }
+}
+
+/// Reads a CBOR byte string for an Envelope field.
+fn value_as_bytes<E: de::Error>(value: Value, field: &str) -> Result<Vec<u8>, E> {
+    match value {
+        Value::Bytes(bytes) => Ok(bytes),
+        _ => Err(de::Error::custom(format!(
+            "invalid {field} field (expected bytes)"
+        ))),
+    }
+}
+
+/// Reads a CBOR integer for an Envelope field and converts it to u32.
+fn value_as_u32<E: de::Error>(value: Value, field: &str) -> Result<u32, E> {
+    let raw = value_as_u64(value, field)?;
+    u32::try_from(raw).map_err(|_| de::Error::custom(format!("invalid {field} field range")))
+}
+
+/// Reads a CBOR integer for an Envelope field and converts it to u64.
+fn value_as_u64<E: de::Error>(value: Value, field: &str) -> Result<u64, E> {
+    match value {
+        Value::Integer(value) if value >= 0 => u64::try_from(value)
+            .map_err(|_| de::Error::custom(format!("invalid {field} field range"))),
+        _ => Err(de::Error::custom(format!(
+            "invalid {field} field (expected unsigned integer)"
+        ))),
     }
 }
 

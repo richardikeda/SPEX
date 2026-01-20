@@ -20,6 +20,10 @@ pub enum TransportError {
     MissingChunk(String),
     #[error("chunk hash mismatch for index {0}")]
     ChunkHashMismatch(usize),
+    #[error("chunk index mismatch (expected {expected}, got {actual})")]
+    ChunkIndexMismatch { expected: usize, actual: usize },
+    #[error("invalid manifest: {0}")]
+    InvalidManifest(String),
     #[error("payload length mismatch (expected {expected}, got {actual})")]
     PayloadLengthMismatch { expected: usize, actual: usize },
 }

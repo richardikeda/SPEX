@@ -17,7 +17,8 @@ pub use inbox::{
 };
 pub use transport::{
     collect_manifest_chunks, parse_manifest_from_gossip, passive_replicate_chunks,
-    publish_payload, random_walk, random_walk_with_key, reconstruct_envelope, renew_chunk_ttl,
-    replicate_manifest, start_manifest_chunk_queries, BuildTransport, ChunkManifest,
+    publish_payload, random_walk, random_walk_with_key, reassemble_chunks_with_manifest,
+    reconstruct_envelope, recover_manifest_from_gossip, renew_chunk_ttl, replicate_manifest,
+    robust_random_walk_with_seed, start_manifest_chunk_queries, BuildTransport, ChunkManifest,
     TransportComponents, TransportConfig,
 };
