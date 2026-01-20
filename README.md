@@ -19,7 +19,7 @@ criptografia de ponta a ponta, auditabilidade e integridade dos dados.
 
 Implementação inicial em andamento com os seguintes componentes e nível atual:
 - **spex-core**: primitives de tipos SPEX, CBOR canonical (CTAP2), hashes, assinatura, PoW,
-  log append-only e validações básicas de tokens.
+  log append-only e validações compartilhadas de grants/PoW.
 - **spex-mls**: integração MLS completa via `mls-rs`, com TreeKEM, commits, updates, add/remove e
   fluxos de ressincronização para grupos multi-membros.
 - **spex-transport**: base libp2p com chunking e manifestos, DHT/Kademlia, gossip e rotinas
@@ -35,7 +35,6 @@ Implementação inicial em andamento com os seguintes componentes e nível atual
 
 - Expansão de testes MLS interop avançados com vetores externos (além dos cenários reais atuais).
 - Endpoint de inbox para escrita/ingestão na bridge (armazenar entregas para scan).
-- Validação consistente de grant/PoW em todos os pontos de ingestão (bridge + transporte P2P).
 - Reassemblagem e publicação completas no transporte com fluxo ponta a ponta integrado ao CLI.
 - Integração CLI com rede P2P real (publicação/replicação e recuperação via manifestos).
 

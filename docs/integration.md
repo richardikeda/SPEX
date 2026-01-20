@@ -44,6 +44,10 @@ O fluxo básico é:
 3. Validar request e emitir `GrantToken` assinado (CBOR canonical base64).
 4. Usar o grant para criar `ThreadConfig` e iniciar a thread MLS.
 
+Para integrações em Rust, o `spex-core` expõe validadores compartilhados de grant e PoW
+(`validation::validate_grant_token` e `validation::validate_pow_puzzle`) que podem ser usados
+antes de aceitar tokens recebidos via transporte P2P ou bridge HTTP.
+
 ### Exemplo em Rust (request/grant)
 
 ```rust

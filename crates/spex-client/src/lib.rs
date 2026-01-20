@@ -15,6 +15,7 @@ use spex_core::{
     pow,
     sign::{ed25519_sign_hash, ed25519_verify_hash, ed25519_verify_key},
     types::{to_fixed, ContactCard, Ctap2Cbor, GrantToken, ProtoSuite, ThreadConfig},
+    validation::{self, GrantPowValidationError},
 };
 use spex_mls::{cfg_hash_for_thread_config, Group, GroupConfig};
 use spex_transport::{
@@ -61,6 +62,10 @@ pub enum ClientError {
     Crypto(String),
     #[error("invalid request puzzle")]
     InvalidPuzzle,
+    #[error("grant signature invalid")]
+    GrantInvalid,
+    #[error("grant expired")]
+    GrantExpired,
     #[error("invalid aead payload")]
     InvalidAeadPayload,
     #[error("missing envelope signature")]
@@ -528,12 +533,58 @@ pub fn validate_request_puzzle(puzzle: &PuzzleToken, recipient_key: &[u8]) -> Re
         parallelism: puzzle.params.parallelism,
         output_len: puzzle.params.output_len,
     };
-    let valid = pow::verify_puzzle_output(recipient_key, &puzzle_input, &puzzle_output, params)
-        .map_err(|err| ClientError::Crypto(err.to_string()))?;
-    if !valid {
-        return Err(ClientError::InvalidPuzzle);
+    match validation::validate_pow_puzzle(
+        recipient_key,
+        &puzzle_input,
+        &puzzle_output,
+        params,
+        pow::PowParams::minimum(),
+    ) {
+        Ok(()) => Ok(()),
+        Err(GrantPowValidationError::PowTooWeak | GrantPowValidationError::PowInvalid) => {
+            Err(ClientError::InvalidPuzzle)
+        }
+        Err(err) => Err(ClientError::Crypto(err.to_string())),
     }
-    Ok(())
+}
+
+/// Validates a signed grant token payload against signature and expiration rules.
+pub fn validate_signed_grant(grant: &SignedGrantToken, now: u64) -> Result<GrantToken, ClientError> {
+    let user_id = decode_base64_field(&grant.user_id)?;
+    let verifying_key_bytes = decode_fixed_base64::<32>(&grant.verifying_key)?;
+    let signature_bytes = decode_fixed_base64::<64>(&grant.signature)?;
+    let verifying_key =
+        ed25519_dalek::VerifyingKey::from_bytes(&verifying_key_bytes)
+            .map_err(|_| ClientError::GrantInvalid)?;
+    let signature = ed25519_dalek::Signature::from_bytes(&signature_bytes);
+    let token = GrantToken {
+        user_id,
+        role: grant.role,
+        flags: grant.flags,
+        expires_at: grant.expires_at,
+        extensions: Default::default(),
+    };
+    match validation::validate_grant_token(now, &token, &verifying_key, &signature) {
+        Ok(()) => Ok(token),
+        Err(GrantPowValidationError::GrantInvalid) => Err(ClientError::GrantInvalid),
+        Err(GrantPowValidationError::GrantExpired) => Err(ClientError::GrantExpired),
+        Err(err) => Err(ClientError::Crypto(err.to_string())),
+    }
+}
+
+/// Decodes a base64-encoded field into bytes for validation helpers.
+fn decode_base64_field(value: &str) -> Result<Vec<u8>, ClientError> {
+    BASE64_STANDARD
+        .decode(value.as_bytes())
+        .map_err(|_| ClientError::GrantInvalid)
+}
+
+/// Decodes a fixed-length base64-encoded field into an array for validation helpers.
+fn decode_fixed_base64<const N: usize>(value: &str) -> Result<[u8; N], ClientError> {
+    let bytes = decode_base64_field(value)?;
+    bytes
+        .try_into()
+        .map_err(|_| ClientError::GrantInvalid)
 }
 
 /// Signs a grant token and returns a payload compatible with bridge storage requests.

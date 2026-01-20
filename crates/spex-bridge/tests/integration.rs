@@ -208,6 +208,62 @@ async fn put_get_card_roundtrip() {
     assert_eq!(response_json["data"], BASE64.encode(data));
 }
 
+/// Ensures expired grants are rejected by the card endpoint.
+#[tokio::test]
+async fn rejects_expired_grant_on_card() {
+    let tmp = tempdir().expect("tempdir");
+    let clock = Arc::new(FixedClock { now: 1_700_000_000 });
+    let state = init_state_with_clock(tmp.path().join("bridge.db"), clock).unwrap();
+    let app = app(state);
+
+    let data = b"card-bytes";
+    let card_hash = hex::encode(hash::hash_bytes(hash::HashId::Sha256, data));
+    let mut payload = build_payload(1_700_000_000, data);
+    payload["grant"] = build_grant_payload(1_699_999_999);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri(format!("/cards/{card_hash}"))
+                .header("content-type", "application/json")
+                .body(Body::from(payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+/// Ensures invalid grant signatures are rejected by the card endpoint.
+#[tokio::test]
+async fn rejects_invalid_grant_signature_on_card() {
+    let tmp = tempdir().expect("tempdir");
+    let clock = Arc::new(FixedClock { now: 1_700_000_000 });
+    let state = init_state_with_clock(tmp.path().join("bridge.db"), clock).unwrap();
+    let app = app(state);
+
+    let data = b"card-bytes";
+    let card_hash = hex::encode(hash::hash_bytes(hash::HashId::Sha256, data));
+    let mut payload = build_payload(1_700_000_000, data);
+    payload["grant"]["signature"] = json!(BASE64.encode([9u8; 64]));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri(format!("/cards/{card_hash}"))
+                .header("content-type", "application/json")
+                .body(Body::from(payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
 /// Verifies storing and retrieving a slot succeeds with valid grant/puzzle data.
 #[tokio::test]
 async fn put_get_slot_roundtrip() {
@@ -528,6 +584,49 @@ async fn rejects_weak_pow() {
             Request::builder()
                 .method("PUT")
                 .uri(format!("/slot/{slot_hash}"))
+                .header("content-type", "application/json")
+                .body(Body::from(payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+/// Ensures weak PoW parameters are rejected by the inbox endpoint.
+#[tokio::test]
+async fn rejects_weak_pow_on_inbox() {
+    let tmp = tempdir().expect("tempdir");
+    let clock = Arc::new(FixedClock { now: 1_700_000_000 });
+    let state = init_state_with_clock(tmp.path().join("bridge.db"), clock).unwrap();
+    let app = app(state);
+
+    let recipient_key = b"recipient";
+    let puzzle_input = b"input";
+    let weak_params = PowParams {
+        memory_kib: 8 * 1024,
+        iterations: 1,
+        parallelism: 1,
+        output_len: 32,
+    };
+    let puzzle_output =
+        pow::generate_puzzle_output(recipient_key, puzzle_input, weak_params).unwrap();
+    let mut payload = build_payload_with_puzzle(
+        1_700_000_000,
+        b"inbox-item",
+        recipient_key,
+        puzzle_input,
+        &puzzle_output,
+        weak_params,
+    );
+    payload["ttl_seconds"] = json!(60);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri("/inbox/weak-pow")
                 .header("content-type", "application/json")
                 .body(Body::from(payload.to_string()))
                 .unwrap(),

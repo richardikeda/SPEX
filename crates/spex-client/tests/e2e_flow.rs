@@ -8,7 +8,7 @@ use spex_client::{
     receive_inbox_messages, redeem_contact_card_payload, stage_p2p_inbox_delivery,
     validate_request_puzzle, fingerprint_hex, log_consistency, save_checkpoint_log,
     load_checkpoint_log, create_checkpoint_entry, create_recovery_entry, create_revocation_entry,
-    send_thread_message,
+    send_thread_message, sign_grant, validate_signed_grant, ClientError,
 };
 use spex_core::{
     hash::{hash_ctap2_cbor_value, HashId},
@@ -214,6 +214,58 @@ fn accepts_minimum_pow_request_puzzle() {
     let puzzle = build_puzzle_token(recipient_key, pow::PowParams::minimum());
 
     validate_request_puzzle(&puzzle, recipient_key).expect("minimum pow valid");
+}
+
+/// Ensures weak PoW parameters are rejected during P2P request validation.
+#[test]
+fn rejects_weak_pow_request_puzzle() {
+    let recipient_key = b"recipient";
+    let weak_params = pow::PowParams {
+        memory_kib: 8 * 1024,
+        iterations: 1,
+        parallelism: 1,
+        output_len: 32,
+    };
+    let puzzle = build_puzzle_token(recipient_key, weak_params);
+
+    let result = validate_request_puzzle(&puzzle, recipient_key);
+    assert!(matches!(result, Err(ClientError::InvalidPuzzle)));
+}
+
+/// Ensures invalid grant signatures are rejected during P2P grant validation.
+#[test]
+fn rejects_invalid_grant_signature_in_p2p_validation() {
+    let identity = create_identity();
+    let grant = GrantToken {
+        user_id: hex::decode(&identity.user_id_hex).expect("user id"),
+        role: 1,
+        flags: None,
+        expires_at: None,
+        extensions: Default::default(),
+    };
+    let mut signed = sign_grant(&identity, &grant).expect("signed grant");
+    signed.signature = BASE64_STANDARD.encode([8u8; 64]);
+
+    let result = validate_signed_grant(&signed, 1_700_000_000);
+    assert!(matches!(result, Err(ClientError::GrantInvalid)));
+}
+
+/// Ensures expired grants are rejected during P2P grant validation.
+#[test]
+fn rejects_expired_grant_in_p2p_validation() {
+    let identity = create_identity();
+    let now = 1_700_000_000;
+    let grant = GrantToken {
+        user_id: hex::decode(&identity.user_id_hex).expect("user id"),
+        role: 1,
+        flags: None,
+        expires_at: Some(now - 1),
+        extensions: Default::default(),
+    };
+    let signed = sign_grant(&identity, &grant).expect("signed grant");
+
+    let result = validate_signed_grant(&signed, now);
+    assert!(matches!(result, Err(ClientError::GrantExpired)));
 }
 
 /// Verifies revocation entries persist and log consistency checks behave as expected.
