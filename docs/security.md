@@ -50,7 +50,8 @@ Tokens sem expiração devem ser tratados como exceção e ter revisão periódi
 O estado local contém chaves, contatos e threads. Proteção recomendada:
 
 - Permissões restritas no arquivo e diretório (`chmod 600` para o arquivo e `chmod 700` para o diretório).
-- Armazenamento em disco com criptografia quando possível.
+- Criptografia do arquivo com chave do keychain do SO; caso não haja keychain, use `SPEX_STATE_PASSPHRASE`
+  para proteger o estado (o cliente não grava o arquivo sem proteção).
 - Backups seguros e armazenamento fora do alcance de outros usuários do sistema.
 
 Em ambientes compartilhados, evite armazenar o arquivo em locais expostos.

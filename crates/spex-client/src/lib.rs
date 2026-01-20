@@ -1,7 +1,9 @@
+use argon2::Argon2;
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine};
 use chacha20poly1305::aead::{Aead, KeyInit, Payload};
 use chacha20poly1305::{ChaCha20Poly1305, Nonce};
 use ed25519_dalek::SigningKey;
+use keyring::Entry;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use spex_core::{
@@ -71,6 +73,8 @@ pub enum ClientError {
     InvalidMessageEncoding,
     #[error("core error: {0}")]
     Core(String),
+    #[error("state encryption error: {0}")]
+    StateEncryption(String),
 }
 
 /// Converts core errors into client errors for unified handling.
@@ -98,6 +102,30 @@ pub struct LocalState {
     #[serde(default)]
     pub key_rotations: Vec<KeyRotationState>,
 }
+
+/// Encrypted local state file wrapper.
+#[derive(Debug, Serialize, Deserialize)]
+struct EncryptedStateFile {
+    pub format: String,
+    pub version: u8,
+    pub kdf: String,
+    pub salt_base64: String,
+    pub nonce_base64: String,
+    pub ciphertext_base64: String,
+}
+
+/// Supported key sources for local state encryption.
+enum StateKeySource {
+    Passphrase(String),
+    Keychain(Vec<u8>),
+}
+
+const STATE_ENCRYPTION_FORMAT: &str = "spex_encrypted_state";
+const STATE_ENCRYPTION_VERSION: u8 = 1;
+const STATE_ENCRYPTION_AAD: &[u8] = b"spex-local-state";
+const STATE_KEYCHAIN_SERVICE: &str = "spex";
+const STATE_KEYCHAIN_USER: &str = "local-state";
+const STATE_PASSPHRASE_ENV: &str = "SPEX_STATE_PASSPHRASE";
 
 /// Identity data stored for the local user.
 #[derive(Debug, Serialize, Deserialize)]
@@ -785,6 +813,9 @@ pub fn load_state() -> Result<LocalState, ClientError> {
         return Ok(LocalState::default());
     }
     let contents = fs::read_to_string(&path)?;
+    if let Some(encrypted) = parse_encrypted_state_file(&contents) {
+        return decrypt_state_file(&encrypted);
+    }
     Ok(serde_json::from_str(&contents)?)
 }
 
@@ -794,7 +825,7 @@ pub fn save_state(state: &LocalState) -> Result<(), ClientError> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let contents = serde_json::to_string_pretty(state)?;
+    let contents = encrypt_state_file(state)?;
     fs::write(path, contents)?;
     Ok(())
 }
@@ -827,6 +858,156 @@ pub fn state_path() -> Result<PathBuf, ClientError> {
         "home directory not found",
     ))?;
     Ok(home.join(Path::new(".spex/state.json")))
+}
+
+/// Parses encrypted state wrapper data if it matches the expected format marker.
+fn parse_encrypted_state_file(contents: &str) -> Option<EncryptedStateFile> {
+    let parsed: EncryptedStateFile = serde_json::from_str(contents).ok()?;
+    if parsed.format != STATE_ENCRYPTION_FORMAT {
+        return None;
+    }
+    Some(parsed)
+}
+
+/// Encrypts local state data and returns a serialized wrapper payload.
+fn encrypt_state_file(state: &LocalState) -> Result<String, ClientError> {
+    let plaintext = serde_json::to_vec(state)?;
+    let mut nonce = [0u8; 12];
+    rand::thread_rng().fill_bytes(&mut nonce);
+    let key_source = resolve_state_key_source()?;
+    let (kdf, salt_base64, key) = match key_source {
+        StateKeySource::Passphrase(passphrase) => {
+            let mut salt = [0u8; 16];
+            rand::thread_rng().fill_bytes(&mut salt);
+            let key = derive_key_from_passphrase(&passphrase, &salt)?;
+            ("argon2id".to_string(), BASE64_STANDARD.encode(&salt), key)
+        }
+        StateKeySource::Keychain(key_bytes) => {
+            let key = parse_keychain_key(&key_bytes)?;
+            ("raw".to_string(), String::new(), key)
+        }
+    };
+    let cipher = ChaCha20Poly1305::new_from_slice(&key)
+        .map_err(|err| ClientError::StateEncryption(err.to_string()))?;
+    let ciphertext = cipher
+        .encrypt(
+            Nonce::from_slice(&nonce),
+            Payload {
+                msg: &plaintext,
+                aad: STATE_ENCRYPTION_AAD,
+            },
+        )
+        .map_err(|err| ClientError::StateEncryption(err.to_string()))?;
+    let wrapper = EncryptedStateFile {
+        format: STATE_ENCRYPTION_FORMAT.to_string(),
+        version: STATE_ENCRYPTION_VERSION,
+        kdf,
+        salt_base64,
+        nonce_base64: BASE64_STANDARD.encode(&nonce),
+        ciphertext_base64: BASE64_STANDARD.encode(ciphertext),
+    };
+    Ok(serde_json::to_string_pretty(&wrapper)?)
+}
+
+/// Decrypts an encrypted state wrapper into the local state representation.
+fn decrypt_state_file(state_file: &EncryptedStateFile) -> Result<LocalState, ClientError> {
+    if state_file.version != STATE_ENCRYPTION_VERSION {
+        return Err(ClientError::StateEncryption(format!(
+            "unsupported state version {}",
+            state_file.version
+        )));
+    }
+    let nonce = BASE64_STANDARD
+        .decode(state_file.nonce_base64.as_bytes())
+        .map_err(|err| ClientError::StateEncryption(err.to_string()))?;
+    let ciphertext = BASE64_STANDARD
+        .decode(state_file.ciphertext_base64.as_bytes())
+        .map_err(|err| ClientError::StateEncryption(err.to_string()))?;
+    let key = match state_file.kdf.as_str() {
+        "argon2id" => {
+            let passphrase = std::env::var(STATE_PASSPHRASE_ENV)
+                .map_err(|_| ClientError::StateEncryption("missing passphrase".to_string()))?;
+            let salt = BASE64_STANDARD
+                .decode(state_file.salt_base64.as_bytes())
+                .map_err(|err| ClientError::StateEncryption(err.to_string()))?;
+            derive_key_from_passphrase(&passphrase, &salt)?
+        }
+        "raw" => {
+            let key_bytes = resolve_keychain_key()?;
+            parse_keychain_key(&key_bytes)?
+        }
+        other => {
+            return Err(ClientError::StateEncryption(format!(
+                "unknown kdf {other}"
+            )))
+        }
+    };
+    let cipher = ChaCha20Poly1305::new_from_slice(&key)
+        .map_err(|err| ClientError::StateEncryption(err.to_string()))?;
+    let plaintext = cipher
+        .decrypt(
+            Nonce::from_slice(&nonce),
+            Payload {
+                msg: &ciphertext,
+                aad: STATE_ENCRYPTION_AAD,
+            },
+        )
+        .map_err(|err| ClientError::StateEncryption(err.to_string()))?;
+    Ok(serde_json::from_slice(&plaintext)?)
+}
+
+/// Resolves the local state encryption key source, preferring passphrases over keychain entries.
+fn resolve_state_key_source() -> Result<StateKeySource, ClientError> {
+    if let Ok(passphrase) = std::env::var(STATE_PASSPHRASE_ENV) {
+        if !passphrase.is_empty() {
+            return Ok(StateKeySource::Passphrase(passphrase));
+        }
+    }
+    resolve_keychain_key().map(StateKeySource::Keychain)
+}
+
+/// Derives a symmetric key from a passphrase and salt using Argon2id.
+fn derive_key_from_passphrase(passphrase: &str, salt: &[u8]) -> Result<[u8; 32], ClientError> {
+    let mut key = [0u8; 32];
+    Argon2::default()
+        .hash_password_into(passphrase.as_bytes(), salt, &mut key)
+        .map_err(|err| ClientError::StateEncryption(err.to_string()))?;
+    Ok(key)
+}
+
+/// Loads or creates a keychain-backed encryption key for the local state.
+fn resolve_keychain_key() -> Result<Vec<u8>, ClientError> {
+    let entry = Entry::new(STATE_KEYCHAIN_SERVICE, STATE_KEYCHAIN_USER)
+        .map_err(|err| ClientError::StateEncryption(err.to_string()))?;
+    match entry.get_password() {
+        Ok(password) => BASE64_STANDARD
+            .decode(password.as_bytes())
+            .map_err(|err| ClientError::StateEncryption(err.to_string())),
+        Err(err) => match err {
+            keyring::Error::NoEntry => {
+                let mut key = [0u8; 32];
+                rand::thread_rng().fill_bytes(&mut key);
+                let encoded = BASE64_STANDARD.encode(key);
+                entry
+                    .set_password(&encoded)
+                    .map_err(|err| ClientError::StateEncryption(err.to_string()))?;
+                Ok(key.to_vec())
+            }
+            _ => Err(ClientError::StateEncryption(err.to_string())),
+        },
+    }
+}
+
+/// Parses a raw keychain key into a fixed-length array, rejecting unsupported sizes.
+fn parse_keychain_key(bytes: &[u8]) -> Result<[u8; 32], ClientError> {
+    if bytes.len() != 32 {
+        return Err(ClientError::StateEncryption(
+            "keychain key must be 32 bytes".to_string(),
+        ));
+    }
+    let mut key = [0u8; 32];
+    key.copy_from_slice(bytes);
+    Ok(key)
 }
 
 /// Generates a base64 contact card payload for the provided identity.
