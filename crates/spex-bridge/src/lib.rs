@@ -9,7 +9,12 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use ed25519_dalek::{Signature, VerifyingKey};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
-use spex_core::{hash, pow, pow::PowParams, sign, types::GrantToken};
+use spex_core::{
+    hash,
+    pow::PowParams,
+    types::GrantToken,
+    validation::{self, GrantPowValidationError},
+};
 use std::{
     net::SocketAddr,
     path::{Path as FsPath, PathBuf},
@@ -588,11 +593,6 @@ fn validate_grant(now: u64, grant: &GrantTokenPayload) -> Result<(), BridgeError
     let user_id = decode_base64(&grant.user_id)?;
     let verify_key = decode_verifying_key(&grant.verifying_key)?;
     let signature = decode_signature(&grant.signature)?;
-    if let Some(expires_at) = grant.expires_at {
-        if expires_at <= now {
-            return Err(BridgeError::GrantExpired);
-        }
-    }
     let token = GrantToken {
         user_id,
         role: grant.role,
@@ -600,11 +600,12 @@ fn validate_grant(now: u64, grant: &GrantTokenPayload) -> Result<(), BridgeError
         expires_at: grant.expires_at,
         extensions: Default::default(),
     };
-    let hash = hash::hash_ctap2_cbor_value(hash::HashId::Sha256, &token)
-        .map_err(|err| BridgeError::InvalidRequest(err.to_string()))?;
-    sign::ed25519_verify_hash(&verify_key, &hash, &signature)
-        .map_err(|_| BridgeError::GrantInvalid)?;
-    Ok(())
+    match validation::validate_grant_token(now, &token, &verify_key, &signature) {
+        Ok(()) => Ok(()),
+        Err(GrantPowValidationError::GrantExpired) => Err(BridgeError::GrantExpired),
+        Err(GrantPowValidationError::GrantInvalid) => Err(BridgeError::GrantInvalid),
+        Err(err) => Err(BridgeError::InvalidRequest(err.to_string())),
+    }
 }
 
 /// Validates the provided puzzle output with spex-core PoW verification.
@@ -622,14 +623,19 @@ fn validate_puzzle(payload: &PuzzlePayload, minimum: &PowParams) -> Result<(), B
             output_len: custom.output_len,
         })
         .unwrap_or_default();
-    validate_pow_params(&params, minimum)?;
-
-    let valid = pow::verify_puzzle_output(&recipient_key, &puzzle_input, &puzzle_output, params)
-        .map_err(|err| BridgeError::InvalidRequest(err.to_string()))?;
-    if !valid {
-        return Err(BridgeError::PuzzleInvalid);
+    match validation::validate_pow_puzzle(
+        &recipient_key,
+        &puzzle_input,
+        &puzzle_output,
+        params,
+        *minimum,
+    ) {
+        Ok(()) => Ok(()),
+        Err(GrantPowValidationError::PowTooWeak | GrantPowValidationError::PowInvalid) => {
+            Err(BridgeError::PuzzleInvalid)
+        }
+        Err(err) => Err(BridgeError::InvalidRequest(err.to_string())),
     }
-    Ok(())
 }
 
 /// Verifies the provided hash matches the SHA-256 hash of data.
@@ -668,14 +674,6 @@ fn decode_verifying_key(value: &str) -> Result<VerifyingKey, BridgeError> {
     let bytes: [u8; 32] = decode_fixed_bytes(value)?;
     VerifyingKey::from_bytes(&bytes)
         .map_err(|err| BridgeError::InvalidRequest(err.to_string()))
-}
-
-/// Validates that the provided PoW parameters meet minimum requirements.
-fn validate_pow_params(params: &PowParams, minimum: &PowParams) -> Result<(), BridgeError> {
-    if params.memory_kib < minimum.memory_kib || params.iterations < minimum.iterations {
-        return Err(BridgeError::PuzzleInvalid);
-    }
-    Ok(())
 }
 
 /// Derives a stable identity string from the grant payload.

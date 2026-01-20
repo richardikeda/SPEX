@@ -19,5 +19,6 @@ pub mod pow;
 pub mod sign;
 pub mod test_vectors;
 pub mod types;
+pub mod validation;
 
 pub use error::SpexError;
