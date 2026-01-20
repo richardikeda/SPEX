@@ -1,15 +1,24 @@
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine};
+use chacha20poly1305::aead::{Aead, KeyInit, Payload};
+use chacha20poly1305::{ChaCha20Poly1305, Nonce};
 use clap::{Parser, Subcommand};
 use ed25519_dalek::SigningKey;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use spex_core::{
-    hash::{hash_bytes, HashId},
+    aead_ad,
+    hash::{hash_bytes, hash_ctap2_cbor_value, HashId},
     log::{CheckpointEntry, CheckpointLog, KeyCheckpoint, LogConsistency, RecoveryKey, RevocationDeclaration},
-    sign::{ed25519_sign_hash, ed25519_verify_hash},
-    types::{ContactCard, Ctap2Cbor, GrantToken},
+    pow,
+    sign::{ed25519_sign_hash, ed25519_verify_hash, ed25519_verify_key},
+    types::{to_fixed, ContactCard, Ctap2Cbor, GrantToken, ProtoSuite, ThreadConfig},
 };
-use spex_transport::inbox::BridgeClient;
+use spex_mls::{cfg_hash_for_thread_config, Group, GroupConfig};
+use spex_transport::{
+    chunking::{chunk_data, Chunk, ChunkingConfig},
+    inbox::{derive_inbox_scan_key, BridgeClient, InboxScanResponse, InboxSource},
+    transport::{ChunkDescriptor, ChunkManifest},
+};
 use std::{
     collections::HashMap,
     fs,
@@ -42,6 +51,14 @@ enum CliError {
     Transport(String),
     #[error("log error: {0}")]
     Log(String),
+    #[error("mls error: {0}")]
+    Mls(String),
+    #[error("crypto error: {0}")]
+    Crypto(String),
+    #[error("invalid request puzzle")]
+    InvalidPuzzle,
+    #[error("invalid aead payload")]
+    InvalidAeadPayload,
 }
 
 #[derive(Parser)]
@@ -90,6 +107,7 @@ enum Commands {
 #[derive(Subcommand)]
 enum IdentityCommand {
     New,
+    Rotate,
 }
 
 #[derive(Subcommand)]
@@ -187,6 +205,12 @@ struct LocalState {
     requests: Vec<RequestState>,
     grants: Vec<GrantState>,
     checkpoint_log: CheckpointLogState,
+    #[serde(default)]
+    transport_outbox: Vec<TransportOutboxItem>,
+    #[serde(default)]
+    p2p_inbox: HashMap<String, Vec<String>>,
+    #[serde(default)]
+    key_rotations: Vec<KeyRotationState>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -213,6 +237,24 @@ struct ThreadState {
     members: Vec<String>,
     created_at: u64,
     messages: Vec<MessageState>,
+    #[serde(default)]
+    proto_major: u16,
+    #[serde(default)]
+    proto_minor: u16,
+    #[serde(default)]
+    ciphersuite_id: u16,
+    #[serde(default)]
+    cfg_hash_id: u16,
+    #[serde(default)]
+    cfg_hash_hex: String,
+    #[serde(default)]
+    flags: u8,
+    #[serde(default)]
+    initial_secret_hex: String,
+    #[serde(default)]
+    next_seq: u64,
+    #[serde(default)]
+    epoch: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -234,6 +276,8 @@ struct RequestState {
     to_user_id: String,
     role: u64,
     created_at: u64,
+    #[serde(default)]
+    puzzle: Option<PuzzleToken>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -242,6 +286,8 @@ struct GrantState {
     from_user_id: String,
     role: u64,
     created_at: u64,
+    #[serde(default)]
+    signature_base64: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
@@ -255,6 +301,67 @@ struct RequestToken {
     to_user_id: String,
     role: u64,
     created_at: u64,
+    puzzle: Option<PuzzleToken>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct PuzzleToken {
+    recipient_key: String,
+    puzzle_input: String,
+    puzzle_output: String,
+    params: PowParamsPayload,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct PowParamsPayload {
+    memory_kib: u32,
+    iterations: u32,
+    parallelism: u32,
+    output_len: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct SignedGrantToken {
+    user_id: String,
+    role: u64,
+    flags: Option<u64>,
+    expires_at: Option<u64>,
+    verifying_key: String,
+    signature: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct TransportOutboxItem {
+    thread_id_hex: String,
+    manifest: TransportManifestState,
+    chunks: Vec<TransportChunkState>,
+    published_at: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct TransportManifestState {
+    total_len: usize,
+    chunks: Vec<TransportChunkDescriptorState>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct TransportChunkDescriptorState {
+    index: usize,
+    hash_hex: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct TransportChunkState {
+    index: usize,
+    hash_hex: String,
+    data_base64: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct KeyRotationState {
+    rotated_at: u64,
+    old_verifying_key_hex: String,
+    new_verifying_key_hex: String,
 }
 
 /// Runs the CLI entry point and dispatches commands.
@@ -271,6 +378,23 @@ async fn main() -> Result<(), CliError> {
                 println!("user_id: {}", identity.user_id_hex);
                 println!("fingerprint: {}", fingerprint);
                 state.identity = Some(identity);
+            }
+            IdentityCommand::Rotate => {
+                let identity = state.identity.as_mut().ok_or(CliError::MissingIdentity)?;
+                let old_verifying_key_hex = identity.verifying_key_hex.clone();
+                let rotated = rotate_identity(identity);
+                println!("new user_id: {}", rotated.user_id_hex);
+                println!(
+                    "new fingerprint: {}",
+                    fingerprint_hex(&hex::decode(&rotated.verifying_key_hex)?)
+                );
+                let rotation = KeyRotationState {
+                    rotated_at: now_unix(),
+                    old_verifying_key_hex,
+                    new_verifying_key_hex: rotated.verifying_key_hex.clone(),
+                };
+                state.key_rotations.push(rotation);
+                append_rotation_checkpoint(&mut state, rotated, &old_verifying_key_hex)?;
             }
         },
         Commands::Card { command } => match command {
@@ -317,11 +441,14 @@ async fn main() -> Result<(), CliError> {
         Commands::Request { command } => match command {
             RequestCommand::Send { to, role } => {
                 let identity = state.identity.as_ref().ok_or(CliError::MissingIdentity)?;
+                let puzzle = build_request_puzzle(&hex::decode(&to)?)?;
+                validate_request_puzzle(&puzzle, &hex::decode(&to)?)?;
                 let request = RequestToken {
                     from_user_id: identity.user_id_hex.clone(),
                     to_user_id: to.clone(),
                     role,
                     created_at: now_unix(),
+                    puzzle: Some(puzzle.clone()),
                 };
                 let payload = serde_json::to_vec(&request)?;
                 let token = BASE64_STANDARD.encode(payload);
@@ -330,6 +457,7 @@ async fn main() -> Result<(), CliError> {
                     to_user_id: to,
                     role,
                     created_at: request.created_at,
+                    puzzle: Some(puzzle),
                 });
                 println!("request: {}", token);
             }
@@ -341,6 +469,9 @@ async fn main() -> Result<(), CliError> {
                 if request_token.to_user_id != identity.user_id_hex {
                     return Err(CliError::RequestTargetMismatch);
                 }
+                if let Some(puzzle) = &request_token.puzzle {
+                    validate_request_puzzle(puzzle, &hex::decode(&identity.user_id_hex)?)?;
+                }
                 let grant = GrantToken {
                     user_id: hex::decode(&request_token.from_user_id)?,
                     role: request_token.role,
@@ -348,13 +479,14 @@ async fn main() -> Result<(), CliError> {
                     expires_at: None,
                     extensions: Default::default(),
                 };
-                let grant_bytes = grant.to_ctap2_canonical_bytes()?;
-                let grant_token = BASE64_STANDARD.encode(grant_bytes);
+                let signed_grant = sign_grant(identity, &grant)?;
+                let grant_token = BASE64_STANDARD.encode(serde_json::to_vec(&signed_grant)?);
                 state.grants.push(GrantState {
                     token_base64: grant_token.clone(),
                     from_user_id: request_token.from_user_id,
                     role: request_token.role,
                     created_at: now_unix(),
+                    signature_base64: Some(signed_grant.signature.clone()),
                 });
                 println!("grant: {}", grant_token);
             }
@@ -373,11 +505,28 @@ async fn main() -> Result<(), CliError> {
                     members.push(identity.user_id_hex.clone());
                 }
                 let thread_id = random_hex(32);
+                let proto_suite = ProtoSuite {
+                    major: 1,
+                    minor: 1,
+                    ciphersuite_id: 0x0001,
+                };
+                let cfg_hash = build_thread_cfg_hash(&thread_id, &proto_suite)?;
+                let initial_secret = random_hex(32);
+                let group = build_group_for_members(&members, &cfg_hash, &initial_secret, proto_suite)?;
                 let thread = ThreadState {
                     thread_id_hex: thread_id.clone(),
                     members,
                     created_at: now_unix(),
                     messages: Vec::new(),
+                    proto_major: proto_suite.major,
+                    proto_minor: proto_suite.minor,
+                    ciphersuite_id: proto_suite.ciphersuite_id,
+                    cfg_hash_id: HashId::Sha256 as u16,
+                    cfg_hash_hex: hex::encode(cfg_hash),
+                    flags: 0,
+                    initial_secret_hex: initial_secret,
+                    next_seq: 0,
+                    epoch: group.epoch(),
                 };
                 state.threads.insert(thread_id.clone(), thread);
                 println!("thread: {}", thread_id);
@@ -390,13 +539,26 @@ async fn main() -> Result<(), CliError> {
                     .threads
                     .get_mut(&thread)
                     .ok_or(CliError::ThreadNotFound)?;
+                let (envelope, manifest, chunks) =
+                    encrypt_and_chunk_message(identity, thread_state, text.as_bytes())?;
                 let message = MessageState {
                     sender_user_id: identity.user_id_hex.clone(),
                     text: text.clone(),
                     sent_at: now_unix(),
                 };
                 thread_state.messages.push(message);
-                println!("message queued for thread {}", thread);
+                let outbox_item = TransportOutboxItem {
+                    thread_id_hex: thread_state.thread_id_hex.clone(),
+                    manifest: manifest_state(&manifest),
+                    chunks: chunk_states(&chunks),
+                    published_at: now_unix(),
+                };
+                state.transport_outbox.push(outbox_item);
+                stage_p2p_inbox_delivery(&mut state, thread_state, &identity.user_id_hex, &envelope)?;
+                println!(
+                    "message published via transport ({} chunks)",
+                    chunks.len()
+                );
             }
         },
         Commands::Inbox { command } => match command {
@@ -404,13 +566,15 @@ async fn main() -> Result<(), CliError> {
                 bridge_url,
                 inbox_key,
             } => {
-                if let (Some(bridge_url), Some(inbox_key)) = (bridge_url, inbox_key) {
+                if let Some(inbox_key) = inbox_key {
                     let inbox_key_bytes = hex::decode(inbox_key)?;
-                    let client = BridgeClient::new(bridge_url);
-                    let response = client
-                        .scan_inbox(&inbox_key_bytes)
-                        .await
-                        .map_err(|err| CliError::Transport(err.to_string()))?;
+                    let bridge = bridge_url.map(BridgeClient::new);
+                    let response = resolve_inbox_from_state(
+                        &mut state,
+                        &inbox_key_bytes,
+                        bridge.as_ref(),
+                    )
+                    .await?;
                     for item in response.items {
                         state.inbox.push(InboxItem {
                             received_at: now_unix(),
@@ -559,6 +723,48 @@ fn create_identity() -> IdentityState {
     }
 }
 
+/// Rotates the local identity signing and verification keys in place.
+fn rotate_identity(identity: &mut IdentityState) -> &IdentityState {
+    let mut seed = [0u8; 32];
+    rand::thread_rng().fill_bytes(&mut seed);
+    let signing_key = SigningKey::from_bytes(&seed);
+    let verifying_key = signing_key.verifying_key();
+    identity.signing_key_hex = hex::encode(seed);
+    identity.verifying_key_hex = hex::encode(verifying_key.to_bytes());
+    identity.device_nonce_hex = hex::encode(random_bytes(16));
+    identity
+}
+
+/// Appends rotation metadata to the checkpoint log and revokes the previous verifying key.
+fn append_rotation_checkpoint(
+    state: &mut LocalState,
+    identity: &IdentityState,
+    old_verifying_key_hex: &str,
+) -> Result<(), CliError> {
+    let revoked_key = hex::decode(old_verifying_key_hex)?;
+    let revoked_key_hash = hash_bytes(HashId::Sha256, &revoked_key);
+    let revocation = RevocationDeclaration {
+        user_id: hex::decode(&identity.user_id_hex)?,
+        revoked_key_hash,
+        revoked_at: now_unix(),
+        recovery_key_hash: None,
+        reason: Some("key rotation".to_string()),
+    };
+    let checkpoint = KeyCheckpoint {
+        user_id: hex::decode(&identity.user_id_hex)?,
+        verifying_key: hex::decode(&identity.verifying_key_hex)?,
+        device_id: hex::decode(&identity.device_id_hex)?,
+        issued_at: now_unix(),
+    };
+    let mut log = load_checkpoint_log(state)?;
+    log.append(CheckpointEntry::Revocation(revocation))
+        .map_err(|err| CliError::Log(err.to_string()))?;
+    log.append(CheckpointEntry::Key(checkpoint))
+        .map_err(|err| CliError::Log(err.to_string()))?;
+    save_checkpoint_log(state, &log)?;
+    Ok(())
+}
+
 /// Builds a signed contact card payload for the current identity.
 fn build_contact_card(identity: &IdentityState) -> Result<ContactCard, CliError> {
     let user_id = hex::decode(&identity.user_id_hex)?;
@@ -666,6 +872,298 @@ fn parse_request_token(token: &str) -> Result<RequestToken, CliError> {
         .decode(token.as_bytes())
         .map_err(|_| CliError::InvalidCard)?;
     Ok(serde_json::from_slice(&payload)?)
+}
+
+/// Builds a PoW puzzle for a request token and encodes it as a payload.
+fn build_request_puzzle(recipient_key: &[u8]) -> Result<PuzzleToken, CliError> {
+    let params = pow::PowParams::default();
+    let nonce = pow::generate_pow_nonce(pow::PowNonceParams::default());
+    let puzzle_input = pow::build_puzzle_input(&nonce, recipient_key);
+    let puzzle_output = pow::generate_puzzle_output(recipient_key, &puzzle_input, params)
+        .map_err(|err| CliError::Crypto(err.to_string()))?;
+    Ok(PuzzleToken {
+        recipient_key: BASE64_STANDARD.encode(recipient_key),
+        puzzle_input: BASE64_STANDARD.encode(&puzzle_input),
+        puzzle_output: BASE64_STANDARD.encode(&puzzle_output),
+        params: PowParamsPayload {
+            memory_kib: params.memory_kib,
+            iterations: params.iterations,
+            parallelism: params.parallelism,
+            output_len: params.output_len,
+        },
+    })
+}
+
+/// Validates the PoW puzzle embedded in a request token.
+fn validate_request_puzzle(puzzle: &PuzzleToken, recipient_key: &[u8]) -> Result<(), CliError> {
+    let recipient_bytes = BASE64_STANDARD
+        .decode(puzzle.recipient_key.as_bytes())
+        .map_err(|_| CliError::InvalidPuzzle)?;
+    if recipient_bytes != recipient_key {
+        return Err(CliError::InvalidPuzzle);
+    }
+    let puzzle_input = BASE64_STANDARD
+        .decode(puzzle.puzzle_input.as_bytes())
+        .map_err(|_| CliError::InvalidPuzzle)?;
+    let puzzle_output = BASE64_STANDARD
+        .decode(puzzle.puzzle_output.as_bytes())
+        .map_err(|_| CliError::InvalidPuzzle)?;
+    let params = pow::PowParams {
+        memory_kib: puzzle.params.memory_kib,
+        iterations: puzzle.params.iterations,
+        parallelism: puzzle.params.parallelism,
+        output_len: puzzle.params.output_len,
+    };
+    let valid = pow::verify_puzzle_output(recipient_key, &puzzle_input, &puzzle_output, params)
+        .map_err(|err| CliError::Crypto(err.to_string()))?;
+    if !valid {
+        return Err(CliError::InvalidPuzzle);
+    }
+    Ok(())
+}
+
+/// Signs a grant token and returns a payload compatible with bridge storage requests.
+fn sign_grant(identity: &IdentityState, grant: &GrantToken) -> Result<SignedGrantToken, CliError> {
+    let signing_key = SigningKey::from_bytes(&hex::decode(&identity.signing_key_hex)?);
+    let verifying_key = ed25519_verify_key(&signing_key);
+    let hash = hash_ctap2_cbor_value(HashId::Sha256, grant)?;
+    let signature = ed25519_sign_hash(&signing_key, &hash);
+    Ok(SignedGrantToken {
+        user_id: BASE64_STANDARD.encode(&grant.user_id),
+        role: grant.role,
+        flags: grant.flags,
+        expires_at: grant.expires_at,
+        verifying_key: BASE64_STANDARD.encode(verifying_key.to_bytes()),
+        signature: BASE64_STANDARD.encode(signature.to_bytes()),
+    })
+}
+
+/// Builds a thread configuration hash for MLS metadata.
+fn build_thread_cfg_hash(thread_id_hex: &str, proto_suite: &ProtoSuite) -> Result<Vec<u8>, CliError> {
+    let thread_id = hex::decode(thread_id_hex)?;
+    let thread_config = ThreadConfig {
+        proto_major: proto_suite.major,
+        proto_minor: proto_suite.minor,
+        ciphersuite_id: proto_suite.ciphersuite_id,
+        flags: 0,
+        thread_id,
+        grants: Vec::new(),
+        extensions: Default::default(),
+    };
+    cfg_hash_for_thread_config(HashId::Sha256, &thread_config)
+        .map_err(|err| CliError::Mls(err.to_string()))
+}
+
+/// Rebuilds an MLS group from stored thread metadata.
+fn rebuild_thread_group(thread_state: &ThreadState) -> Result<Group, CliError> {
+    let proto_suite = ProtoSuite {
+        major: thread_state.proto_major,
+        minor: thread_state.proto_minor,
+        ciphersuite_id: thread_state.ciphersuite_id,
+    };
+    let cfg_hash = hex::decode(&thread_state.cfg_hash_hex)?;
+    build_group_for_members(&thread_state.members, &cfg_hash, &thread_state.initial_secret_hex, proto_suite)
+}
+
+/// Builds a new MLS group and adds the provided members in order.
+fn build_group_for_members(
+    members: &[String],
+    cfg_hash: &[u8],
+    initial_secret_hex: &str,
+    proto_suite: ProtoSuite,
+) -> Result<Group, CliError> {
+    let initial_secret = hex::decode(initial_secret_hex)?;
+    let mut group = Group::create(
+        GroupConfig::new(
+            proto_suite,
+            0,
+            HashId::Sha256 as u16,
+            cfg_hash.to_vec(),
+        )
+        .with_initial_secret(initial_secret),
+    )
+    .map_err(|err| CliError::Mls(err.to_string()))?;
+    for member in members {
+        group
+            .add_member(member.clone())
+            .map_err(|err| CliError::Mls(err.to_string()))?;
+    }
+    Ok(group)
+}
+
+/// Encrypts a message with MLS-derived AEAD and chunks it for transport publication.
+fn encrypt_and_chunk_message(
+    identity: &IdentityState,
+    thread_state: &mut ThreadState,
+    plaintext: &[u8],
+) -> Result<(spex_core::types::Envelope, ChunkManifest, Vec<Chunk>), CliError> {
+    let group = rebuild_thread_group(thread_state)?;
+    let proto_suite = ProtoSuite {
+        major: thread_state.proto_major,
+        minor: thread_state.proto_minor,
+        ciphersuite_id: thread_state.ciphersuite_id,
+    };
+    let epoch = u32::try_from(group.epoch()).map_err(|_| CliError::InvalidAeadPayload)?;
+    let seq = thread_state.next_seq;
+    thread_state.next_seq = thread_state.next_seq.saturating_add(1);
+    thread_state.epoch = group.epoch();
+    let thread_id_bytes = hex::decode(&thread_state.thread_id_hex)?;
+    let thread_id = to_fixed::<32>(&thread_id_bytes)?;
+    let cfg_hash_bytes = hex::decode(&thread_state.cfg_hash_hex)?;
+    let cfg_hash = to_fixed::<32>(&cfg_hash_bytes)?;
+    let sender_id_bytes = hex::decode(&identity.user_id_hex)?;
+    let sender_ad_id = derive_sender_ad_id(&sender_id_bytes);
+    let ad = aead_ad::build_ad(&thread_id, epoch, &cfg_hash, proto_suite, seq, &sender_ad_id);
+    let ciphertext = encrypt_payload_with_aead(group.group_secret(), plaintext, &ad)?;
+    let envelope = build_envelope(identity, thread_state, epoch, seq, ciphertext)?;
+    let payload = envelope.to_ctap2_canonical_bytes()?;
+    let chunks = chunk_data(&ChunkingConfig::default(), &payload);
+    let manifest = ChunkManifest {
+        chunks: chunks
+            .iter()
+            .map(|chunk| ChunkDescriptor {
+                index: chunk.index,
+                hash: chunk.hash.clone(),
+            })
+            .collect(),
+        total_len: payload.len(),
+    };
+    Ok((envelope, manifest, chunks))
+}
+
+/// Encrypts a plaintext payload using a group secret and AEAD additional data.
+fn encrypt_payload_with_aead(
+    group_secret: &[u8],
+    plaintext: &[u8],
+    ad: &[u8],
+) -> Result<Vec<u8>, CliError> {
+    let key = hash_bytes(HashId::Sha256, group_secret);
+    let cipher = ChaCha20Poly1305::new_from_slice(&key)
+        .map_err(|err| CliError::Crypto(err.to_string()))?;
+    let mut nonce_bytes = [0u8; 12];
+    rand::thread_rng().fill_bytes(&mut nonce_bytes);
+    let nonce = Nonce::from_slice(&nonce_bytes);
+    let ciphertext = cipher
+        .encrypt(nonce, Payload { msg: plaintext, aad: ad })
+        .map_err(|err| CliError::Crypto(err.to_string()))?;
+    let mut output = Vec::with_capacity(nonce_bytes.len() + ciphertext.len());
+    output.extend_from_slice(&nonce_bytes);
+    output.extend_from_slice(&ciphertext);
+    Ok(output)
+}
+
+/// Builds a sealed envelope and attaches a signature from the local identity.
+fn build_envelope(
+    identity: &IdentityState,
+    thread_state: &ThreadState,
+    epoch: u32,
+    seq: u64,
+    ciphertext: Vec<u8>,
+) -> Result<spex_core::types::Envelope, CliError> {
+    let mut envelope = spex_core::types::Envelope {
+        thread_id: hex::decode(&thread_state.thread_id_hex)?,
+        epoch,
+        seq,
+        sender_user_id: hex::decode(&identity.user_id_hex)?,
+        ciphertext,
+        signature: None,
+        extensions: Default::default(),
+    };
+    let signing_key = SigningKey::from_bytes(&hex::decode(&identity.signing_key_hex)?);
+    let hash = hash_ctap2_cbor_value(HashId::Sha256, &envelope)?;
+    let signature = ed25519_sign_hash(&signing_key, &hash);
+    envelope.signature = Some(signature.to_bytes().to_vec());
+    Ok(envelope)
+}
+
+/// Derives a stable 20-byte sender identifier for AEAD additional data.
+fn derive_sender_ad_id(sender_id: &[u8]) -> [u8; 20] {
+    let digest = hash_bytes(HashId::Sha256, sender_id);
+    let mut out = [0u8; 20];
+    out.copy_from_slice(&digest[..20]);
+    out
+}
+
+/// Converts a transport manifest into a serializable state entry.
+fn manifest_state(manifest: &ChunkManifest) -> TransportManifestState {
+    TransportManifestState {
+        total_len: manifest.total_len,
+        chunks: manifest
+            .chunks
+            .iter()
+            .map(|chunk| TransportChunkDescriptorState {
+                index: chunk.index,
+                hash_hex: hex::encode(&chunk.hash),
+            })
+            .collect(),
+    }
+}
+
+/// Converts transport chunk data into a serializable state entry.
+fn chunk_states(chunks: &[Chunk]) -> Vec<TransportChunkState> {
+    chunks
+        .iter()
+        .map(|chunk| TransportChunkState {
+            index: chunk.index,
+            hash_hex: hex::encode(&chunk.hash),
+            data_base64: BASE64_STANDARD.encode(&chunk.data),
+        })
+        .collect()
+}
+
+/// Stages encrypted payloads into the local P2P inbox cache for recipients.
+fn stage_p2p_inbox_delivery(
+    state: &mut LocalState,
+    thread_state: &ThreadState,
+    sender_user_id_hex: &str,
+    envelope: &spex_core::types::Envelope,
+) -> Result<(), CliError> {
+    let payload = envelope.to_ctap2_canonical_bytes()?;
+    for member in &thread_state.members {
+        if member == sender_user_id_hex {
+            continue;
+        }
+        let member_bytes = hex::decode(member)?;
+        let scan = derive_inbox_scan_key(HashId::Sha256, &member_bytes);
+        let key_hex = hex::encode(scan.hashed_key);
+        state
+            .p2p_inbox
+            .entry(key_hex)
+            .or_default()
+            .push(BASE64_STANDARD.encode(&payload));
+    }
+    Ok(())
+}
+
+/// Resolves inbox payloads from local P2P cache or the bridge fallback.
+async fn resolve_inbox_from_state(
+    state: &mut LocalState,
+    inbox_scan_key: &[u8],
+    bridge: Option<&BridgeClient>,
+) -> Result<InboxScanResponse, CliError> {
+    let scan = derive_inbox_scan_key(HashId::Sha256, inbox_scan_key);
+    let key_hex = hex::encode(scan.hashed_key);
+    if let Some(items) = state.p2p_inbox.remove(&key_hex) {
+        let decoded = items
+            .into_iter()
+            .filter_map(|item| BASE64_STANDARD.decode(item.as_bytes()).ok())
+            .collect();
+        return Ok(InboxScanResponse {
+            items: decoded,
+            source: InboxSource::Kademlia,
+        });
+    }
+    if let Some(client) = bridge {
+        let response = client
+            .scan_inbox(inbox_scan_key)
+            .await
+            .map_err(|err| CliError::Transport(err.to_string()))?;
+        return Ok(response);
+    }
+    Ok(InboxScanResponse {
+        items: Vec::new(),
+        source: InboxSource::Kademlia,
+    })
 }
 
 /// Computes a SHA-256 fingerprint for the provided bytes.
