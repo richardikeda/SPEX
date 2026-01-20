@@ -2,6 +2,7 @@ use std::fmt;
 
 use mls_rs::{
     client_builder::{BaseConfig, IntoConfigOutput, WithCryptoProvider, WithIdentityProvider},
+    group::ReceivedMessage,
     identity::basic::{BasicCredential, BasicIdentityProvider},
     identity::SigningIdentity,
     CipherSuite, CipherSuiteProvider, Client, CryptoProvider, Extension, ExtensionList,
@@ -609,6 +610,32 @@ impl MlsRsClient {
             config,
         })
     }
+
+    /// Joins an MLS group from a welcome message and optional ratchet tree.
+    pub fn join_group(
+        &self,
+        welcome: &MlsMessage,
+        ratchet_tree: Option<mls_rs::group::ExportedTree<'_>>,
+    ) -> Result<MlsRsGroup, MlsRsError> {
+        let (group, _info) = self.client.join_group(ratchet_tree, welcome, None)?;
+        let config = group_config_from_context(group.context())?;
+        Ok(MlsRsGroup { group, config })
+    }
+
+    /// Performs an external commit to resynchronize or add a member using group info.
+    pub fn resync_from_group_info(
+        &self,
+        group_info: MlsMessage,
+        ratchet_tree: Option<mls_rs::group::ExportedTree<'_>>,
+    ) -> Result<(MlsRsGroup, MlsMessage), MlsRsError> {
+        let mut builder = self.client.external_commit_builder()?;
+        if let Some(tree) = ratchet_tree {
+            builder = builder.with_tree_data(tree.into_owned());
+        }
+        let (group, commit_message) = builder.build(group_info)?;
+        let config = group_config_from_context(group.context())?;
+        Ok((MlsRsGroup { group, config }, commit_message))
+    }
 }
 
 /// Wraps an MLS-rs group and exposes SPEX-specific helpers.
@@ -632,6 +659,37 @@ impl MlsRsGroup {
         let commit = self.group.commit_builder().remove_member(member_index)?.build()?;
         self.group.apply_pending_commit()?;
         Ok(commit)
+    }
+
+    /// Issues a self-update commit to rotate keys using an update path.
+    pub fn self_update(&mut self) -> Result<mls_rs::group::CommitOutput, MlsRsError> {
+        let commit = self.group.commit_builder().build()?;
+        self.group.apply_pending_commit()?;
+        Ok(commit)
+    }
+
+    /// Processes an incoming MLS commit message and applies the resulting epoch change.
+    pub fn process_commit_message(
+        &mut self,
+        message: MlsMessage,
+    ) -> Result<mls_rs::group::CommitMessageDescription, MlsRsError> {
+        match self.group.process_incoming_message(message)? {
+            ReceivedMessage::Commit(description) => Ok(description),
+            _ => Err(MlsRsError::LibraryError("unexpected MLS message type".to_string())),
+        }
+    }
+
+    /// Exports a group info message that allows external commits.
+    pub fn group_info_message_allowing_external_commit(
+        &self,
+        include_tree: bool,
+    ) -> Result<MlsMessage, MlsRsError> {
+        Ok(self.group.group_info_message_allowing_ext_commit(include_tree)?)
+    }
+
+    /// Exports the current ratchet tree for resynchronization workflows.
+    pub fn export_tree(&self) -> mls_rs::group::ExportedTree<'_> {
+        self.group.export_tree()
     }
 
     /// Returns the current MLS epoch.
@@ -687,6 +745,22 @@ fn build_group_context_extensions(config: &GroupConfig) -> Result<ExtensionList,
     list.set(Extension::new(SPEX_PROTO_SUITE_EXTENSION, proto_data));
     list.set(Extension::new(SPEX_CFG_HASH_EXTENSION, cfg_data));
     Ok(list)
+}
+
+/// Builds a group configuration by parsing the MLS group context extensions.
+fn group_config_from_context(context: &mls_rs::group::GroupContext) -> Result<GroupConfig, MlsRsError> {
+    let extensions = context.extensions();
+    let proto_ext = extensions
+        .get(SPEX_PROTO_SUITE_EXTENSION)
+        .ok_or(MlsRsError::InvalidExtension("missing proto suite extension"))?;
+    let cfg_ext = extensions
+        .get(SPEX_CFG_HASH_EXTENSION)
+        .ok_or(MlsRsError::InvalidExtension("missing cfg_hash extension"))?;
+
+    let (proto_suite, flags) = parse_proto_suite_extension(&proto_ext.extension_data)?;
+    let (cfg_hash_id, cfg_hash) = parse_cfg_hash_extension(&cfg_ext.extension_data)?;
+
+    Ok(GroupConfig::new(proto_suite, flags, cfg_hash_id, cfg_hash))
 }
 
 /// Extracts extension payload data from a serialized SPEX extension.
