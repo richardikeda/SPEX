@@ -16,12 +16,14 @@ use spex_client::{
     log_consistency,
     now_unix,
     receive_inbox_messages,
+    receive_transport_messages,
     redeem_contact_card_payload,
     rotate_identity,
     save_checkpoint_log,
     save_state,
-    publish_thread_message,
-    stage_p2p_inbox_delivery,
+    publish_thread_message_transport,
+    stage_transport_delivery,
+    transport_inbox_has_items,
     ClientError,
     ContactState,
     GrantState,
@@ -286,9 +288,9 @@ async fn main() -> Result<(), ClientError> {
                     .threads
                     .get_mut(&thread)
                     .ok_or(ClientError::ThreadNotFound)?;
-                let (envelope, outbox_item) =
-                    publish_thread_message(identity, thread_state, text.as_bytes())?;
-                let chunk_count = outbox_item.chunks.len();
+                let (_envelope, manifest, chunks, outbox_item) =
+                    publish_thread_message_transport(identity, thread_state, text.as_bytes())?;
+                let chunk_count = chunks.len();
                 let message = MessageState {
                     sender_user_id: identity.user_id_hex.clone(),
                     text: text.clone(),
@@ -296,7 +298,13 @@ async fn main() -> Result<(), ClientError> {
                 };
                 thread_state.messages.push(message);
                 state.transport_outbox.push(outbox_item);
-                stage_p2p_inbox_delivery(&mut state, thread_state, &identity.user_id_hex, &envelope)?;
+                stage_transport_delivery(
+                    &mut state,
+                    thread_state,
+                    &identity.user_id_hex,
+                    &manifest,
+                    &chunks,
+                )?;
                 println!(
                     "message published via transport ({} chunks)",
                     chunk_count
@@ -310,9 +318,12 @@ async fn main() -> Result<(), ClientError> {
             } => {
                 if let Some(inbox_key) = inbox_key {
                     let inbox_key_bytes = hex::decode(inbox_key)?;
-                    let bridge = bridge_url.map(BridgeClient::new);
-                    let response =
-                        receive_inbox_messages(&mut state, &inbox_key_bytes, bridge.as_ref()).await?;
+                    let response = if transport_inbox_has_items(&state, &inbox_key_bytes) {
+                        receive_transport_messages(&mut state, &inbox_key_bytes)?
+                    } else {
+                        let bridge = bridge_url.map(BridgeClient::new);
+                        receive_inbox_messages(&mut state, &inbox_key_bytes, bridge.as_ref()).await?
+                    };
                     for item in response.items {
                         let message_text = String::from_utf8(item.plaintext)
                             .map_err(|_| ClientError::InvalidMessageEncoding)?;

@@ -21,7 +21,10 @@ use spex_mls::{cfg_hash_for_thread_config, Group, GroupConfig};
 use spex_transport::{
     chunking::{chunk_data, Chunk, ChunkingConfig},
     inbox::{derive_inbox_scan_key, BridgeClient, InboxScanResponse, InboxSource},
-    transport::{ChunkDescriptor, ChunkManifest},
+    transport::{
+        ChunkDescriptor, ChunkManifest, TransportConfig, manifest_payload,
+        recover_chunks_from_store, recover_manifest_from_gossip, reassemble_chunks_with_manifest,
+    },
 };
 use std::{
     collections::HashMap,
@@ -104,6 +107,10 @@ pub struct LocalState {
     pub transport_outbox: Vec<TransportOutboxItem>,
     #[serde(default)]
     pub p2p_inbox: HashMap<String, Vec<String>>,
+    #[serde(default)]
+    pub transport_gossip: HashMap<String, Vec<String>>,
+    #[serde(default)]
+    pub transport_chunk_store: HashMap<String, String>,
     #[serde(default)]
     pub key_rotations: Vec<KeyRotationState>,
 }
@@ -800,6 +807,69 @@ pub fn stage_p2p_inbox_delivery(
     Ok(())
 }
 
+/// Stages manifest gossip payloads and chunks into the local transport cache.
+pub fn stage_transport_delivery(
+    state: &mut LocalState,
+    thread_state: &ThreadState,
+    sender_user_id_hex: &str,
+    manifest: &ChunkManifest,
+    chunks: &[Chunk],
+) -> Result<(), ClientError> {
+    let manifest_payload =
+        manifest_payload(manifest).map_err(|err| ClientError::Transport(err.to_string()))?;
+    for member in &thread_state.members {
+        if member == sender_user_id_hex {
+            continue;
+        }
+        let member_bytes = hex::decode(member)?;
+        let scan = derive_inbox_scan_key(HashId::Sha256, &member_bytes);
+        let key_hex = hex::encode(scan.hashed_key);
+        state
+            .transport_gossip
+            .entry(key_hex)
+            .or_default()
+            .push(BASE64_STANDARD.encode(&manifest_payload));
+    }
+    for chunk in chunks {
+        state
+            .transport_chunk_store
+            .entry(hex::encode(&chunk.hash))
+            .or_insert_with(|| BASE64_STANDARD.encode(&chunk.data));
+    }
+    Ok(())
+}
+
+/// Checks whether the local transport cache has manifests for an inbox key.
+pub fn transport_inbox_has_items(state: &LocalState, inbox_scan_key: &[u8]) -> bool {
+    let scan = derive_inbox_scan_key(HashId::Sha256, inbox_scan_key);
+    let key_hex = hex::encode(scan.hashed_key);
+    state
+        .transport_gossip
+        .get(&key_hex)
+        .map(|items| !items.is_empty())
+        .unwrap_or(false)
+}
+
+/// Builds a chunk store map for the provided manifest from local cached chunk data.
+fn build_transport_chunk_store(
+    state: &LocalState,
+    manifest: &ChunkManifest,
+) -> Result<std::collections::HashMap<Vec<u8>, Vec<u8>>, ClientError> {
+    let mut store = std::collections::HashMap::new();
+    for descriptor in &manifest.chunks {
+        let hash_hex = hex::encode(&descriptor.hash);
+        let data_base64 = state
+            .transport_chunk_store
+            .get(&hash_hex)
+            .ok_or_else(|| ClientError::Transport(format!("missing transport chunk {hash_hex}")))?;
+        let data = BASE64_STANDARD
+            .decode(data_base64.as_bytes())
+            .map_err(|_| ClientError::Transport("invalid transport chunk encoding".to_string()))?;
+        store.insert(descriptor.hash.clone(), data);
+    }
+    Ok(store)
+}
+
 /// Resolves inbox payloads from local P2P cache or the bridge fallback.
 pub async fn resolve_inbox_from_state(
     state: &mut LocalState,
@@ -827,6 +897,50 @@ pub async fn resolve_inbox_from_state(
     }
     Ok(InboxScanResponse {
         items: Vec::new(),
+        source: InboxSource::Kademlia,
+    })
+}
+
+/// Resolves transport manifests, recovers chunks, and decrypts the recovered envelopes.
+pub fn receive_transport_messages(
+    state: &mut LocalState,
+    inbox_scan_key: &[u8],
+) -> Result<InboxDecryptionResponse, ClientError> {
+    let scan = derive_inbox_scan_key(HashId::Sha256, inbox_scan_key);
+    let key_hex = hex::encode(scan.hashed_key);
+    let manifest_payloads = state.transport_gossip.remove(&key_hex).unwrap_or_default();
+    let mut items = Vec::new();
+    let config = TransportConfig::default();
+
+    for payload_base64 in manifest_payloads {
+        let payload = BASE64_STANDARD
+            .decode(payload_base64.as_bytes())
+            .map_err(|_| ClientError::Transport("invalid manifest payload encoding".to_string()))?;
+        let manifest = recover_manifest_from_gossip(&[payload])
+            .map_err(|err| ClientError::Transport(err.to_string()))?;
+        let store = build_transport_chunk_store(state, &manifest)?;
+        let chunks =
+            recover_chunks_from_store(&manifest, &store, &config)
+                .map_err(|err| ClientError::Transport(err.to_string()))?;
+        let payload =
+            reassemble_chunks_with_manifest(&manifest, &chunks, &config)
+                .map_err(|err| ClientError::Transport(err.to_string()))?;
+        let envelope = parse_envelope_payload(&payload)?;
+        let thread_id_hex = hex::encode(&envelope.thread_id);
+        let thread_state = state
+            .threads
+            .get(&thread_id_hex)
+            .ok_or(ClientError::ThreadNotFound)?;
+        let plaintext = decrypt_thread_envelope(state, thread_state, &envelope)?;
+        items.push(DecryptedInboxItem {
+            thread_id_hex,
+            sender_user_id_hex: hex::encode(&envelope.sender_user_id),
+            plaintext,
+        });
+    }
+
+    Ok(InboxDecryptionResponse {
+        items,
         source: InboxSource::Kademlia,
     })
 }
@@ -1180,6 +1294,23 @@ pub fn publish_thread_message(
         published_at: now_unix(),
     };
     Ok((envelope, outbox_item))
+}
+
+/// Publishes a thread message and returns transport-ready manifest and chunk payloads.
+pub fn publish_thread_message_transport(
+    identity: &IdentityState,
+    thread_state: &mut ThreadState,
+    plaintext: &[u8],
+) -> Result<(spex_core::types::Envelope, ChunkManifest, Vec<Chunk>, TransportOutboxItem), ClientError>
+{
+    let (envelope, manifest, chunks) = encrypt_and_chunk_message(identity, thread_state, plaintext)?;
+    let outbox_item = TransportOutboxItem {
+        thread_id_hex: thread_state.thread_id_hex.clone(),
+        manifest: manifest_state(&manifest),
+        chunks: chunk_states(&chunks),
+        published_at: now_unix(),
+    };
+    Ok((envelope, manifest, chunks, outbox_item))
 }
 
 /// Resolves inbox payloads with a local cache fallback.

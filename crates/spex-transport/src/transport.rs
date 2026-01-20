@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::time::Duration;
 
 use libp2p::gossipsub::{
@@ -148,9 +149,15 @@ fn publish_manifest(
     config: &TransportConfig,
     manifest: &ChunkManifest,
 ) -> Result<(), TransportError> {
-    let payload = serde_json::to_vec(manifest)?;
+    let payload = manifest_payload(manifest)?;
     gossip.publish(config.gossip_topic.clone(), payload)?;
     Ok(())
+}
+
+/// Serializes a chunk manifest into a gossipsub payload.
+pub fn manifest_payload(manifest: &ChunkManifest) -> Result<Vec<u8>, TransportError> {
+    let payload = serde_json::to_vec(manifest)?;
+    Ok(payload)
 }
 
 /// Parses a gossipsub payload into a chunk manifest.
@@ -222,6 +229,31 @@ pub fn collect_manifest_chunks(
     Ok(ordered)
 }
 
+/// Recovers chunk data from a hash-addressed store while validating hashes.
+pub fn recover_chunks_from_store(
+    manifest: &ChunkManifest,
+    store: &HashMap<Vec<u8>, Vec<u8>>,
+    config: &TransportConfig,
+) -> Result<Vec<Chunk>, TransportError> {
+    validate_manifest(manifest)?;
+    let mut ordered = Vec::with_capacity(manifest.chunks.len());
+    for descriptor in &manifest.chunks {
+        let data = store
+            .get(&descriptor.hash)
+            .ok_or_else(|| TransportError::MissingChunk(hex::encode(&descriptor.hash)))?;
+        let computed = hash_bytes(config.chunking.hash_id, data);
+        if computed != descriptor.hash {
+            return Err(TransportError::ChunkHashMismatch(descriptor.index));
+        }
+        ordered.push(Chunk {
+            index: descriptor.index,
+            hash: descriptor.hash.clone(),
+            data: data.clone(),
+        });
+    }
+    Ok(ordered)
+}
+
 /// Reassembles chunk data in manifest order, validating hashes and length.
 pub fn reassemble_chunks_with_manifest(
     manifest: &ChunkManifest,
@@ -261,6 +293,16 @@ pub fn reassemble_chunks_with_manifest(
         });
     }
     Ok(payload)
+}
+
+/// Reassembles a payload from a hash-addressed store with manifest verification.
+pub fn reassemble_payload_from_store(
+    manifest: &ChunkManifest,
+    store: &HashMap<Vec<u8>, Vec<u8>>,
+    config: &TransportConfig,
+) -> Result<Vec<u8>, TransportError> {
+    let chunks = recover_chunks_from_store(manifest, store, config)?;
+    reassemble_chunks_with_manifest(manifest, &chunks, config)
 }
 
 /// Reassembles chunks into an Envelope, validating hashes and manifest length.
