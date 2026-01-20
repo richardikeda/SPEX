@@ -2,7 +2,7 @@
 
 Esta especificação descreve os payloads CBOR usados no SPEX. Todos os mapas CBOR usam chaves
 inteiras e **serialização canonical (CTAP2)** para garantir ordenação determinística e assinaturas
-estáveis.
+estáveis. As tabelas abaixo documentam os **IDs** e **tipos CBOR** por campo.
 
 ## Convenções
 
@@ -17,7 +17,7 @@ estáveis.
 
 ## ContactCard
 
-| Campo | ID | Tipo | Descrição |
+| Campo | ID (CBOR) | Tipo (CBOR) | Descrição |
 | --- | --- | --- | --- |
 | `user_id` | 0 | bytes | Identificador do usuário (32 bytes). |
 | `verifying_key` | 1 | bytes | Chave pública Ed25519 (32 bytes). |
@@ -52,7 +52,7 @@ pwBYIAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gAVggISIjJCUmJygpKissLS4vMDEyMzQ1
 
 ## InviteToken
 
-| Campo | ID | Tipo | Descrição |
+| Campo | ID (CBOR) | Tipo (CBOR) | Descrição |
 | --- | --- | --- | --- |
 | `major` | 0 | uint | Versão major do protocolo. |
 | `minor` | 1 | uint | Versão minor do protocolo. |
@@ -75,7 +75,7 @@ owABAQAC9Q==
 
 ## GrantToken
 
-| Campo | ID | Tipo | Descrição |
+| Campo | ID (CBOR) | Tipo (CBOR) | Descrição |
 | --- | --- | --- | --- |
 | `user_id` | 0 | bytes | Usuário com permissão. |
 | `role` | 1 | uint | Papel/nível de acesso. |
@@ -104,7 +104,7 @@ pABYIAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gAQECAAMaZVP/EA==
 
 ## ThreadConfig
 
-| Campo | ID | Tipo | Descrição |
+| Campo | ID (CBOR) | Tipo (CBOR) | Descrição |
 | --- | --- | --- | --- |
 | `proto_major` | 0 | uint | Versão major. |
 | `proto_minor` | 1 | uint | Versão minor. |
@@ -134,7 +134,7 @@ pgABAQACAQMABFggQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVpbXF1eX2AFgaQAWCABAgMEBQYHCAkK
 
 ## Envelope
 
-| Campo | ID | Tipo | Descrição |
+| Campo | ID (CBOR) | Tipo (CBOR) | Descrição |
 | --- | --- | --- | --- |
 | `thread_id` | 0 | bytes | ID da thread. |
 | `epoch` | 1 | uint | Epoch MLS. |
