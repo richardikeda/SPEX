@@ -5,9 +5,10 @@ use serde_json::json;
 use spex_client::{
     ContactState, LocalState, RequestToken, SignedGrantToken, create_contact_card_payload,
     create_identity, create_request_payload, create_thread_state, decrypt_thread_envelope,
-    receive_inbox_messages, redeem_contact_card_payload, stage_p2p_inbox_delivery,
-    validate_request_puzzle, fingerprint_hex, log_consistency, save_checkpoint_log,
-    load_checkpoint_log, create_checkpoint_entry, create_recovery_entry, create_revocation_entry,
+    receive_inbox_messages, receive_transport_messages, redeem_contact_card_payload,
+    stage_p2p_inbox_delivery, stage_transport_delivery, validate_request_puzzle, fingerprint_hex,
+    log_consistency, save_checkpoint_log, load_checkpoint_log, create_checkpoint_entry,
+    create_recovery_entry, create_revocation_entry, publish_thread_message_transport,
     send_thread_message, sign_grant, validate_signed_grant, ClientError,
 };
 use spex_core::{
@@ -205,6 +206,52 @@ async fn e2e_two_identities_card_request_grant_pow_mls_bridge_p2p() {
     assert!(matches!(response.source, InboxSource::Bridge));
     assert_eq!(response.items.len(), 1);
     assert_eq!(response.items[0].plaintext, b"hello bridge");
+}
+
+/// Exercises transport manifest publication, chunk recovery, and envelope decryption.
+#[test]
+fn e2e_two_identities_transport_publish_recover_and_decrypt() {
+    let alice_identity = create_identity();
+    let alice_user_id_hex = alice_identity.user_id_hex.clone();
+    let bob_identity = create_identity();
+    let bob_user_id_hex = bob_identity.user_id_hex.clone();
+
+    let mut thread_state =
+        create_thread_state(&alice_identity, vec![bob_user_id_hex.clone()]).expect("thread");
+    let alice_card_payload = create_contact_card_payload(&alice_identity).expect("card");
+    let alice_card = redeem_contact_card_payload(&alice_card_payload).expect("redeem");
+
+    let mut bob_state = LocalState::default();
+    bob_state.identity = Some(bob_identity);
+    bob_state
+        .contacts
+        .insert(alice_user_id_hex.clone(), contact_state_from_card(&alice_card));
+    bob_state
+        .threads
+        .insert(thread_state.thread_id_hex.clone(), clone_thread_state(&thread_state));
+
+    let (_envelope, manifest, chunks, _outbox_item) = publish_thread_message_transport(
+        &alice_identity,
+        &mut thread_state,
+        b"hello transport",
+    )
+    .expect("publish transport");
+
+    stage_transport_delivery(
+        &mut bob_state,
+        &thread_state,
+        &alice_user_id_hex,
+        &manifest,
+        &chunks,
+    )
+    .expect("stage transport");
+
+    let inbox_key = hex::decode(&bob_user_id_hex).expect("bob key");
+    let response =
+        receive_transport_messages(&mut bob_state, &inbox_key).expect("receive transport");
+    assert!(matches!(response.source, InboxSource::Kademlia));
+    assert_eq!(response.items.len(), 1);
+    assert_eq!(response.items[0].plaintext, b"hello transport");
 }
 
 /// Ensures request puzzles at the minimum PoW parameters validate successfully.

@@ -43,12 +43,14 @@ O caminho pode ser sobrescrito definindo `SPEX_STATE_PATH`.
 ### `msg`
 
 - `msg send --thread <THREAD_ID_HEX> --text "..."`: envia mensagem para uma thread existente usando
-  MLS + AEAD, fragmentando o envelope e registrando a publicação via spex-transport no outbox local.
+  MLS + AEAD, fragmentando o envelope, publicando manifestos/chunks via spex-transport e registrando
+  o envio no outbox local.
 
 ### `inbox`
 
 - `inbox poll`: busca mensagens pendentes no modo local.
-- `inbox poll --inbox-key <HEX_KEY>`: consulta inbox via cache P2P local e decifra mensagens.
+- `inbox poll --inbox-key <HEX_KEY>`: consulta inbox via cache de manifestos/chunks do transporte
+  local e decifra mensagens.
 - `inbox poll --bridge-url <URL> --inbox-key <HEX_KEY>`: consulta inbox via bridge HTTP e decifra mensagens.
 
 ### `log`

@@ -23,11 +23,11 @@ Implementação inicial em andamento com os seguintes componentes e nível atual
 - **spex-mls**: integração MLS completa via `mls-rs`, com TreeKEM, commits, updates, add/remove e
   fluxos de ressincronização para grupos multi-membros.
 - **spex-transport**: base libp2p com chunking e manifestos, DHT/Kademlia, gossip e rotinas
-  de reassemblagem/verificação; integração ponta a ponta ainda não está conectada ao CLI.
+  de reassemblagem/verificação e helpers de publicação/recuperação via manifestos.
   - **spex-bridge**: bridge HTTP com SQLite para cards/slots, rate limit e validações de grant/PoW,
     com endpoint de leitura de inbox (scan) como fallback.
 - **spex-cli**: CLI de referência para identidades, cartões, request/grant, threads, envio de
-  mensagens (gera envelope + chunks) e polling de inbox via bridge/local cache.
+  mensagens (gera envelope + chunks/manifestos) e polling de inbox via transporte ou bridge.
 - **spex-client**: biblioteca de alto nível para estado local, fluxo request/grant e helpers de
   chunking/MLS usados pelo CLI.
 
@@ -35,7 +35,6 @@ Implementação inicial em andamento com os seguintes componentes e nível atual
 
 - Expansão de testes MLS interop avançados com vetores externos (além dos cenários reais atuais).
 - Endpoint de inbox para escrita/ingestão na bridge (armazenar entregas para scan).
-- Reassemblagem e publicação completas no transporte com fluxo ponta a ponta integrado ao CLI.
 - Integração CLI com rede P2P real (publicação/replicação e recuperação via manifestos).
 
 ## Documentação
