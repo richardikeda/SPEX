@@ -244,6 +244,46 @@ async fn put_get_slot_roundtrip() {
     assert_eq!(response_json["data"], BASE64.encode(data));
 }
 
+/// Ensures slot uploads are rejected when the slot_id hash does not match the payload.
+#[tokio::test]
+async fn rejects_slot_hash_mismatch() {
+    let tmp = tempdir().expect("tempdir");
+    let clock = Arc::new(FixedClock { now: 1_700_000_000 });
+    let state = init_state_with_clock(tmp.path().join("bridge.db"), clock).unwrap();
+    let app = app(state);
+
+    let data = b"slot-bytes";
+    let slot_hash = hex::encode(hash::hash_bytes(HashId::Sha256, b"other-slot"));
+    let payload = build_payload(1_700_000_000, data);
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri(format!("/slot/{slot_hash}"))
+                .header("content-type", "application/json")
+                .body(Body::from(payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/slot/{slot_hash}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
 /// Ensures expired grants are rejected by the slot endpoint.
 #[tokio::test]
 async fn rejects_expired_grant() {
