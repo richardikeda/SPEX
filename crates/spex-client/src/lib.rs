@@ -6,11 +6,13 @@ use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use spex_core::{
     aead_ad,
+    cbor::from_ctap2_canonical_slice,
+    error::SpexError,
     hash::{hash_bytes, hash_ctap2_cbor_value, HashId},
     log::{CheckpointEntry, CheckpointLog, KeyCheckpoint, LogConsistency, RecoveryKey, RevocationDeclaration},
     pow,
     sign::{ed25519_sign_hash, ed25519_verify_hash, ed25519_verify_key},
-    types::{to_fixed, ContactCard, GrantToken, ProtoSuite, ThreadConfig},
+    types::{to_fixed, ContactCard, Ctap2Cbor, GrantToken, ProtoSuite, ThreadConfig},
 };
 use spex_mls::{cfg_hash_for_thread_config, Group, GroupConfig};
 use spex_transport::{
@@ -59,6 +61,24 @@ pub enum ClientError {
     InvalidPuzzle,
     #[error("invalid aead payload")]
     InvalidAeadPayload,
+    #[error("missing envelope signature")]
+    MissingSignature,
+    #[error("unknown sender: {0}")]
+    UnknownSender(String),
+    #[error("sender not authorized for thread")]
+    UnauthorizedSender,
+    #[error("invalid message encoding")]
+    InvalidMessageEncoding,
+    #[error("core error: {0}")]
+    Core(String),
+}
+
+/// Converts core errors into client errors for unified handling.
+impl From<SpexError> for ClientError {
+    /// Maps core errors into a string-based client error.
+    fn from(err: SpexError) -> Self {
+        ClientError::Core(err.to_string())
+    }
 }
 
 /// Persistent client state representation.
@@ -139,6 +159,21 @@ pub struct MessageState {
 pub struct InboxItem {
     pub received_at: u64,
     pub payload_base64: String,
+}
+
+/// Decrypted inbox payload data for a thread message.
+#[derive(Debug)]
+pub struct DecryptedInboxItem {
+    pub thread_id_hex: String,
+    pub sender_user_id_hex: String,
+    pub plaintext: Vec<u8>,
+}
+
+/// Decryption response containing plaintext items and the transport source.
+#[derive(Debug)]
+pub struct InboxDecryptionResponse {
+    pub items: Vec<DecryptedInboxItem>,
+    pub source: InboxSource,
 }
 
 /// Stored request tokens for outgoing grants.
@@ -277,6 +312,14 @@ pub fn rotate_identity(identity: &mut IdentityState) -> &IdentityState {
     identity
 }
 
+/// Builds a signing key from a hex-encoded 32-byte secret.
+fn signing_key_from_hex(signing_key_hex: &str) -> Result<SigningKey, ClientError> {
+    let key_bytes: [u8; 32] = hex::decode(signing_key_hex)?
+        .try_into()
+        .map_err(|_| ClientError::SignatureInvalid)?;
+    Ok(SigningKey::from_bytes(&key_bytes))
+}
+
 /// Appends rotation metadata to the checkpoint log and revokes the previous verifying key.
 pub fn append_rotation_checkpoint(
     state: &mut LocalState,
@@ -332,7 +375,7 @@ pub fn build_contact_card(identity: &IdentityState) -> Result<ContactCard, Clien
 
 /// Signs a contact card using the local identity signing key.
 pub fn sign_contact_card(identity: &IdentityState, card: &ContactCard) -> Result<Vec<u8>, ClientError> {
-    let signing_key = SigningKey::from_bytes(&hex::decode(&identity.signing_key_hex)?);
+    let signing_key = signing_key_from_hex(&identity.signing_key_hex)?;
     let payload = card.to_ctap2_canonical_bytes()?;
     let digest = hash_bytes(HashId::Sha256, &payload);
     let signature = ed25519_sign_hash(&signing_key, &digest);
@@ -467,7 +510,7 @@ pub fn validate_request_puzzle(puzzle: &PuzzleToken, recipient_key: &[u8]) -> Re
 
 /// Signs a grant token and returns a payload compatible with bridge storage requests.
 pub fn sign_grant(identity: &IdentityState, grant: &GrantToken) -> Result<SignedGrantToken, ClientError> {
-    let signing_key = SigningKey::from_bytes(&hex::decode(&identity.signing_key_hex)?);
+    let signing_key = signing_key_from_hex(&identity.signing_key_hex)?;
     let verifying_key = ed25519_verify_key(&signing_key);
     let hash = hash_ctap2_cbor_value(HashId::Sha256, grant)?;
     let signature = ed25519_sign_hash(&signing_key, &hash);
@@ -612,7 +655,7 @@ pub fn build_envelope(
         signature: None,
         extensions: Default::default(),
     };
-    let signing_key = SigningKey::from_bytes(&hex::decode(&identity.signing_key_hex)?);
+    let signing_key = signing_key_from_hex(&identity.signing_key_hex)?;
     let hash = hash_ctap2_cbor_value(HashId::Sha256, &envelope)?;
     let signature = ed25519_sign_hash(&signing_key, &hash);
     envelope.signature = Some(signature.to_bytes().to_vec());
@@ -891,6 +934,22 @@ pub fn send_thread_message(
     encrypt_and_chunk_message(identity, thread_state, plaintext)
 }
 
+/// Publishes a thread message via transport chunking and returns the envelope and outbox record.
+pub fn publish_thread_message(
+    identity: &IdentityState,
+    thread_state: &mut ThreadState,
+    plaintext: &[u8],
+) -> Result<(spex_core::types::Envelope, TransportOutboxItem), ClientError> {
+    let (envelope, manifest, chunks) = encrypt_and_chunk_message(identity, thread_state, plaintext)?;
+    let outbox_item = TransportOutboxItem {
+        thread_id_hex: thread_state.thread_id_hex.clone(),
+        manifest: manifest_state(&manifest),
+        chunks: chunk_states(&chunks),
+        published_at: now_unix(),
+    };
+    Ok((envelope, outbox_item))
+}
+
 /// Resolves inbox payloads with a local cache fallback.
 pub async fn receive_inbox_payloads(
     state: &mut LocalState,
@@ -898,6 +957,34 @@ pub async fn receive_inbox_payloads(
     bridge: Option<&BridgeClient>,
 ) -> Result<InboxScanResponse, ClientError> {
     resolve_inbox_from_state(state, inbox_scan_key, bridge).await
+}
+
+/// Resolves inbox payloads, validates envelopes, and decrypts the message contents.
+pub async fn receive_inbox_messages(
+    state: &mut LocalState,
+    inbox_scan_key: &[u8],
+    bridge: Option<&BridgeClient>,
+) -> Result<InboxDecryptionResponse, ClientError> {
+    let response = resolve_inbox_from_state(state, inbox_scan_key, bridge).await?;
+    let mut items = Vec::new();
+    for payload in response.items {
+        let envelope = parse_envelope_payload(&payload)?;
+        let thread_id_hex = hex::encode(&envelope.thread_id);
+        let thread_state = state
+            .threads
+            .get(&thread_id_hex)
+            .ok_or(ClientError::ThreadNotFound)?;
+        let plaintext = decrypt_thread_envelope(state, thread_state, &envelope)?;
+        items.push(DecryptedInboxItem {
+            thread_id_hex,
+            sender_user_id_hex: hex::encode(&envelope.sender_user_id),
+            plaintext,
+        });
+    }
+    Ok(InboxDecryptionResponse {
+        items,
+        source: response.source,
+    })
 }
 
 /// Creates a recovery key entry for the local log.
@@ -944,4 +1031,110 @@ pub fn create_revocation_entry(
 /// Reports consistency between two checkpoint logs.
 pub fn log_consistency(local: &CheckpointLog, remote: &CheckpointLog) -> LogConsistency {
     local.compare_with(remote)
+}
+
+/// Parses a CTAP2 canonical CBOR payload into an Envelope.
+pub fn parse_envelope_payload(payload: &[u8]) -> Result<spex_core::types::Envelope, ClientError> {
+    Ok(from_ctap2_canonical_slice(payload)?)
+}
+
+/// Resolves a sender verifying key from local identity or contact metadata.
+fn resolve_sender_verifying_key(
+    state: &LocalState,
+    sender_user_id_hex: &str,
+) -> Result<[u8; 32], ClientError> {
+    if let Some(identity) = &state.identity {
+        if identity.user_id_hex == sender_user_id_hex {
+            return hex::decode(&identity.verifying_key_hex)?
+                .try_into()
+                .map_err(|_| ClientError::SignatureInvalid);
+        }
+    }
+    let contact = state
+        .contacts
+        .get(sender_user_id_hex)
+        .ok_or_else(|| ClientError::UnknownSender(sender_user_id_hex.to_string()))?;
+    hex::decode(&contact.verifying_key_hex)?
+        .try_into()
+        .map_err(|_| ClientError::SignatureInvalid)
+}
+
+/// Verifies an envelope signature against a provided verifying key.
+fn verify_envelope_signature(
+    envelope: &spex_core::types::Envelope,
+    verifying_key_bytes: &[u8; 32],
+) -> Result<(), ClientError> {
+    let signature_bytes = envelope
+        .signature
+        .as_ref()
+        .ok_or(ClientError::MissingSignature)?;
+    let signature_bytes: [u8; 64] = signature_bytes
+        .as_slice()
+        .try_into()
+        .map_err(|_| ClientError::SignatureInvalid)?;
+    let signature = ed25519_dalek::Signature::from_bytes(&signature_bytes);
+    let verifying_key = ed25519_dalek::VerifyingKey::from_bytes(verifying_key_bytes)
+        .map_err(|_| ClientError::SignatureInvalid)?;
+    let mut unsigned_envelope = envelope.clone();
+    unsigned_envelope.signature = None;
+    let hash = hash_ctap2_cbor_value(HashId::Sha256, &unsigned_envelope)?;
+    ed25519_verify_hash(&verifying_key, &hash, &signature)
+        .map_err(|_| ClientError::SignatureInvalid)
+}
+
+/// Decrypts a sealed envelope payload for a thread using MLS-derived AEAD.
+pub fn decrypt_thread_envelope(
+    state: &LocalState,
+    thread_state: &ThreadState,
+    envelope: &spex_core::types::Envelope,
+) -> Result<Vec<u8>, ClientError> {
+    let thread_id_hex = hex::encode(&envelope.thread_id);
+    if thread_state.thread_id_hex != thread_id_hex {
+        return Err(ClientError::ThreadNotFound);
+    }
+    let sender_user_id_hex = hex::encode(&envelope.sender_user_id);
+    if !thread_state.members.contains(&sender_user_id_hex) {
+        return Err(ClientError::UnauthorizedSender);
+    }
+    let verifying_key_bytes = resolve_sender_verifying_key(state, &sender_user_id_hex)?;
+    verify_envelope_signature(envelope, &verifying_key_bytes)?;
+    let group = rebuild_thread_group(thread_state)?;
+    let proto_suite = ProtoSuite {
+        major: thread_state.proto_major,
+        minor: thread_state.proto_minor,
+        ciphersuite_id: thread_state.ciphersuite_id,
+    };
+    let thread_id_bytes = hex::decode(&thread_state.thread_id_hex)?;
+    let thread_id = to_fixed::<32>(&thread_id_bytes)?;
+    let cfg_hash_bytes = hex::decode(&thread_state.cfg_hash_hex)?;
+    let cfg_hash = to_fixed::<32>(&cfg_hash_bytes)?;
+    let sender_ad_id = derive_sender_ad_id(&envelope.sender_user_id);
+    let ad = aead_ad::build_ad(
+        &thread_id,
+        envelope.epoch,
+        &cfg_hash,
+        proto_suite,
+        envelope.seq,
+        &sender_ad_id,
+    );
+    decrypt_payload_with_aead(group.group_secret(), &envelope.ciphertext, &ad)
+}
+
+/// Decrypts an AEAD payload using the group secret and additional data.
+pub fn decrypt_payload_with_aead(
+    group_secret: &[u8],
+    ciphertext: &[u8],
+    ad: &[u8],
+) -> Result<Vec<u8>, ClientError> {
+    if ciphertext.len() < 12 {
+        return Err(ClientError::InvalidAeadPayload);
+    }
+    let key = hash_bytes(HashId::Sha256, group_secret);
+    let cipher = ChaCha20Poly1305::new_from_slice(&key)
+        .map_err(|err| ClientError::Crypto(err.to_string()))?;
+    let (nonce_bytes, payload) = ciphertext.split_at(12);
+    let nonce = Nonce::from_slice(nonce_bytes);
+    cipher
+        .decrypt(nonce, Payload { msg: payload, aad: ad })
+        .map_err(|err| ClientError::Crypto(err.to_string()))
 }
