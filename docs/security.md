@@ -24,7 +24,8 @@ Mudanças inesperadas de chave podem indicar comprometimento ou ataque de substi
 ## Request/grant e permissões
 
 - Sempre valide `RequestToken` antes de emitir um grant.
-- Enforce o nível mínimo de PoW quando `requires_puzzle` estiver ativo.
+- Enforce o nível mínimo de PoW quando `requires_puzzle` estiver ativo (memória ≥64 MiB,
+  iterações ≥3).
 - Restrinja roles/flags com base em políticas locais e evite permissões excessivas.
 
 ## TLS obrigatório

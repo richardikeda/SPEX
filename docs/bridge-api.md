@@ -189,7 +189,8 @@ GET /inbox/<HEX_KEY> HTTP/1.1
 
 - Os campos `recipient_key`, `puzzle_input` e `puzzle_output` devem ser base64 válidos.
 - `params` é opcional; caso omitido, o servidor usa parâmetros padrão.
-- `params` (quando informado) deve respeitar o mínimo de memória/iterações aceito pelo servidor.
+- `params` (quando informado) deve respeitar o mínimo de memória/iterações aceito pelo servidor
+  (memória ≥64 MiB, iterações ≥3).
 - O mínimo pode ser ajustado dinamicamente conforme reputação local e volume recente de requests.
 - A verificação é feita com `spex-core` (CTAP2/PoW) e retorna `401` se inválida.
 
