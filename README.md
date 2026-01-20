@@ -17,14 +17,27 @@ criptografia de ponta a ponta, auditabilidade e integridade dos dados.
 
 ## Estado atual
 
-Implementação inicial em andamento com os seguintes componentes:
-- **spex-core**: tipos, CBOR canonical (CTAP2), hashes, assinatura e provas de trabalho.
-- **spex-mls**: integração MLS (mls-rs) com APIs `MlsRsClient`/`MlsRsGroup` para criação de grupos, commits (add/remove) e validação de `cfg_hash`/`proto_suite`, além de suporte simplificado de secrets, cifragem/decifragem e extensões MLS integradas ao handshake.
-- **spex-transport**: chunking por hash, publicação/replicação DHT/Kademlia (incluindo replicação passiva e renovação de TTL), gossip com recuperação resiliente de manifestos, reassemblagem de chunks com verificação de hash e reconstrução de envelopes, além de random walks robustos e inbox scanning derivado de `inbox_scan_key` com fallback via bridge HTTP.
-    - **spex-bridge**: bridge HTTP com armazenamento SQLite (cards/slots), validações básicas, rate limiting por identidade, ajuste dinâmico de dificuldade PoW e logs de abuso com timestamp/IP/slot.
-- **spex-cli**: CLI de referência para identidades, cartões, puzzles PoW em requests, grants assinados, rotação/revogação de chaves e envio de mensagens MLS + AEAD com publicação fragmentada.
-- **spex-client**: biblioteca que encapsula operações básicas (identidade, cartões, request/grant, threads e envio/recebimento de mensagens).
-- **spex-core/log**: log append-only com Merkle tree para checkpoints de chaves, recovery keys e declarações de revogação.
+Implementação inicial em andamento com os seguintes componentes e nível atual:
+- **spex-core**: primitives de tipos SPEX, CBOR canonical (CTAP2), hashes, assinatura, PoW,
+  log append-only e validações básicas de tokens.
+- **spex-mls**: wrapper experimental sobre `mls-rs` com contexto de grupo, commits simples e
+  criptografia/decifragem; não cobre o protocolo MLS completo (TreeKEM/interop avançada).
+- **spex-transport**: base libp2p com chunking e manifestos, DHT/Kademlia, gossip e rotinas
+  de reassemblagem/verificação; integração ponta a ponta ainda não está conectada ao CLI.
+  - **spex-bridge**: bridge HTTP com SQLite para cards/slots, rate limit e validações de grant/PoW,
+    com endpoint de leitura de inbox (scan) como fallback.
+- **spex-cli**: CLI de referência para identidades, cartões, request/grant, threads, envio de
+  mensagens (gera envelope + chunks) e polling de inbox via bridge/local cache.
+- **spex-client**: biblioteca de alto nível para estado local, fluxo request/grant e helpers de
+  chunking/MLS usados pelo CLI.
+
+## O que falta implementar
+
+- MLS completo (TreeKEM completo, interoperabilidade e cobertura de casos de grupo reais).
+- Endpoint de inbox para escrita/ingestão na bridge (armazenar entregas para scan).
+- Validação consistente de grant/PoW em todos os pontos de ingestão (bridge + transporte P2P).
+- Reassemblagem e publicação completas no transporte com fluxo ponta a ponta integrado ao CLI.
+- Integração CLI com rede P2P real (publicação/replicação e recuperação via manifestos).
 
 ## Documentação
 
@@ -38,6 +51,12 @@ Implementação inicial em andamento com os seguintes componentes:
 Os documentos acima detalham arquitetura, wire format com tabelas de IDs/tipos CBOR, bridge HTTP
 com exemplos de payloads e status codes, fluxo request/grant, armazenamento local (`~/.spex/state.json`),
 fingerprints, requisitos de TLS e práticas de segurança recomendadas.
+
+## Avisos de segurança
+
+- **TLS obrigatório** em qualquer integração HTTP/externa (bridge e serviços de terceiros).
+- **Validação de grants e PoW** deve ser aplicada em todos os pontos de entrada.
+- **Proteção do estado local** é mandatória (criptografia e/ou keychain para `~/.spex/state.json`).
 
 ## Build e uso
 
