@@ -75,6 +75,15 @@ fn build_payload(now: u64, data: &[u8]) -> serde_json::Value {
     })
 }
 
+/// Builds an inbox storage payload with an optional time-to-live value.
+fn build_inbox_payload(now: u64, data: &[u8], ttl_seconds: Option<u64>) -> serde_json::Value {
+    let mut payload = build_payload(now, data);
+    if let Some(ttl) = ttl_seconds {
+        payload["ttl_seconds"] = json!(ttl);
+    }
+    payload
+}
+
 /// Builds a storage request payload with custom PoW inputs and parameters.
 fn build_payload_with_puzzle(
     now: u64,
@@ -423,13 +432,13 @@ async fn rejects_invalid_grant_signature() {
     let db_path = tmp.path().join("bridge.db");
     let clock = Arc::new(FixedClock { now: 1_700_000_000 });
     let state = init_state_with_clock(db_path.clone(), clock).unwrap();
-    let app = app(state);
+    let router = app(state);
 
     let slot_hash = hex::encode(hash::hash_bytes(HashId::Sha256, b"slot"));
     let mut payload = build_payload(1_700_000_000, b"slot");
     payload["grant"]["signature"] = json!(BASE64.encode([9u8; 64]));
 
-    let response = app
+    let response = router
         .oneshot(
             Request::builder()
                 .method("PUT")
@@ -564,6 +573,101 @@ async fn rejects_incorrect_pow_salt() {
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+/// Verifies inbox storage writes data that can be retrieved via scan.
+#[tokio::test]
+async fn put_get_inbox_roundtrip() {
+    let tmp = tempdir().expect("tempdir");
+    let db_path = tmp.path().join("bridge.db");
+    let clock = Arc::new(FixedClock { now: 1_700_000_000 });
+    let state = init_state_with_clock(db_path.clone(), clock).unwrap();
+    let app = app(state);
+
+    let inbox_key = "deadbeef";
+    let payload = build_inbox_payload(1_700_000_000, b"item-1", Some(60));
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri(format!("/inbox/{inbox_key}"))
+                .header("content-type", "application/json")
+                .body(Body::from(payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/inbox/{inbox_key}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let response_json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(response_json["items"], json!([BASE64.encode(b"item-1")]));
+    assert!(response_json["next_cursor"].is_null());
+}
+
+/// Verifies expired inbox items are filtered when retrieving from storage.
+#[tokio::test]
+async fn put_inbox_filters_expired_items() {
+    let tmp = tempdir().expect("tempdir");
+    let db_path = tmp.path().join("bridge.db");
+    let clock = Arc::new(FixedClock { now: 1_700_000_000 });
+    let state = init_state_with_clock(db_path.clone(), clock).unwrap();
+    let app = app(state);
+
+    let inbox_key = "expired-inbox";
+    let payload = build_inbox_payload(1_700_000_000, b"expiring-item", Some(1));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri(format!("/inbox/{inbox_key}"))
+                .header("content-type", "application/json")
+                .body(Body::from(payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+
+    let later_clock = Arc::new(FixedClock { now: 1_700_000_002 });
+    let later_state = init_state_with_clock(db_path.clone(), later_clock).unwrap();
+    let later_router = spex_bridge::app(later_state);
+
+    let response = later_router
+        .oneshot(
+            Request::builder()
+                .uri(format!("/inbox/{inbox_key}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let response_json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(response_json["items"], json!([]));
+    assert!(response_json["next_cursor"].is_null());
 }
 
 /// Verifies inbox retrieval returns stored items for a known inbox key.

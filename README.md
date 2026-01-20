@@ -319,6 +319,23 @@ GET /slot/<SHA256_HEX> HTTP/1.1
 { "data": "<BASE64_BLOB>" }
 ```
 
+### PUT /inbox/:key (bridge ingest)
+
+Armazena envelopes destinados ao inbox scanning via bridge. O payload segue o mesmo formato de
+`/cards` e `/slot`, com `ttl_seconds` opcional para controlar expiração.
+
+```http
+PUT /inbox/<HEX_KEY> HTTP/1.1
+Content-Type: application/json
+
+{
+  "...mesmo payload do /cards...",
+  "ttl_seconds": 3600
+}
+```
+
+- `ttl_seconds` é opcional (padrão 86.400s, máximo 604.800s).
+
 ### GET /inbox/:key (bridge fallback)
 
 O cliente de inbox do transporte espera um endpoint simples:
