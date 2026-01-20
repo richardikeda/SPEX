@@ -304,8 +304,19 @@ GET /inbox/<HEX_KEY> HTTP/1.1
 ```
 
 ```json
-{ "items": ["<BASE64_ENVELOPE>", "..."] }
+{
+  "items": ["<BASE64_ENVELOPE>", "..."],
+  "next_cursor": 42
+}
 ```
+
+Query params:
+
+- `limit` (opcional): máximo de itens por página (padrão 100, máximo 500).
+- `cursor` (opcional): retorna itens com `id` maior que o cursor informado.
+- `max_bytes` (opcional): limite total de bytes retornados por página.
+
+Itens expirados (`expires_at`) são omitidos do resultado.
 
 Responses:
 

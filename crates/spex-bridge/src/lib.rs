@@ -1,5 +1,5 @@
 use axum::{
-    extract::{ConnectInfo, Path, State},
+    extract::{ConnectInfo, Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
     routing::{get, put},
@@ -151,6 +151,20 @@ struct StoredResponse {
 #[derive(Debug, Serialize)]
 struct InboxResponse {
     items: Vec<String>,
+    next_cursor: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct InboxQuery {
+    limit: Option<usize>,
+    cursor: Option<i64>,
+    max_bytes: Option<usize>,
+}
+
+#[derive(Debug)]
+struct InboxPage {
+    items: Vec<Vec<u8>>,
+    next_cursor: Option<i64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -251,10 +265,12 @@ fn init_db(path: &FsPath) -> rusqlite::Result<()> {
         "CREATE TABLE IF NOT EXISTS inbox_items (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             inbox_key TEXT NOT NULL,
-            item BLOB NOT NULL
+            item BLOB NOT NULL,
+            expires_at INTEGER
         )",
         [],
     )?;
+    ensure_inbox_items_expiration_column(&conn)?;
     conn.execute(
         "CREATE TABLE IF NOT EXISTS request_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -276,6 +292,27 @@ fn init_db(path: &FsPath) -> rusqlite::Result<()> {
         [],
     )?;
     Ok(())
+}
+
+/// Ensures the inbox_items table has the expires_at column for expiry filtering.
+fn ensure_inbox_items_expiration_column(conn: &Connection) -> rusqlite::Result<()> {
+    if inbox_items_has_expires_column(conn)? {
+        return Ok(());
+    }
+    conn.execute("ALTER TABLE inbox_items ADD COLUMN expires_at INTEGER", [])?;
+    Ok(())
+}
+
+/// Checks whether the inbox_items table already contains the expires_at column.
+fn inbox_items_has_expires_column(conn: &Connection) -> rusqlite::Result<bool> {
+    let mut stmt = conn.prepare("PRAGMA table_info(inbox_items)")?;
+    let columns = stmt.query_map([], |row| row.get::<_, String>(1))?;
+    for column in columns {
+        if column? == "expires_at" {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// Stores a card payload after validating its grant, puzzle, and hash.
@@ -439,12 +476,28 @@ async fn get_slot(
 async fn get_inbox(
     State(state): State<AppState>,
     Path(inbox_key): Path<String>,
+    Query(query): Query<InboxQuery>,
 ) -> Result<Json<InboxResponse>, BridgeError> {
-    let items = load_inbox_items(&state.db_path, &inbox_key)
+    let now = state.clock.now();
+    let limit = normalize_inbox_limit(query.limit);
+    let max_bytes = normalize_inbox_max_bytes(query.max_bytes, state.limits.max_bytes);
+    let page = load_inbox_items(
+        &state.db_path,
+        &inbox_key,
+        now,
+        query.cursor,
+        limit,
+        max_bytes,
+    )
         .await?
         .ok_or(BridgeError::NotFound)?;
     Ok(Json(InboxResponse {
-        items: items.into_iter().map(|item| BASE64.encode(item)).collect(),
+        items: page
+            .items
+            .into_iter()
+            .map(|item| BASE64.encode(item))
+            .collect(),
+        next_cursor: page.next_cursor,
     }))
 }
 
@@ -762,11 +815,35 @@ async fn load_entry(
     .map_err(|err| BridgeError::Storage(err.to_string()))
 }
 
+const DEFAULT_INBOX_PAGE_LIMIT: usize = 100;
+const MAX_INBOX_PAGE_LIMIT: usize = 500;
+
+/// Normalizes the inbox page size to a safe default and maximum cap.
+fn normalize_inbox_limit(limit: Option<usize>) -> usize {
+    match limit {
+        Some(value) if value > 0 => value.min(MAX_INBOX_PAGE_LIMIT),
+        _ => DEFAULT_INBOX_PAGE_LIMIT,
+    }
+}
+
+/// Normalizes the inbox max bytes value to a bounded response size.
+fn normalize_inbox_max_bytes(max_bytes: Option<usize>, max_allowed: u64) -> usize {
+    let max_allowed = max_allowed.min(usize::MAX as u64) as usize;
+    match max_bytes {
+        Some(value) if value > 0 => value.min(max_allowed),
+        _ => max_allowed,
+    }
+}
+
 /// Loads inbox items for the given key, returning None when the inbox is missing.
 async fn load_inbox_items(
     db_path: &PathBuf,
     inbox_key: &str,
-) -> Result<Option<Vec<Vec<u8>>>, BridgeError> {
+    now: u64,
+    cursor: Option<i64>,
+    limit: usize,
+    max_bytes: usize,
+) -> Result<Option<InboxPage>, BridgeError> {
     let db_path = db_path.clone();
     let inbox_key = inbox_key.to_string();
     task::spawn_blocking(move || {
@@ -781,15 +858,37 @@ async fn load_inbox_items(
         if exists.is_none() {
             return Ok(None);
         }
+        let cursor = cursor.unwrap_or(0);
+        let fetch_limit = limit.saturating_add(1) as i64;
         let mut stmt = conn.prepare(
-            "SELECT item FROM inbox_items WHERE inbox_key = ?1 ORDER BY id ASC",
+            "SELECT id, item FROM inbox_items \
+             WHERE inbox_key = ?1 AND (expires_at IS NULL OR expires_at > ?2) AND id > ?3 \
+             ORDER BY id ASC LIMIT ?4",
         )?;
-        let rows = stmt.query_map([inbox_key], |row| row.get(0))?;
+        let rows = stmt.query_map(
+            params![inbox_key, now, cursor, fetch_limit],
+            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?)),
+        )?;
         let mut items = Vec::new();
+        let mut total_bytes = 0usize;
+        let mut last_id = None;
+        let mut has_more = false;
         for row in rows {
-            items.push(row?);
+            let (id, item) = row?;
+            if items.len() >= limit {
+                has_more = true;
+                break;
+            }
+            if total_bytes + item.len() > max_bytes {
+                has_more = true;
+                break;
+            }
+            total_bytes += item.len();
+            last_id = Some(id);
+            items.push(item);
         }
-        Ok(Some(items))
+        let next_cursor = if has_more { last_id } else { None };
+        Ok(Some(InboxPage { items, next_cursor }))
     })
     .await
     .map_err(|err| BridgeError::Storage(err.to_string()))?

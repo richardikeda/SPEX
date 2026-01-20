@@ -161,15 +161,26 @@ GET /slot/<SHA256_HEX> HTTP/1.1
 ## GET /inbox/:key
 
 Endpoint de fallback usado pelo transporte para inbox scanning via HTTP. O payload retorna uma
-lista de envelopes CBOR base64.
+lista de envelopes CBOR base64 com paginação e filtragem de expiração.
 
 ```http
 GET /inbox/<HEX_KEY> HTTP/1.1
 ```
 
 ```json
-{ "items": ["<BASE64_ENVELOPE>", "<BASE64_ENVELOPE>"] }
+{
+  "items": ["<BASE64_ENVELOPE>", "<BASE64_ENVELOPE>"],
+  "next_cursor": 42
+}
 ```
+
+**Query params**
+
+- `limit` (opcional): máximo de itens por página (padrão 100, máximo 500).
+- `cursor` (opcional): retorna itens com `id` maior que o cursor informado.
+- `max_bytes` (opcional): limite total de bytes retornados por página.
+
+Itens com `expires_at` no passado são omitidos.
 
 **Status codes (recomendados)**
 

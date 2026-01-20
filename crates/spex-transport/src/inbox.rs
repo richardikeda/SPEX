@@ -86,9 +86,12 @@ pub struct BridgeClient {
     client: reqwest::Client,
 }
 
+const DEFAULT_BRIDGE_PAGE_LIMIT: usize = 100;
+
 #[derive(Debug, Serialize, Deserialize)]
 struct BridgeInboxResponse {
     items: Vec<String>,
+    next_cursor: Option<i64>,
 }
 
 impl BridgeClient {
@@ -106,20 +109,36 @@ impl BridgeClient {
         inbox_scan_key: &[u8],
     ) -> Result<InboxScanResponse, TransportError> {
         let encoded_key = hex::encode(inbox_scan_key);
-        let url = format!("{}/inbox/{}", self.base_url.trim_end_matches('/'), encoded_key);
-        let response = self
-            .client
-            .get(url)
-            .send()
-            .await?
-            .error_for_status()?;
-        let payload: BridgeInboxResponse = response.json().await?;
-        let mut items = Vec::with_capacity(payload.items.len());
-        for item in payload.items {
-            let decoded = BASE64_STANDARD
-                .decode(item.as_bytes())
-                .map_err(|_| TransportError::BridgePayload)?;
-            items.push(decoded);
+        let mut items = Vec::new();
+        let mut cursor: Option<i64> = None;
+        loop {
+            let mut url = format!(
+                "{}/inbox/{}?limit={}",
+                self.base_url.trim_end_matches('/'),
+                encoded_key,
+                DEFAULT_BRIDGE_PAGE_LIMIT
+            );
+            if let Some(cursor_value) = cursor {
+                url.push_str(&format!("&cursor={cursor_value}"));
+            }
+            let response = self
+                .client
+                .get(url)
+                .send()
+                .await?
+                .error_for_status()?;
+            let payload: BridgeInboxResponse = response.json().await?;
+            for item in payload.items {
+                let decoded = BASE64_STANDARD
+                    .decode(item.as_bytes())
+                    .map_err(|_| TransportError::BridgePayload)?;
+                items.push(decoded);
+            }
+            if let Some(next_cursor) = payload.next_cursor {
+                cursor = Some(next_cursor);
+            } else {
+                break;
+            }
         }
         Ok(InboxScanResponse {
             items,
