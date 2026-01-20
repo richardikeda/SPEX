@@ -293,7 +293,7 @@ async fn put_card(
     let minimum_pow = required_pow_params(&snapshot, &state.limits);
     let result = (|| -> Result<(), BridgeError> {
         enforce_rate_limits(&snapshot, &state.limits, data.len())?;
-        validate_storage_request(&state, &payload, &minimum_pow)?;
+        validate_storage_request(&state, &payload, &minimum_pow, true)?;
         validate_hash(&card_hash, &data)?;
         Ok(())
     })();
@@ -354,14 +354,35 @@ async fn put_slot(
     Json(payload): Json<StorageRequest>,
 ) -> Result<StatusCode, BridgeError> {
     let data = decode_base64(&payload.data)?;
-    let identity = identity_from_grant(&payload.grant)?;
     let now = state.clock.now();
     let ip = extract_ip(connect_info);
+    let identity = identity_from_grant(&payload.grant).unwrap_or_else(|_| "unknown".to_string());
+    if let Err(err) = validate_grant(now, &payload.grant) {
+        tracing::warn!(
+            slot_id = %slot_id,
+            ip = %ip,
+            error = %err,
+            "invalid grant for slot request"
+        );
+        record_request_log(
+            &state.db_path,
+            now,
+            &identity,
+            &ip,
+            Some(&slot_id),
+            data.len(),
+            RequestKind::Slot,
+            RequestOutcome::Rejected,
+        )
+        .await?;
+        update_reputation(&state.db_path, &identity, RequestOutcome::Rejected).await?;
+        return Err(err);
+    }
     let snapshot = load_rate_limit_snapshot(&state.db_path, &identity, now, state.limits).await?;
     let minimum_pow = required_pow_params(&snapshot, &state.limits);
     let result = (|| -> Result<(), BridgeError> {
         enforce_rate_limits(&snapshot, &state.limits, data.len())?;
-        validate_storage_request(&state, &payload, &minimum_pow)?;
+        validate_storage_request(&state, &payload, &minimum_pow, false)?;
         validate_hash(&slot_id, &data)?;
         Ok(())
     })();
@@ -427,13 +448,16 @@ async fn get_inbox(
     }))
 }
 
-/// Validates grant and puzzle information before persistence.
+/// Validates puzzle information and optionally enforces grant validation before persistence.
 fn validate_storage_request(
     state: &AppState,
     payload: &StorageRequest,
     minimum_pow: &PowParams,
+    validate_grant_token: bool,
 ) -> Result<(), BridgeError> {
-    validate_grant(state.clock.now(), &payload.grant)?;
+    if validate_grant_token {
+        validate_grant(state.clock.now(), &payload.grant)?;
+    }
     validate_puzzle(&payload.puzzle, minimum_pow)?;
     Ok(())
 }

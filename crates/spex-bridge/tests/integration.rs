@@ -118,6 +118,17 @@ fn seed_inbox(db_path: &std::path::Path, inbox_key: &str, items: &[&[u8]]) {
     }
 }
 
+/// Loads the most recent request log outcome for assertions.
+fn load_latest_request_outcome(db_path: &std::path::Path) -> String {
+    let conn = Connection::open(db_path).expect("open request log db");
+    conn.query_row(
+        "SELECT outcome FROM request_logs ORDER BY id DESC LIMIT 1",
+        [],
+        |row| row.get::<_, String>(0),
+    )
+    .expect("load request outcome")
+}
+
 /// Verifies storing and retrieving a card succeeds with valid grant/puzzle data.
 #[tokio::test]
 async fn put_get_card_roundtrip() {
@@ -271,6 +282,35 @@ async fn rejects_invalid_grant() {
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+/// Ensures invalid grant signatures are rejected by the slot endpoint and logged.
+#[tokio::test]
+async fn rejects_invalid_grant_signature() {
+    let tmp = tempdir().expect("tempdir");
+    let db_path = tmp.path().join("bridge.db");
+    let clock = Arc::new(FixedClock { now: 1_700_000_000 });
+    let state = init_state_with_clock(db_path.clone(), clock).unwrap();
+    let app = app(state);
+
+    let slot_hash = hex::encode(hash::hash_bytes(HashId::Sha256, b"slot"));
+    let mut payload = build_payload(1_700_000_000, b"slot");
+    payload["grant"]["signature"] = json!(BASE64.encode([9u8; 64]));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri(format!("/slot/{slot_hash}"))
+                .header("content-type", "application/json")
+                .body(Body::from(payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(load_latest_request_outcome(&db_path), "rejected");
 }
 
 /// Ensures invalid puzzle output is rejected by the slot endpoint.
