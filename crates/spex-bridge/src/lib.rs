@@ -173,7 +173,7 @@ struct ErrorResponse {
 }
 
 #[derive(Debug, thiserror::Error)]
-enum BridgeError {
+pub enum BridgeError {
     #[error("invalid request: {0}")]
     InvalidRequest(String),
     #[error("puzzle validation failed")]
@@ -323,13 +323,14 @@ async fn put_card(
     Json(payload): Json<StorageRequest>,
 ) -> Result<StatusCode, BridgeError> {
     let data = decode_base64(&payload.data)?;
+    let data_len = data.len();
     let identity = identity_from_grant(&payload.grant)?;
     let now = state.clock.now();
     let ip = extract_ip(connect_info);
     let snapshot = load_rate_limit_snapshot(&state.db_path, &identity, now, state.limits).await?;
     let minimum_pow = required_pow_params(&snapshot, &state.limits);
     let result = (|| -> Result<(), BridgeError> {
-        enforce_rate_limits(&snapshot, &state.limits, data.len())?;
+        enforce_rate_limits(&snapshot, &state.limits, data_len)?;
         validate_storage_request(&state, &payload, &minimum_pow, true)?;
         validate_hash(&card_hash, &data)?;
         Ok(())
@@ -344,7 +345,7 @@ async fn put_card(
                 &identity,
                 &ip,
                 None,
-                data.len(),
+                data_len,
                 RequestKind::Card,
                 RequestOutcome::Accepted,
             )
@@ -359,7 +360,7 @@ async fn put_card(
                 &identity,
                 &ip,
                 None,
-                data.len(),
+                data_len,
                 RequestKind::Card,
                 RequestOutcome::Rejected,
             )
@@ -391,6 +392,7 @@ async fn put_slot(
     Json(payload): Json<StorageRequest>,
 ) -> Result<StatusCode, BridgeError> {
     let data = decode_base64(&payload.data)?;
+    let data_len = data.len();
     let now = state.clock.now();
     let ip = extract_ip(connect_info);
     let identity = identity_from_grant(&payload.grant).unwrap_or_else(|_| "unknown".to_string());
@@ -407,7 +409,7 @@ async fn put_slot(
             &identity,
             &ip,
             Some(&slot_id),
-            data.len(),
+            data_len,
             RequestKind::Slot,
             RequestOutcome::Rejected,
         )
@@ -418,7 +420,7 @@ async fn put_slot(
     let snapshot = load_rate_limit_snapshot(&state.db_path, &identity, now, state.limits).await?;
     let minimum_pow = required_pow_params(&snapshot, &state.limits);
     let result = (|| -> Result<(), BridgeError> {
-        enforce_rate_limits(&snapshot, &state.limits, data.len())?;
+        enforce_rate_limits(&snapshot, &state.limits, data_len)?;
         validate_storage_request(&state, &payload, &minimum_pow, false)?;
         validate_hash(&slot_id, &data)?;
         Ok(())
@@ -433,7 +435,7 @@ async fn put_slot(
                 &identity,
                 &ip,
                 Some(&slot_id),
-                data.len(),
+                data_len,
                 RequestKind::Slot,
                 RequestOutcome::Accepted,
             )
@@ -448,7 +450,7 @@ async fn put_slot(
                 &identity,
                 &ip,
                 Some(&slot_id),
-                data.len(),
+                data_len,
                 RequestKind::Slot,
                 RequestOutcome::Rejected,
             )
@@ -657,7 +659,7 @@ async fn load_rate_limit_snapshot(
     })
     .await
     .map_err(|err| BridgeError::Storage(err.to_string()))?
-    .map_err(|err| BridgeError::Storage(err.to_string()))
+    .map_err(|err: rusqlite::Error| BridgeError::Storage(err.to_string()))
 }
 
 /// Enforces the per-identity message and byte limits for the active window.
@@ -721,7 +723,7 @@ async fn record_request_log(
     })
     .await
     .map_err(|err| BridgeError::Storage(err.to_string()))?
-    .map_err(|err| BridgeError::Storage(err.to_string()))
+    .map_err(|err: rusqlite::Error| BridgeError::Storage(err.to_string()))
 }
 
 /// Updates the local reputation score based on request outcome.
@@ -755,7 +757,7 @@ async fn update_reputation(
     })
     .await
     .map_err(|err| BridgeError::Storage(err.to_string()))?
-    .map_err(|err| BridgeError::Storage(err.to_string()))
+    .map_err(|err: rusqlite::Error| BridgeError::Storage(err.to_string()))
 }
 
 /// Stores binary data in the requested table under the provided key.
@@ -783,7 +785,7 @@ async fn store_entry(
     })
     .await
     .map_err(|err| BridgeError::Storage(err.to_string()))?
-    .map_err(|err| BridgeError::Storage(err.to_string()))
+    .map_err(|err: rusqlite::Error| BridgeError::Storage(err.to_string()))
 }
 
 /// Loads binary data for the requested key from the database.
@@ -812,7 +814,7 @@ async fn load_entry(
     })
     .await
     .map_err(|err| BridgeError::Storage(err.to_string()))?
-    .map_err(|err| BridgeError::Storage(err.to_string()))
+    .map_err(|err: rusqlite::Error| BridgeError::Storage(err.to_string()))
 }
 
 const DEFAULT_INBOX_PAGE_LIMIT: usize = 100;
@@ -892,7 +894,7 @@ async fn load_inbox_items(
     })
     .await
     .map_err(|err| BridgeError::Storage(err.to_string()))?
-    .map_err(|err| BridgeError::Storage(err.to_string()))
+    .map_err(|err: rusqlite::Error| BridgeError::Storage(err.to_string()))
 }
 
 #[cfg(test)]
