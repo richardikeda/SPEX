@@ -18,3 +18,7 @@ thiserror = "1.0"
 spex-core = { path = "../../spex-core" }
 spex-mls = { path = "../spex-mls" }
 spex-transport = { path = "../spex-transport" }
+
+[dev-dependencies]
+axum = { version = "0.7", features = ["macros"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

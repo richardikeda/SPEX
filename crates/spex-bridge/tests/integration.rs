@@ -203,8 +203,9 @@ async fn put_get_card_roundtrip() {
 #[tokio::test]
 async fn put_get_slot_roundtrip() {
     let tmp = tempdir().expect("tempdir");
+    let db_path = tmp.path().join("bridge.db");
     let clock = Arc::new(FixedClock { now: 1_700_000_000 });
-    let state = init_state_with_clock(tmp.path().join("bridge.db"), clock).unwrap();
+    let state = init_state_with_clock(db_path.clone(), clock).unwrap();
     let app = app(state);
 
     let data = b"slot-bytes";
@@ -225,6 +226,7 @@ async fn put_get_slot_roundtrip() {
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert_eq!(load_latest_request_outcome(&db_path), "accepted");
 
     let response = app
         .oneshot(
@@ -242,6 +244,71 @@ async fn put_get_slot_roundtrip() {
         .unwrap();
     let response_json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(response_json["data"], BASE64.encode(data));
+}
+
+/// Ensures minimum PoW parameters are accepted by the slot endpoint.
+#[tokio::test]
+async fn accepts_minimum_pow_for_slot() {
+    let tmp = tempdir().expect("tempdir");
+    let clock = Arc::new(FixedClock { now: 1_700_000_000 });
+    let state = init_state_with_clock(tmp.path().join("bridge.db"), clock).unwrap();
+    let app = app(state);
+
+    let recipient_key = b"recipient";
+    let puzzle_input = b"input";
+    let params = PowParams::minimum();
+    let puzzle_output =
+        pow::generate_puzzle_output(recipient_key, puzzle_input, params).unwrap();
+    let payload = build_payload_with_puzzle(
+        1_700_000_000,
+        b"slot",
+        recipient_key,
+        puzzle_input,
+        &puzzle_output,
+        params,
+    );
+
+    let slot_hash = hex::encode(hash::hash_bytes(HashId::Sha256, b"slot"));
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri(format!("/slot/{slot_hash}"))
+                .header("content-type", "application/json")
+                .body(Body::from(payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+}
+
+/// Ensures malformed slot payloads are rejected as invalid requests.
+#[tokio::test]
+async fn rejects_invalid_slot_payload() {
+    let tmp = tempdir().expect("tempdir");
+    let clock = Arc::new(FixedClock { now: 1_700_000_000 });
+    let state = init_state_with_clock(tmp.path().join("bridge.db"), clock).unwrap();
+    let app = app(state);
+
+    let slot_hash = hex::encode(hash::hash_bytes(HashId::Sha256, b"slot"));
+    let mut payload = build_payload(1_700_000_000, b"slot");
+    payload["data"] = json!("not-base64");
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri(format!("/slot/{slot_hash}"))
+                .header("content-type", "application/json")
+                .body(Body::from(payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
 
 /// Ensures slot uploads are rejected when the slot_id hash does not match the payload.
@@ -386,14 +453,21 @@ async fn rejects_invalid_puzzle() {
     let state = init_state_with_clock(tmp.path().join("bridge.db"), clock).unwrap();
     let app = app(state);
 
+    let recipient_key = b"recipient";
+    let puzzle_input = b"input";
+    let mut puzzle_output =
+        pow::generate_puzzle_output(recipient_key, puzzle_input, PowParams::default()).unwrap();
+    if let Some(byte) = puzzle_output.first_mut() {
+        *byte ^= 0xff;
+    }
     let slot_hash = hex::encode(hash::hash_bytes(HashId::Sha256, b"slot"));
     let payload = json!({
         "data": BASE64.encode(b"slot"),
         "grant": build_grant_payload(1_700_000_100),
         "puzzle": {
-            "recipient_key": BASE64.encode(b"recipient"),
-            "puzzle_input": BASE64.encode(b"input"),
-            "puzzle_output": BASE64.encode(b"wrong")
+            "recipient_key": BASE64.encode(recipient_key),
+            "puzzle_input": BASE64.encode(puzzle_input),
+            "puzzle_output": BASE64.encode(puzzle_output)
         }
     });
 

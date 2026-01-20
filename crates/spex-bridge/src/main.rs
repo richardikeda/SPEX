@@ -10,7 +10,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
 
     let db_path = std::env::var("SPEX_BRIDGE_DB").unwrap_or_else(|_| "spex-bridge.db".to_string());
-    let state = init_state(db_path)?;
+    let state = init_state(db_path).map_err(|err| format!("{err}"))?;
     let app = spex_bridge::app(state);
 
     let addr: SocketAddr = "0.0.0.0:3000".parse()?;

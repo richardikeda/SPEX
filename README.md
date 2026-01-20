@@ -116,6 +116,9 @@ cargo run -p spex-cli -- log gossip-verify --path <LOG_FILE>
 cargo run -p spex-bridge
 ```
 
+Para integração via biblioteca, `spex_bridge::init_state` e `spex_bridge::init_state_with_clock`
+retornam `BridgeError` em falhas de inicialização.
+
 ### Fluxo básico de handshake (request/grant)
 
 1. O remetente envia um `RequestToken` (JSON base64) com puzzle Argon2id para o destinatário.
