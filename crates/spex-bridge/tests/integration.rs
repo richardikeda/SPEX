@@ -103,6 +103,25 @@ fn build_payload_with_puzzle(
 
 /// Inserts inbox keys and items directly into the bridge database for testing.
 fn seed_inbox(db_path: &std::path::Path, inbox_key: &str, items: &[&[u8]]) {
+    seed_inbox_with_expiry(
+        db_path,
+        inbox_key,
+        &items
+            .iter()
+            .map(|item| InboxSeedItem {
+                payload: *item,
+                expires_at: None,
+            })
+            .collect::<Vec<_>>(),
+    );
+}
+
+/// Inserts inbox keys and items directly into the bridge database for testing.
+fn seed_inbox_with_expiry(
+    db_path: &std::path::Path,
+    inbox_key: &str,
+    items: &[InboxSeedItem<'_>],
+) {
     let conn = Connection::open(db_path).expect("open inbox db");
     conn.execute(
         "INSERT OR IGNORE INTO inbox_keys (inbox_key) VALUES (?1)",
@@ -111,11 +130,17 @@ fn seed_inbox(db_path: &std::path::Path, inbox_key: &str, items: &[&[u8]]) {
     .expect("insert inbox key");
     for item in items {
         conn.execute(
-            "INSERT INTO inbox_items (inbox_key, item) VALUES (?1, ?2)",
-            params![inbox_key, item],
+            "INSERT INTO inbox_items (inbox_key, item, expires_at) VALUES (?1, ?2, ?3)",
+            params![inbox_key, item.payload, item.expires_at],
         )
         .expect("insert inbox item");
     }
+}
+
+/// Carries inbox payload data and optional expiration timestamps for tests.
+struct InboxSeedItem<'a> {
+    payload: &'a [u8],
+    expires_at: Option<u64>,
 }
 
 /// Loads the most recent request log outcome for assertions.
@@ -458,6 +483,7 @@ async fn get_inbox_with_items() {
         response_json["items"],
         json!([BASE64.encode(b"item-1"), BASE64.encode(b"item-2")])
     );
+    assert!(response_json["next_cursor"].is_null());
 }
 
 /// Verifies inbox retrieval returns an empty list when no items are present.
@@ -488,6 +514,51 @@ async fn get_inbox_without_items() {
         .unwrap();
     let response_json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(response_json["items"], json!([]));
+    assert!(response_json["next_cursor"].is_null());
+}
+
+/// Verifies inbox retrieval skips expired items for a known inbox key.
+#[tokio::test]
+async fn get_inbox_filters_expired_items() {
+    let tmp = tempdir().expect("tempdir");
+    let db_path = tmp.path().join("bridge.db");
+    let clock = Arc::new(FixedClock { now: 1_700_000_000 });
+    let state = init_state_with_clock(db_path.clone(), clock).unwrap();
+    let app = app(state);
+
+    let inbox_key = "expired-box";
+    seed_inbox_with_expiry(
+        &db_path,
+        inbox_key,
+        &[
+            InboxSeedItem {
+                payload: b"expired-item",
+                expires_at: Some(1_699_999_000),
+            },
+            InboxSeedItem {
+                payload: b"fresh-item",
+                expires_at: Some(1_700_000_100),
+            },
+        ],
+    );
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/inbox/{inbox_key}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let response_json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(response_json["items"], json!([BASE64.encode(b"fresh-item")]));
+    assert!(response_json["next_cursor"].is_null());
 }
 
 /// Captures a manual TLS validation checklist for the bridge server.
