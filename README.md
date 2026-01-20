@@ -35,7 +35,8 @@ Implementação inicial em andamento com os seguintes componentes:
 - [Bridge HTTP API](docs/bridge-api.md)
 - [Segurança](docs/security.md)
 
-Os documentos acima detalham arquitetura, fluxo request/grant, armazenamento local (`~/.spex/state.json`),
+Os documentos acima detalham arquitetura, wire format com tabelas de IDs/tipos CBOR, bridge HTTP
+com exemplos de payloads e status codes, fluxo request/grant, armazenamento local (`~/.spex/state.json`),
 fingerprints, requisitos de TLS e práticas de segurança recomendadas.
 
 ## Build e uso

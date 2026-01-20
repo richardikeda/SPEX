@@ -12,6 +12,16 @@ validação para payloads, PoW e grants.
 - **Rate limiting**: o servidor aplica limites por identidade para mensagens e bytes por janela.
 - **Auditoria**: o servidor persiste logs com timestamp, IP e slot para análise de abuso.
 
+## Resumo de endpoints
+
+| Método | Caminho | Descrição |
+| --- | --- | --- |
+| `PUT` | `/cards/:card_hash` | Armazena um `ContactCard` (CBOR base64). |
+| `GET` | `/cards/:card_hash` | Recupera um `ContactCard` por hash. |
+| `PUT` | `/slot/:slot_id` | Armazena blob genérico por hash. |
+| `GET` | `/slot/:slot_id` | Recupera blob armazenado. |
+| `GET` | `/inbox/:key` | Lista envelopes para inbox scanning. |
+
 ## PUT /cards/:card_hash
 
 Armazena um `ContactCard` (CBOR base64). O `card_hash` deve ser o SHA-256 hex do CBOR bruto.
@@ -54,7 +64,7 @@ Content-Type: application/json
 }
 ```
 
-**Responses**
+**Status codes**
 
 - `204 No Content`: armazenamento concluído.
 - `400 Bad Request`: payload inválido ou hash divergente.
@@ -74,7 +84,7 @@ GET /cards/<SHA256_HEX> HTTP/1.1
 { "data": "<BASE64_CBOR_CARD>" }
 ```
 
-**Responses**
+**Status codes**
 
 - `200 OK`: payload encontrado.
 - `404 Not Found`: hash não existe.
@@ -122,7 +132,7 @@ Content-Type: application/json
 }
 ```
 
-**Responses**
+**Status codes**
 
 - `204 No Content`: armazenamento concluído.
 - `400 Bad Request`: payload inválido.
@@ -142,7 +152,7 @@ GET /slot/<SHA256_HEX> HTTP/1.1
 { "data": "<BASE64_BLOB>" }
 ```
 
-**Responses**
+**Status codes**
 
 - `200 OK`: payload encontrado.
 - `404 Not Found`: slot não existe.
@@ -161,7 +171,7 @@ GET /inbox/<HEX_KEY> HTTP/1.1
 { "items": ["<BASE64_ENVELOPE>", "<BASE64_ENVELOPE>"] }
 ```
 
-**Responses (recomendadas)**
+**Status codes (recomendados)**
 
 - `200 OK`: retorna um array (pode estar vazio).
 - `404 Not Found`: inbox ainda não existe.
