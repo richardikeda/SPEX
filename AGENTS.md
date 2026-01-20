@@ -1,4 +1,8 @@
- - Incremente a cada tarefa o contador de versão em VERSION.md e dados que devem ser incrementados em cada tarefa executada. 
- - A regra do versão é sempre atualizar a ultima posição de 1 a 99 após atingir 99 a posição do meio deve ser incrementado em 1 e em seguinda a ultima posição zerada eg. 0.0.99 a proxima versão 0.1.0 e assim por diante. 
- - Todas as funções e metodos devem ter comentários em inglês explicando a mesma.
- - o Arquivo README.md deve ser sempre atualizado ao final das tarefas quando necessário para atualizar a documentação.
+# Contribution Rules
+- Increment the version counter in VERSION.md for every task executed.
+- Versioning rule: always increment the last position from 1 to 99; after reaching 99, increment the middle position by 1 and reset the last position to 0 (e.g., 0.0.99 -> 0.1.0).
+- All functions and methods must have English comments explaining them.
+- Update README.md at the end of tasks whenever documentation needs to be updated.
+- Every implementation or fix must be accompanied by corresponding test(s) executed before the commit.
+- Security expectations: validate grants/permissions, enforce minimum Proof-of-Work requirements where applicable, and avoid weakening authentication or authorization controls.
+- If APIs change, documentation updates are mandatory (README.md and any relevant docs under /docs).
