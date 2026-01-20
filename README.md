@@ -35,6 +35,9 @@ Implementação inicial em andamento com os seguintes componentes:
 - [Bridge HTTP API](docs/bridge-api.md)
 - [Segurança](docs/security.md)
 
+Os documentos acima detalham arquitetura, fluxo request/grant, armazenamento local (`~/.spex/state.json`),
+fingerprints, requisitos de TLS e práticas de segurança recomendadas.
+
 ## Build e uso
 
 ### Build

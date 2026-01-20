@@ -1,5 +1,7 @@
 # Segurança
 
+Este documento resume práticas obrigatórias e recomendações para integrações SPEX.
+
 ## CBOR canônico (CTAP2)
 
 O SPEX exige **CBOR canonical (CTAP2)** para garantir que serialização e assinatura sejam
@@ -18,6 +20,12 @@ Cards (ex.: `ContactCard`) devem passar por validações estritas:
   registrada com a nova e exija confirmação explícita do usuário ou fluxo de revogação.
 
 Mudanças inesperadas de chave podem indicar comprometimento ou ataque de substituição.
+
+## Request/grant e permissões
+
+- Sempre valide `RequestToken` antes de emitir um grant.
+- Enforce o nível mínimo de PoW quando `requires_puzzle` estiver ativo.
+- Restrinja roles/flags com base em políticas locais e evite permissões excessivas.
 
 ## TLS obrigatório
 

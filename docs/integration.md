@@ -1,7 +1,7 @@
 # Integração
 
-Este guia cobre geração e validação de cartões, fluxo PoW/Grant, criação de threads e envio de
-mensagens. Consulte também o README para exemplos completos e notas de segurança já existentes.
+Este guia cobre geração e validação de cartões, fluxo request/grant, criação de threads e envio de
+mensagens. Inclui exemplos em Rust e princípios para outras linguagens.
 
 ## Cartões (ContactCard)
 
@@ -33,18 +33,41 @@ Ao importar um card, valide:
 - Assinatura (quando presente).
 - Continuidade do fingerprint da chave pública para contatos já conhecidos.
 
-Esses passos evitam card spoofing e trocas silenciosas de chave. Veja o README para a descrição
-completa do wire-format e o fluxo de fingerprint.
+Esses passos evitam card spoofing e trocas silenciosas de chave.
 
-## PoW e Grant
+## Request/grant
 
-Quando `requires_puzzle` estiver habilitado no `InviteToken`, o remetente deve resolver o PoW e
-incluir a prova no request/grant conforme o formato esperado no `spex-core`. O fluxo é:
+O fluxo básico é:
 
-1. Receber `InviteToken` indicando PoW obrigatório.
-2. Resolver o puzzle conforme parâmetros do token.
-3. Enviar `RequestToken` com a prova.
-4. Validar a prova e emitir o `GrantToken`.
+1. Receber `ContactCard` ou `InviteToken`.
+2. Criar `RequestToken` (JSON base64) com PoW se exigido.
+3. Validar request e emitir `GrantToken` assinado (CBOR canonical base64).
+4. Usar o grant para criar `ThreadConfig` e iniciar a thread MLS.
+
+### Exemplo em Rust (request/grant)
+
+```rust
+// Pseudocódigo ilustrativo.
+use spex_core::tokens::{RequestToken, GrantToken};
+
+let request = RequestToken::builder()
+    .user_id(requester_id)
+    .role(role)
+    .puzzle_solution(puzzle_solution)
+    .build();
+
+let request_b64 = base64::encode(request.to_json_bytes()?);
+
+// Do lado do destinatário:
+let grant = GrantToken::builder()
+    .user_id(requester_id)
+    .role(role)
+    .expires_at(expires_at)
+    .build();
+
+let grant_cbor = grant.to_cbor()?; // CBOR canonical
+let grant_b64 = base64::encode(grant_cbor);
+```
 
 ## Threads e mensagens
 
@@ -79,20 +102,17 @@ let envelope = Envelope::builder()
 
 ## Integração em outras linguagens
 
-- **CBOR canonical/CTAP2**: utilize uma biblioteca que suporte mapas com chaves inteiras e
-  preserve ordenação canônica.
-- **Base64**: tokens e cards são transportados em base64 para compatibilidade com canais de texto.
-- **JSON**: `RequestToken` é JSON base64 (observe campos e tipos descritos no README).
-- **Ed25519**: use bibliotecas maduras para assinatura e verificação; os hashes e nonce devem
-  seguir as especificações do `spex-core`.
+Ao implementar fora de Rust, mantenha os seguintes princípios:
 
-## Referências no README
+- **CBOR canonical/CTAP2**: use biblioteca que preserve a ordenação canônica e mapas com chaves
+  inteiras conforme a especificação.
+- **Base64**: cards/tokens são transportados em base64 para compatibilidade com canais de texto.
+- **JSON**: `RequestToken` é JSON base64; respeite nomes de campos e tipos conforme `spex-core`.
+- **Ed25519**: assine/verifique com bibliotecas maduras e hashing determinístico.
+- **PoW mínimo**: se `requires_puzzle` estiver ativo, valide o puzzle antes de emitir grants.
+- **TLS obrigatório**: use HTTPS quando integrar com bridge HTTP ou serviços externos.
 
-Consulte no README:
-- **Fluxo básico de handshake (request/grant)**.
-- **Persistência local e fingerprints**.
-- **Wire format (CBOR canonical/CTAP2)**.
-- **Checkpoints, recovery e revogação de chaves**.
+## Persistência local
 
-Essas seções consolidam exemplos e observações de segurança que devem ser respeitadas por todas
-as integrações.
+Se você implementar armazenamento local, use um arquivo equivalente ao `~/.spex/state.json` para
+manter chaves e contatos, com permissões restritas e criptografia em repouso quando possível.

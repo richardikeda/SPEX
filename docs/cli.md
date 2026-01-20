@@ -1,7 +1,7 @@
 # CLI (spex-cli)
 
-Esta página descreve os subcomandos principais do `spex-cli`, o formato do estado local e a
-interpretação de fingerprints.
+Esta página descreve os subcomandos principais do `spex-cli`, o formato do estado local,
+interpretação de fingerprints e exemplos de uso.
 
 ## Estado local
 
@@ -15,8 +15,7 @@ O caminho pode ser sobrescrito definindo `SPEX_STATE_PATH`.
 
 ### `identity`
 
-- `identity new`: gera uma identidade local (chave Ed25519 e metadados básicos). Usado como base
-  para criação de cards e assinatura de mensagens.
+- `identity new`: gera uma identidade local (chave Ed25519 e metadados básicos).
 - `identity rotate`: gira a chave de assinatura local, registra a rotação no log de checkpoints e
   revoga a chave anterior com motivo `key rotation`.
 
@@ -29,13 +28,12 @@ O caminho pode ser sobrescrito definindo `SPEX_STATE_PATH`.
 ### `request`
 
 - `request send --to <USER_ID_HEX> --role <N>`: gera um `RequestToken` (JSON base64) para solicitar
-  acesso/participação. O token inclui um puzzle Argon2id (entrada/saída + parâmetros) validado no
-  momento da criação.
+  acesso/participação. O token inclui puzzle Argon2id quando requerido pelo invite.
 
 ### `grant`
 
 - `grant accept --request <BASE64>`: valida um request, verifica puzzle (quando presente) e emite
-  um grant **assinado** (JSON base64 com `verifying_key` e `signature`).
+  um grant **assinado** (CBOR canonical base64).
 - `grant deny --request <BASE64>`: rejeita o request (sem gerar grant).
 
 ### `thread`
@@ -63,9 +61,36 @@ O caminho pode ser sobrescrito definindo `SPEX_STATE_PATH`.
 - `log import --path <LOG_FILE>`: importa o log previamente exportado.
 - `log gossip-verify --path <LOG_FILE>`: valida consistência de uma réplica do log.
 
+## Exemplos de uso
+
+### Fluxo básico (card → request → grant)
+
+```bash
+# gerar identidade e criar card
+cargo run -p spex-cli -- identity new
+cargo run -p spex-cli -- card create
+
+# importar card recebido (mostra fingerprint)
+cargo run -p spex-cli -- card redeem --card <BASE64>
+
+# enviar request e aceitar grant
+cargo run -p spex-cli -- request send --to <USER_ID_HEX> --role 1
+cargo run -p spex-cli -- grant accept --request <BASE64>
+```
+
+### Envio de mensagem para uma thread
+
+```bash
+# criar thread com membros conhecidos
+cargo run -p spex-cli -- thread new --members <USER_ID_HEX>,<USER_ID_HEX>
+
+# enviar mensagem
+cargo run -p spex-cli -- msg send --thread <THREAD_ID_HEX> --text "Olá"
+```
+
 ## Fingerprints
 
 Ao resgatar um `ContactCard`, o CLI imprime o fingerprint da chave pública do contato para
 verificação manual. Se a mesma identidade for importada novamente com uma chave diferente, o
-CLI emite um alerta. Essa verificação manual é o principal mecanismo para detectar trocas
-maliciosas ou acidentes de rotação de chaves.
+CLI emite um alerta. Esse processo reduz o risco de troca maliciosa de chaves e ajuda a detectar
+comprometimento de identidade.
