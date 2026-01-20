@@ -6,6 +6,7 @@ members = [
   "crates/spex-transport",
   "crates/spex-bridge",
   "crates/spex-cli",
+  "crates/spex-client",
 ]
 
 [workspace.package]

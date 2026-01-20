@@ -23,6 +23,7 @@ Implementação inicial em andamento com os seguintes componentes:
 - **spex-transport**: chunking por hash, publicação/replicação DHT/Kademlia (incluindo replicação passiva e renovação de TTL), gossip com recebimento de manifestos, recuperação de chunks e reconstrução de envelopes, além de random walks e inbox scanning derivado de `inbox_scan_key` com fallback via bridge HTTP.
     - **spex-bridge**: bridge HTTP com armazenamento SQLite (cards/slots) e validações básicas.
 - **spex-cli**: CLI de referência para identidades, cartões, puzzles PoW em requests, grants assinados, rotação/revogação de chaves e envio de mensagens MLS + AEAD com publicação fragmentada.
+- **spex-client**: biblioteca que encapsula operações básicas (identidade, cartões, request/grant, threads e envio/recebimento de mensagens).
 - **spex-core/log**: log append-only com Merkle tree para checkpoints de chaves, recovery keys e declarações de revogação.
 
 ## Documentação

@@ -1,0 +1,947 @@
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine};
+use chacha20poly1305::aead::{Aead, KeyInit, Payload};
+use chacha20poly1305::{ChaCha20Poly1305, Nonce};
+use ed25519_dalek::SigningKey;
+use rand::RngCore;
+use serde::{Deserialize, Serialize};
+use spex_core::{
+    aead_ad,
+    hash::{hash_bytes, hash_ctap2_cbor_value, HashId},
+    log::{CheckpointEntry, CheckpointLog, KeyCheckpoint, LogConsistency, RecoveryKey, RevocationDeclaration},
+    pow,
+    sign::{ed25519_sign_hash, ed25519_verify_hash, ed25519_verify_key},
+    types::{to_fixed, ContactCard, GrantToken, ProtoSuite, ThreadConfig},
+};
+use spex_mls::{cfg_hash_for_thread_config, Group, GroupConfig};
+use spex_transport::{
+    chunking::{chunk_data, Chunk, ChunkingConfig},
+    inbox::{derive_inbox_scan_key, BridgeClient, InboxScanResponse, InboxSource},
+    transport::{ChunkDescriptor, ChunkManifest},
+};
+use std::{
+    collections::HashMap,
+    fs,
+    path::{Path, PathBuf},
+    time::{SystemTime, UNIX_EPOCH},
+};
+use thiserror::Error;
+
+/// Error type returned by client operations.
+#[derive(Debug, Error)]
+pub enum ClientError {
+    #[error("io error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("json error: {0}")]
+    Json(#[from] serde_json::Error),
+    #[error("cbor error: {0}")]
+    Cbor(#[from] serde_cbor::Error),
+    #[error("hex error: {0}")]
+    Hex(#[from] hex::FromHexError),
+    #[error("missing identity")]
+    MissingIdentity,
+    #[error("invalid card payload")]
+    InvalidCard,
+    #[error("signature verification failed")]
+    SignatureInvalid,
+    #[error("request target does not match local identity")]
+    RequestTargetMismatch,
+    #[error("thread not found")]
+    ThreadNotFound,
+    #[error("transport error: {0}")]
+    Transport(String),
+    #[error("log error: {0}")]
+    Log(String),
+    #[error("mls error: {0}")]
+    Mls(String),
+    #[error("crypto error: {0}")]
+    Crypto(String),
+    #[error("invalid request puzzle")]
+    InvalidPuzzle,
+    #[error("invalid aead payload")]
+    InvalidAeadPayload,
+}
+
+/// Persistent client state representation.
+#[derive(Debug, Serialize, Deserialize, Default)]
+pub struct LocalState {
+    pub identity: Option<IdentityState>,
+    pub contacts: HashMap<String, ContactState>,
+    pub threads: HashMap<String, ThreadState>,
+    pub inbox: Vec<InboxItem>,
+    pub requests: Vec<RequestState>,
+    pub grants: Vec<GrantState>,
+    pub checkpoint_log: CheckpointLogState,
+    #[serde(default)]
+    pub transport_outbox: Vec<TransportOutboxItem>,
+    #[serde(default)]
+    pub p2p_inbox: HashMap<String, Vec<String>>,
+    #[serde(default)]
+    pub key_rotations: Vec<KeyRotationState>,
+}
+
+/// Identity data stored for the local user.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct IdentityState {
+    pub user_id_hex: String,
+    pub signing_key_hex: String,
+    pub verifying_key_hex: String,
+    pub device_id_hex: String,
+    pub device_nonce_hex: String,
+}
+
+/// Contact metadata stored after redeeming a card.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ContactState {
+    pub user_id_hex: String,
+    pub verifying_key_hex: String,
+    pub fingerprint: String,
+    pub device_id_hex: String,
+    pub last_seen_at: u64,
+}
+
+/// Thread metadata and local MLS settings.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ThreadState {
+    pub thread_id_hex: String,
+    pub members: Vec<String>,
+    pub created_at: u64,
+    pub messages: Vec<MessageState>,
+    #[serde(default)]
+    pub proto_major: u16,
+    #[serde(default)]
+    pub proto_minor: u16,
+    #[serde(default)]
+    pub ciphersuite_id: u16,
+    #[serde(default)]
+    pub cfg_hash_id: u16,
+    #[serde(default)]
+    pub cfg_hash_hex: String,
+    #[serde(default)]
+    pub flags: u8,
+    #[serde(default)]
+    pub initial_secret_hex: String,
+    #[serde(default)]
+    pub next_seq: u64,
+    #[serde(default)]
+    pub epoch: u64,
+}
+
+/// Local record of a message sent in a thread.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct MessageState {
+    pub sender_user_id: String,
+    pub text: String,
+    pub sent_at: u64,
+}
+
+/// Encoded inbox item stored locally.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct InboxItem {
+    pub received_at: u64,
+    pub payload_base64: String,
+}
+
+/// Stored request tokens for outgoing grants.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RequestState {
+    pub token_base64: String,
+    pub to_user_id: String,
+    pub role: u64,
+    pub created_at: u64,
+    #[serde(default)]
+    pub puzzle: Option<PuzzleToken>,
+}
+
+/// Stored grant tokens created locally.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GrantState {
+    pub token_base64: String,
+    pub from_user_id: String,
+    pub role: u64,
+    pub created_at: u64,
+    #[serde(default)]
+    pub signature_base64: Option<String>,
+}
+
+/// Stored checkpoint log payload.
+#[derive(Debug, Serialize, Deserialize, Default)]
+pub struct CheckpointLogState {
+    pub log_base64: String,
+}
+
+/// Plain request token data.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RequestToken {
+    pub from_user_id: String,
+    pub to_user_id: String,
+    pub role: u64,
+    pub created_at: u64,
+    pub puzzle: Option<PuzzleToken>,
+}
+
+/// PoW puzzle data attached to request tokens.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PuzzleToken {
+    pub recipient_key: String,
+    pub puzzle_input: String,
+    pub puzzle_output: String,
+    pub params: PowParamsPayload,
+}
+
+/// PoW parameters serialized into request tokens.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PowParamsPayload {
+    pub memory_kib: u32,
+    pub iterations: u32,
+    pub parallelism: u32,
+    pub output_len: usize,
+}
+
+/// Signed grant token payload for bridging.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SignedGrantToken {
+    pub user_id: String,
+    pub role: u64,
+    pub flags: Option<u64>,
+    pub expires_at: Option<u64>,
+    pub verifying_key: String,
+    pub signature: String,
+}
+
+/// Stored transport outbox entry.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TransportOutboxItem {
+    pub thread_id_hex: String,
+    pub manifest: TransportManifestState,
+    pub chunks: Vec<TransportChunkState>,
+    pub published_at: u64,
+}
+
+/// Stored manifest metadata.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TransportManifestState {
+    pub total_len: usize,
+    pub chunks: Vec<TransportChunkDescriptorState>,
+}
+
+/// Stored chunk descriptor metadata.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TransportChunkDescriptorState {
+    pub index: usize,
+    pub hash_hex: String,
+}
+
+/// Stored chunk payload and metadata.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TransportChunkState {
+    pub index: usize,
+    pub hash_hex: String,
+    pub data_base64: String,
+}
+
+/// Stored key rotation metadata.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct KeyRotationState {
+    pub rotated_at: u64,
+    pub old_verifying_key_hex: String,
+    pub new_verifying_key_hex: String,
+}
+
+/// Generates a new identity state with fresh keys and device metadata.
+pub fn create_identity() -> IdentityState {
+    let mut seed = [0u8; 32];
+    rand::thread_rng().fill_bytes(&mut seed);
+    let signing_key = SigningKey::from_bytes(&seed);
+    let verifying_key = signing_key.verifying_key();
+    let user_id = random_bytes(32);
+    let device_id = random_bytes(16);
+    let device_nonce = random_bytes(16);
+    IdentityState {
+        user_id_hex: hex::encode(user_id),
+        signing_key_hex: hex::encode(seed),
+        verifying_key_hex: hex::encode(verifying_key.to_bytes()),
+        device_id_hex: hex::encode(device_id),
+        device_nonce_hex: hex::encode(device_nonce),
+    }
+}
+
+/// Rotates the local identity signing and verification keys in place.
+pub fn rotate_identity(identity: &mut IdentityState) -> &IdentityState {
+    let mut seed = [0u8; 32];
+    rand::thread_rng().fill_bytes(&mut seed);
+    let signing_key = SigningKey::from_bytes(&seed);
+    let verifying_key = signing_key.verifying_key();
+    identity.signing_key_hex = hex::encode(seed);
+    identity.verifying_key_hex = hex::encode(verifying_key.to_bytes());
+    identity.device_nonce_hex = hex::encode(random_bytes(16));
+    identity
+}
+
+/// Appends rotation metadata to the checkpoint log and revokes the previous verifying key.
+pub fn append_rotation_checkpoint(
+    state: &mut LocalState,
+    identity: &IdentityState,
+    old_verifying_key_hex: &str,
+) -> Result<(), ClientError> {
+    let revoked_key = hex::decode(old_verifying_key_hex)?;
+    let revoked_key_hash = hash_bytes(HashId::Sha256, &revoked_key);
+    let revocation = RevocationDeclaration {
+        user_id: hex::decode(&identity.user_id_hex)?,
+        revoked_key_hash,
+        revoked_at: now_unix(),
+        recovery_key_hash: None,
+        reason: Some("key rotation".to_string()),
+    };
+    let checkpoint = KeyCheckpoint {
+        user_id: hex::decode(&identity.user_id_hex)?,
+        verifying_key: hex::decode(&identity.verifying_key_hex)?,
+        device_id: hex::decode(&identity.device_id_hex)?,
+        issued_at: now_unix(),
+    };
+    let mut log = load_checkpoint_log(state)?;
+    log.append(CheckpointEntry::Revocation(revocation))
+        .map_err(|err| ClientError::Log(err.to_string()))?;
+    log.append(CheckpointEntry::Key(checkpoint))
+        .map_err(|err| ClientError::Log(err.to_string()))?;
+    save_checkpoint_log(state, &log)?;
+    Ok(())
+}
+
+/// Builds a signed contact card payload for the current identity.
+pub fn build_contact_card(identity: &IdentityState) -> Result<ContactCard, ClientError> {
+    let user_id = hex::decode(&identity.user_id_hex)?;
+    let verifying_key = hex::decode(&identity.verifying_key_hex)?;
+    let device_id = hex::decode(&identity.device_id_hex)?;
+    let device_nonce = hex::decode(&identity.device_nonce_hex)?;
+
+    let mut card = ContactCard {
+        user_id,
+        verifying_key,
+        device_id,
+        device_nonce,
+        issued_at: now_unix(),
+        invite: None,
+        signature: None,
+        extensions: Default::default(),
+    };
+
+    let signature = sign_contact_card(identity, &card)?;
+    card.signature = Some(signature);
+    Ok(card)
+}
+
+/// Signs a contact card using the local identity signing key.
+pub fn sign_contact_card(identity: &IdentityState, card: &ContactCard) -> Result<Vec<u8>, ClientError> {
+    let signing_key = SigningKey::from_bytes(&hex::decode(&identity.signing_key_hex)?);
+    let payload = card.to_ctap2_canonical_bytes()?;
+    let digest = hash_bytes(HashId::Sha256, &payload);
+    let signature = ed25519_sign_hash(&signing_key, &digest);
+    Ok(signature.to_bytes().to_vec())
+}
+
+/// Verifies the signature embedded in a contact card.
+pub fn verify_contact_card_signature(card: &ContactCard, signature: &[u8]) -> Result<(), ClientError> {
+    let verifying_key_bytes: [u8; 32] = card
+        .verifying_key
+        .as_slice()
+        .try_into()
+        .map_err(|_| ClientError::SignatureInvalid)?;
+    let verifying_key = ed25519_dalek::VerifyingKey::from_bytes(&verifying_key_bytes)
+        .map_err(|_| ClientError::SignatureInvalid)?;
+    let mut unsigned_card = card.clone();
+    unsigned_card.signature = None;
+    let payload = unsigned_card.to_ctap2_canonical_bytes()?;
+    let digest = hash_bytes(HashId::Sha256, &payload);
+    let signature_bytes: [u8; 64] = signature
+        .try_into()
+        .map_err(|_| ClientError::SignatureInvalid)?;
+    let signature = ed25519_dalek::Signature::from_bytes(&signature_bytes);
+    ed25519_verify_hash(&verifying_key, &digest, &signature)
+        .map_err(|_| ClientError::SignatureInvalid)
+}
+
+/// Parses a CBOR contact card into a typed structure.
+pub fn parse_contact_card(bytes: &[u8]) -> Result<ContactCard, ClientError> {
+    let value: serde_cbor::Value = serde_cbor::from_slice(bytes)?;
+    let map = match value {
+        serde_cbor::Value::Map(map) => map,
+        _ => return Err(ClientError::InvalidCard),
+    };
+
+    let mut card = ContactCard::default();
+
+    for (key, value) in map {
+        let key = match key {
+            serde_cbor::Value::Integer(v) => v,
+            _ => continue,
+        };
+        match key {
+            0 => card.user_id = expect_bytes(value)?,
+            1 => card.verifying_key = expect_bytes(value)?,
+            2 => card.device_id = expect_bytes(value)?,
+            3 => card.device_nonce = expect_bytes(value)?,
+            4 => card.issued_at = expect_u64(value)?,
+            6 => card.signature = Some(expect_bytes(value)?),
+            _ => {}
+        }
+    }
+
+    if card.user_id.is_empty() || card.verifying_key.is_empty() {
+        return Err(ClientError::InvalidCard);
+    }
+
+    Ok(card)
+}
+
+/// Extracts bytes from a CBOR value or returns an invalid card error.
+fn expect_bytes(value: serde_cbor::Value) -> Result<Vec<u8>, ClientError> {
+    match value {
+        serde_cbor::Value::Bytes(bytes) => Ok(bytes),
+        _ => Err(ClientError::InvalidCard),
+    }
+}
+
+/// Extracts a u64 from a CBOR value or returns an invalid card error.
+fn expect_u64(value: serde_cbor::Value) -> Result<u64, ClientError> {
+    match value {
+        serde_cbor::Value::Integer(v) => u64::try_from(v).map_err(|_| ClientError::InvalidCard),
+        _ => Err(ClientError::InvalidCard),
+    }
+}
+
+/// Parses a base64 request token into its structured representation.
+pub fn parse_request_token(token: &str) -> Result<RequestToken, ClientError> {
+    let payload = BASE64_STANDARD
+        .decode(token.as_bytes())
+        .map_err(|_| ClientError::InvalidCard)?;
+    Ok(serde_json::from_slice(&payload)?)
+}
+
+/// Builds a PoW puzzle for a request token and encodes it as a payload.
+pub fn build_request_puzzle(recipient_key: &[u8]) -> Result<PuzzleToken, ClientError> {
+    let params = pow::PowParams::default();
+    let nonce = pow::generate_pow_nonce(pow::PowNonceParams::default());
+    let puzzle_input = pow::build_puzzle_input(&nonce, recipient_key);
+    let puzzle_output = pow::generate_puzzle_output(recipient_key, &puzzle_input, params)
+        .map_err(|err| ClientError::Crypto(err.to_string()))?;
+    Ok(PuzzleToken {
+        recipient_key: BASE64_STANDARD.encode(recipient_key),
+        puzzle_input: BASE64_STANDARD.encode(&puzzle_input),
+        puzzle_output: BASE64_STANDARD.encode(&puzzle_output),
+        params: PowParamsPayload {
+            memory_kib: params.memory_kib,
+            iterations: params.iterations,
+            parallelism: params.parallelism,
+            output_len: params.output_len,
+        },
+    })
+}
+
+/// Validates the PoW puzzle embedded in a request token.
+pub fn validate_request_puzzle(puzzle: &PuzzleToken, recipient_key: &[u8]) -> Result<(), ClientError> {
+    let recipient_bytes = BASE64_STANDARD
+        .decode(puzzle.recipient_key.as_bytes())
+        .map_err(|_| ClientError::InvalidPuzzle)?;
+    if recipient_bytes != recipient_key {
+        return Err(ClientError::InvalidPuzzle);
+    }
+    let puzzle_input = BASE64_STANDARD
+        .decode(puzzle.puzzle_input.as_bytes())
+        .map_err(|_| ClientError::InvalidPuzzle)?;
+    let puzzle_output = BASE64_STANDARD
+        .decode(puzzle.puzzle_output.as_bytes())
+        .map_err(|_| ClientError::InvalidPuzzle)?;
+    let params = pow::PowParams {
+        memory_kib: puzzle.params.memory_kib,
+        iterations: puzzle.params.iterations,
+        parallelism: puzzle.params.parallelism,
+        output_len: puzzle.params.output_len,
+    };
+    let valid = pow::verify_puzzle_output(recipient_key, &puzzle_input, &puzzle_output, params)
+        .map_err(|err| ClientError::Crypto(err.to_string()))?;
+    if !valid {
+        return Err(ClientError::InvalidPuzzle);
+    }
+    Ok(())
+}
+
+/// Signs a grant token and returns a payload compatible with bridge storage requests.
+pub fn sign_grant(identity: &IdentityState, grant: &GrantToken) -> Result<SignedGrantToken, ClientError> {
+    let signing_key = SigningKey::from_bytes(&hex::decode(&identity.signing_key_hex)?);
+    let verifying_key = ed25519_verify_key(&signing_key);
+    let hash = hash_ctap2_cbor_value(HashId::Sha256, grant)?;
+    let signature = ed25519_sign_hash(&signing_key, &hash);
+    Ok(SignedGrantToken {
+        user_id: BASE64_STANDARD.encode(&grant.user_id),
+        role: grant.role,
+        flags: grant.flags,
+        expires_at: grant.expires_at,
+        verifying_key: BASE64_STANDARD.encode(verifying_key.to_bytes()),
+        signature: BASE64_STANDARD.encode(signature.to_bytes()),
+    })
+}
+
+/// Builds a thread configuration hash for MLS metadata.
+pub fn build_thread_cfg_hash(thread_id_hex: &str, proto_suite: &ProtoSuite) -> Result<Vec<u8>, ClientError> {
+    let thread_id = hex::decode(thread_id_hex)?;
+    let thread_config = ThreadConfig {
+        proto_major: proto_suite.major,
+        proto_minor: proto_suite.minor,
+        ciphersuite_id: proto_suite.ciphersuite_id,
+        flags: 0,
+        thread_id,
+        grants: Vec::new(),
+        extensions: Default::default(),
+    };
+    cfg_hash_for_thread_config(HashId::Sha256, &thread_config)
+        .map_err(|err| ClientError::Mls(err.to_string()))
+}
+
+/// Rebuilds an MLS group from stored thread metadata.
+pub fn rebuild_thread_group(thread_state: &ThreadState) -> Result<Group, ClientError> {
+    let proto_suite = ProtoSuite {
+        major: thread_state.proto_major,
+        minor: thread_state.proto_minor,
+        ciphersuite_id: thread_state.ciphersuite_id,
+    };
+    let cfg_hash = hex::decode(&thread_state.cfg_hash_hex)?;
+    build_group_for_members(&thread_state.members, &cfg_hash, &thread_state.initial_secret_hex, proto_suite)
+}
+
+/// Builds a new MLS group and adds the provided members in order.
+pub fn build_group_for_members(
+    members: &[String],
+    cfg_hash: &[u8],
+    initial_secret_hex: &str,
+    proto_suite: ProtoSuite,
+) -> Result<Group, ClientError> {
+    let initial_secret = hex::decode(initial_secret_hex)?;
+    let mut group = Group::create(
+        GroupConfig::new(
+            proto_suite,
+            0,
+            HashId::Sha256 as u16,
+            cfg_hash.to_vec(),
+        )
+        .with_initial_secret(initial_secret),
+    )
+    .map_err(|err| ClientError::Mls(err.to_string()))?;
+    for member in members {
+        group
+            .add_member(member.clone())
+            .map_err(|err| ClientError::Mls(err.to_string()))?;
+    }
+    Ok(group)
+}
+
+/// Encrypts a message with MLS-derived AEAD and chunks it for transport publication.
+pub fn encrypt_and_chunk_message(
+    identity: &IdentityState,
+    thread_state: &mut ThreadState,
+    plaintext: &[u8],
+) -> Result<(spex_core::types::Envelope, ChunkManifest, Vec<Chunk>), ClientError> {
+    let group = rebuild_thread_group(thread_state)?;
+    let proto_suite = ProtoSuite {
+        major: thread_state.proto_major,
+        minor: thread_state.proto_minor,
+        ciphersuite_id: thread_state.ciphersuite_id,
+    };
+    let epoch = u32::try_from(group.epoch()).map_err(|_| ClientError::InvalidAeadPayload)?;
+    let seq = thread_state.next_seq;
+    thread_state.next_seq = thread_state.next_seq.saturating_add(1);
+    thread_state.epoch = group.epoch();
+    let thread_id_bytes = hex::decode(&thread_state.thread_id_hex)?;
+    let thread_id = to_fixed::<32>(&thread_id_bytes)?;
+    let cfg_hash_bytes = hex::decode(&thread_state.cfg_hash_hex)?;
+    let cfg_hash = to_fixed::<32>(&cfg_hash_bytes)?;
+    let sender_id_bytes = hex::decode(&identity.user_id_hex)?;
+    let sender_ad_id = derive_sender_ad_id(&sender_id_bytes);
+    let ad = aead_ad::build_ad(&thread_id, epoch, &cfg_hash, proto_suite, seq, &sender_ad_id);
+    let ciphertext = encrypt_payload_with_aead(group.group_secret(), plaintext, &ad)?;
+    let envelope = build_envelope(identity, thread_state, epoch, seq, ciphertext)?;
+    let payload = envelope.to_ctap2_canonical_bytes()?;
+    let chunks = chunk_data(&ChunkingConfig::default(), &payload);
+    let manifest = ChunkManifest {
+        chunks: chunks
+            .iter()
+            .map(|chunk| ChunkDescriptor {
+                index: chunk.index,
+                hash: chunk.hash.clone(),
+            })
+            .collect(),
+        total_len: payload.len(),
+    };
+    Ok((envelope, manifest, chunks))
+}
+
+/// Encrypts a plaintext payload using a group secret and AEAD additional data.
+pub fn encrypt_payload_with_aead(
+    group_secret: &[u8],
+    plaintext: &[u8],
+    ad: &[u8],
+) -> Result<Vec<u8>, ClientError> {
+    let key = hash_bytes(HashId::Sha256, group_secret);
+    let cipher = ChaCha20Poly1305::new_from_slice(&key)
+        .map_err(|err| ClientError::Crypto(err.to_string()))?;
+    let mut nonce_bytes = [0u8; 12];
+    rand::thread_rng().fill_bytes(&mut nonce_bytes);
+    let nonce = Nonce::from_slice(&nonce_bytes);
+    let ciphertext = cipher
+        .encrypt(nonce, Payload { msg: plaintext, aad: ad })
+        .map_err(|err| ClientError::Crypto(err.to_string()))?;
+    let mut output = Vec::with_capacity(nonce_bytes.len() + ciphertext.len());
+    output.extend_from_slice(&nonce_bytes);
+    output.extend_from_slice(&ciphertext);
+    Ok(output)
+}
+
+/// Builds a sealed envelope and attaches a signature from the local identity.
+pub fn build_envelope(
+    identity: &IdentityState,
+    thread_state: &ThreadState,
+    epoch: u32,
+    seq: u64,
+    ciphertext: Vec<u8>,
+) -> Result<spex_core::types::Envelope, ClientError> {
+    let mut envelope = spex_core::types::Envelope {
+        thread_id: hex::decode(&thread_state.thread_id_hex)?,
+        epoch,
+        seq,
+        sender_user_id: hex::decode(&identity.user_id_hex)?,
+        ciphertext,
+        signature: None,
+        extensions: Default::default(),
+    };
+    let signing_key = SigningKey::from_bytes(&hex::decode(&identity.signing_key_hex)?);
+    let hash = hash_ctap2_cbor_value(HashId::Sha256, &envelope)?;
+    let signature = ed25519_sign_hash(&signing_key, &hash);
+    envelope.signature = Some(signature.to_bytes().to_vec());
+    Ok(envelope)
+}
+
+/// Derives a stable 20-byte sender identifier for AEAD additional data.
+pub fn derive_sender_ad_id(sender_id: &[u8]) -> [u8; 20] {
+    let digest = hash_bytes(HashId::Sha256, sender_id);
+    let mut out = [0u8; 20];
+    out.copy_from_slice(&digest[..20]);
+    out
+}
+
+/// Converts a transport manifest into a serializable state entry.
+pub fn manifest_state(manifest: &ChunkManifest) -> TransportManifestState {
+    TransportManifestState {
+        total_len: manifest.total_len,
+        chunks: manifest
+            .chunks
+            .iter()
+            .map(|chunk| TransportChunkDescriptorState {
+                index: chunk.index,
+                hash_hex: hex::encode(&chunk.hash),
+            })
+            .collect(),
+    }
+}
+
+/// Converts transport chunk data into a serializable state entry.
+pub fn chunk_states(chunks: &[Chunk]) -> Vec<TransportChunkState> {
+    chunks
+        .iter()
+        .map(|chunk| TransportChunkState {
+            index: chunk.index,
+            hash_hex: hex::encode(&chunk.hash),
+            data_base64: BASE64_STANDARD.encode(&chunk.data),
+        })
+        .collect()
+}
+
+/// Stages encrypted payloads into the local P2P inbox cache for recipients.
+pub fn stage_p2p_inbox_delivery(
+    state: &mut LocalState,
+    thread_state: &ThreadState,
+    sender_user_id_hex: &str,
+    envelope: &spex_core::types::Envelope,
+) -> Result<(), ClientError> {
+    let payload = envelope.to_ctap2_canonical_bytes()?;
+    for member in &thread_state.members {
+        if member == sender_user_id_hex {
+            continue;
+        }
+        let member_bytes = hex::decode(member)?;
+        let scan = derive_inbox_scan_key(HashId::Sha256, &member_bytes);
+        let key_hex = hex::encode(scan.hashed_key);
+        state
+            .p2p_inbox
+            .entry(key_hex)
+            .or_default()
+            .push(BASE64_STANDARD.encode(&payload));
+    }
+    Ok(())
+}
+
+/// Resolves inbox payloads from local P2P cache or the bridge fallback.
+pub async fn resolve_inbox_from_state(
+    state: &mut LocalState,
+    inbox_scan_key: &[u8],
+    bridge: Option<&BridgeClient>,
+) -> Result<InboxScanResponse, ClientError> {
+    let scan = derive_inbox_scan_key(HashId::Sha256, inbox_scan_key);
+    let key_hex = hex::encode(scan.hashed_key);
+    if let Some(items) = state.p2p_inbox.remove(&key_hex) {
+        let decoded = items
+            .into_iter()
+            .filter_map(|item| BASE64_STANDARD.decode(item.as_bytes()).ok())
+            .collect();
+        return Ok(InboxScanResponse {
+            items: decoded,
+            source: InboxSource::Kademlia,
+        });
+    }
+    if let Some(client) = bridge {
+        let response = client
+            .scan_inbox(inbox_scan_key)
+            .await
+            .map_err(|err| ClientError::Transport(err.to_string()))?;
+        return Ok(response);
+    }
+    Ok(InboxScanResponse {
+        items: Vec::new(),
+        source: InboxSource::Kademlia,
+    })
+}
+
+/// Computes a SHA-256 fingerprint for the provided bytes.
+pub fn fingerprint_hex(bytes: &[u8]) -> String {
+    let digest = hash_bytes(HashId::Sha256, bytes);
+    hex::encode(digest)
+}
+
+/// Generates a random byte string encoded as hex with the requested length.
+pub fn random_hex(len: usize) -> String {
+    hex::encode(random_bytes(len))
+}
+
+/// Generates random bytes for identifiers and secrets.
+pub fn random_bytes(len: usize) -> Vec<u8> {
+    let mut buffer = vec![0u8; len];
+    rand::thread_rng().fill_bytes(&mut buffer);
+    buffer
+}
+
+/// Returns the current UNIX timestamp in seconds.
+pub fn now_unix() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
+/// Loads persisted local state from disk.
+pub fn load_state() -> Result<LocalState, ClientError> {
+    let path = state_path()?;
+    if !path.exists() {
+        return Ok(LocalState::default());
+    }
+    let contents = fs::read_to_string(&path)?;
+    Ok(serde_json::from_str(&contents)?)
+}
+
+/// Persists local state to disk in JSON format.
+pub fn save_state(state: &LocalState) -> Result<(), ClientError> {
+    let path = state_path()?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let contents = serde_json::to_string_pretty(state)?;
+    fs::write(path, contents)?;
+    Ok(())
+}
+
+/// Restores the checkpoint log from the persisted local state.
+pub fn load_checkpoint_log(state: &LocalState) -> Result<CheckpointLog, ClientError> {
+    if state.checkpoint_log.log_base64.is_empty() {
+        return Ok(CheckpointLog::new());
+    }
+    CheckpointLog::import_base64(&state.checkpoint_log.log_base64)
+        .map_err(|err| ClientError::Log(err.to_string()))
+}
+
+/// Saves a checkpoint log into the local state as base64 CBOR.
+pub fn save_checkpoint_log(state: &mut LocalState, log: &CheckpointLog) -> Result<(), ClientError> {
+    let encoded = log
+        .export_base64()
+        .map_err(|err| ClientError::Log(err.to_string()))?;
+    state.checkpoint_log.log_base64 = encoded;
+    Ok(())
+}
+
+/// Determines the path for the persisted local state file.
+pub fn state_path() -> Result<PathBuf, ClientError> {
+    if let Ok(path) = std::env::var("SPEX_STATE_PATH") {
+        return Ok(PathBuf::from(path));
+    }
+    let home = dirs::home_dir().ok_or_else(|| std::io::Error::new(
+        std::io::ErrorKind::NotFound,
+        "home directory not found",
+    ))?;
+    Ok(home.join(Path::new(".spex/state.json")))
+}
+
+/// Generates a base64 contact card payload for the provided identity.
+pub fn create_contact_card_payload(identity: &IdentityState) -> Result<String, ClientError> {
+    let card = build_contact_card(identity)?;
+    let card_bytes = card.to_ctap2_canonical_bytes()?;
+    Ok(BASE64_STANDARD.encode(card_bytes))
+}
+
+/// Parses and verifies a base64 contact card payload.
+pub fn redeem_contact_card_payload(payload: &str) -> Result<ContactCard, ClientError> {
+    let card_bytes = BASE64_STANDARD
+        .decode(payload.as_bytes())
+        .map_err(|_| ClientError::InvalidCard)?;
+    let card = parse_contact_card(&card_bytes)?;
+    if let Some(signature) = &card.signature {
+        verify_contact_card_signature(&card, signature)?;
+    }
+    Ok(card)
+}
+
+/// Creates a new request token and returns its JSON/base64 representation.
+pub fn create_request_payload(
+    identity: &IdentityState,
+    to_user_id_hex: &str,
+    role: u64,
+) -> Result<(RequestToken, String), ClientError> {
+    let puzzle = build_request_puzzle(&hex::decode(to_user_id_hex)?)?;
+    validate_request_puzzle(&puzzle, &hex::decode(to_user_id_hex)?)?;
+    let request = RequestToken {
+        from_user_id: identity.user_id_hex.clone(),
+        to_user_id: to_user_id_hex.to_string(),
+        role,
+        created_at: now_unix(),
+        puzzle: Some(puzzle),
+    };
+    let payload = serde_json::to_vec(&request)?;
+    let token = BASE64_STANDARD.encode(payload);
+    Ok((request, token))
+}
+
+/// Accepts a request payload and returns the signed grant token.
+pub fn accept_request_payload(
+    identity: &IdentityState,
+    request_payload: &str,
+) -> Result<(RequestToken, SignedGrantToken), ClientError> {
+    let request_token = parse_request_token(request_payload)?;
+    if request_token.to_user_id != identity.user_id_hex {
+        return Err(ClientError::RequestTargetMismatch);
+    }
+    if let Some(puzzle) = &request_token.puzzle {
+        validate_request_puzzle(puzzle, &hex::decode(&identity.user_id_hex)?)?;
+    }
+    let grant = GrantToken {
+        user_id: hex::decode(&request_token.from_user_id)?,
+        role: request_token.role,
+        flags: None,
+        expires_at: None,
+        extensions: Default::default(),
+    };
+    let signed_grant = sign_grant(identity, &grant)?;
+    Ok((request_token, signed_grant))
+}
+
+/// Creates a new thread state with MLS metadata for the provided members.
+pub fn create_thread_state(
+    identity: &IdentityState,
+    mut members: Vec<String>,
+) -> Result<ThreadState, ClientError> {
+    if !members.contains(&identity.user_id_hex) {
+        members.push(identity.user_id_hex.clone());
+    }
+    let thread_id = random_hex(32);
+    let proto_suite = ProtoSuite {
+        major: 1,
+        minor: 1,
+        ciphersuite_id: 0x0001,
+    };
+    let cfg_hash = build_thread_cfg_hash(&thread_id, &proto_suite)?;
+    let initial_secret = random_hex(32);
+    let group = build_group_for_members(&members, &cfg_hash, &initial_secret, proto_suite)?;
+    Ok(ThreadState {
+        thread_id_hex: thread_id,
+        members,
+        created_at: now_unix(),
+        messages: Vec::new(),
+        proto_major: proto_suite.major,
+        proto_minor: proto_suite.minor,
+        ciphersuite_id: proto_suite.ciphersuite_id,
+        cfg_hash_id: HashId::Sha256 as u16,
+        cfg_hash_hex: hex::encode(cfg_hash),
+        flags: 0,
+        initial_secret_hex: initial_secret,
+        next_seq: 0,
+        epoch: group.epoch(),
+    })
+}
+
+/// Sends a plaintext message for a thread and returns transport payloads.
+pub fn send_thread_message(
+    identity: &IdentityState,
+    thread_state: &mut ThreadState,
+    plaintext: &[u8],
+) -> Result<(spex_core::types::Envelope, ChunkManifest, Vec<Chunk>), ClientError> {
+    encrypt_and_chunk_message(identity, thread_state, plaintext)
+}
+
+/// Resolves inbox payloads with a local cache fallback.
+pub async fn receive_inbox_payloads(
+    state: &mut LocalState,
+    inbox_scan_key: &[u8],
+    bridge: Option<&BridgeClient>,
+) -> Result<InboxScanResponse, ClientError> {
+    resolve_inbox_from_state(state, inbox_scan_key, bridge).await
+}
+
+/// Creates a recovery key entry for the local log.
+pub fn create_recovery_entry(identity: &IdentityState) -> Result<RecoveryKey, ClientError> {
+    Ok(RecoveryKey {
+        user_id: hex::decode(&identity.user_id_hex)?,
+        recovery_key: random_bytes(32),
+        issued_at: now_unix(),
+    })
+}
+
+/// Builds a key checkpoint entry for the log.
+pub fn create_checkpoint_entry(identity: &IdentityState) -> Result<KeyCheckpoint, ClientError> {
+    Ok(KeyCheckpoint {
+        user_id: hex::decode(&identity.user_id_hex)?,
+        verifying_key: hex::decode(&identity.verifying_key_hex)?,
+        device_id: hex::decode(&identity.device_id_hex)?,
+        issued_at: now_unix(),
+    })
+}
+
+/// Builds a revocation declaration for a key.
+pub fn create_revocation_entry(
+    identity: &IdentityState,
+    revoked_key_hex: &str,
+    recovery_hex: Option<String>,
+    reason: Option<String>,
+) -> Result<RevocationDeclaration, ClientError> {
+    let revoked_key = hex::decode(revoked_key_hex)?;
+    let revoked_key_hash = hash_bytes(HashId::Sha256, &revoked_key);
+    let recovery_key_hash = match recovery_hex {
+        Some(value) => Some(hash_bytes(HashId::Sha256, &hex::decode(value)?)),
+        None => None,
+    };
+    Ok(RevocationDeclaration {
+        user_id: hex::decode(&identity.user_id_hex)?,
+        revoked_key_hash,
+        revoked_at: now_unix(),
+        recovery_key_hash,
+        reason,
+    })
+}
+
+/// Reports consistency between two checkpoint logs.
+pub fn log_consistency(local: &CheckpointLog, remote: &CheckpointLog) -> LogConsistency {
+    local.compare_with(remote)
+}
