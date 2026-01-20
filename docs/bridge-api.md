@@ -9,6 +9,8 @@ validação para payloads, PoW e grants.
 - **CBOR**: cards e envelopes são CBOR canonical codificados em base64.
 - **Grant**: o servidor valida expiração, assinatura e formato do `GrantToken` recebido.
 - **Puzzle (PoW)**: o servidor valida a saída do puzzle conforme `spex-core`.
+- **Rate limiting**: o servidor aplica limites por identidade para mensagens e bytes por janela.
+- **Auditoria**: o servidor persiste logs com timestamp, IP e slot para análise de abuso.
 
 ## PUT /cards/:card_hash
 
@@ -57,6 +59,7 @@ Content-Type: application/json
 - `204 No Content`: armazenamento concluído.
 - `400 Bad Request`: payload inválido ou hash divergente.
 - `401 Unauthorized`: puzzle inválido ou grant expirado.
+- `429 Too Many Requests`: limites de mensagens ou bytes excedidos.
 - `500 Internal Server Error`: falha de armazenamento.
 
 ## GET /cards/:card_hash
@@ -124,6 +127,7 @@ Content-Type: application/json
 - `204 No Content`: armazenamento concluído.
 - `400 Bad Request`: payload inválido.
 - `401 Unauthorized`: puzzle inválido ou grant expirado.
+- `429 Too Many Requests`: limites de mensagens ou bytes excedidos.
 - `500 Internal Server Error`: falha de armazenamento.
 
 ## GET /slot/:slot_id
@@ -176,4 +180,12 @@ GET /inbox/<HEX_KEY> HTTP/1.1
 - Os campos `recipient_key`, `puzzle_input` e `puzzle_output` devem ser base64 válidos.
 - `params` é opcional; caso omitido, o servidor usa parâmetros padrão.
 - `params` (quando informado) deve respeitar o mínimo de memória/iterações aceito pelo servidor.
+- O mínimo pode ser ajustado dinamicamente conforme reputação local e volume recente de requests.
 - A verificação é feita com `spex-core` (CTAP2/PoW) e retorna `401` se inválida.
+
+## Rate limiting e logs de abuso
+
+- O rate limiting considera identidade (`grant.user_id`) e aplica limites de mensagens e bytes por
+  janela.
+- As tentativas são registradas com timestamp, IP de origem e `slot_id` (quando aplicável), além de
+  resultado aceito/rejeitado para análise de abuso.
