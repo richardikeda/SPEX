@@ -45,6 +45,12 @@ O caminho pode ser sobrescrito definindo `SPEX_STATE_PATH`.
 - `msg send --thread <THREAD_ID_HEX> --text "..."`: envia mensagem para uma thread existente usando
   MLS + AEAD, fragmentando o envelope, publicando manifestos/chunks via spex-transport e registrando
   o envio no outbox local.
+- Flags P2P opcionais:
+  - `--p2p`: habilita publicação via rede libp2p.
+  - `--peer <MULTIADDR>`: conecta a peers conhecidos (`/ip4/.../tcp/.../p2p/<PEER_ID>`).
+  - `--bootstrap <MULTIADDR>`: usa peers de bootstrap para descoberta DHT.
+  - `--listen-addr <MULTIADDR>`: endereço local de escuta (ex.: `/ip4/0.0.0.0/tcp/0`).
+  - `--p2p-wait-secs <N>`: tempo para replicação após publicar no DHT/gossip.
 
 ### `inbox`
 
@@ -52,6 +58,12 @@ O caminho pode ser sobrescrito definindo `SPEX_STATE_PATH`.
 - `inbox poll --inbox-key <HEX_KEY>`: consulta inbox via cache de manifestos/chunks do transporte
   local e decifra mensagens.
 - `inbox poll --bridge-url <URL> --inbox-key <HEX_KEY>`: consulta inbox via bridge HTTP e decifra mensagens.
+- Flags P2P opcionais:
+  - `--p2p`: habilita recuperação via libp2p (manifestos + DHT).
+  - `--peer <MULTIADDR>`: conecta a peers conhecidos (`/ip4/.../tcp/.../p2p/<PEER_ID>`).
+  - `--bootstrap <MULTIADDR>`: usa peers de bootstrap para descoberta DHT.
+  - `--listen-addr <MULTIADDR>`: endereço local de escuta.
+  - `--p2p-wait-secs <N>`: tempo de espera para receber manifestos e chunks.
 
 ### `log`
 
@@ -88,6 +100,14 @@ cargo run -p spex-cli -- thread new --members <USER_ID_HEX>,<USER_ID_HEX>
 
 # enviar mensagem
 cargo run -p spex-cli -- msg send --thread <THREAD_ID_HEX> --text "Olá"
+
+# enviar mensagem via P2P libp2p
+cargo run -p spex-cli -- msg send --thread <THREAD_ID_HEX> --text "Olá" --p2p \
+  --bootstrap /ip4/127.0.0.1/tcp/9001/p2p/<PEER_ID>
+
+# recuperar inbox via P2P libp2p
+cargo run -p spex-cli -- inbox poll --p2p --inbox-key <HEX_KEY> \
+  --peer /ip4/127.0.0.1/tcp/9001/p2p/<PEER_ID>
 ```
 
 ## Fingerprints
