@@ -91,10 +91,10 @@ cargo run -p spex-cli -- identity rotate
 # criar thread local com membros (hex separados por vírgula)
 cargo run -p spex-cli -- thread new --members <USER_ID_HEX>,<USER_ID_HEX>
 
-# enviar mensagem local para uma thread
+# enviar mensagem para uma thread via MLS + transporte
 cargo run -p spex-cli -- msg send --thread <THREAD_ID_HEX> --text "Olá"
 
-# verificar inbox local, via cache P2P ou via bridge HTTP
+# verificar inbox local, via cache P2P ou via bridge HTTP (com decifragem MLS)
 cargo run -p spex-cli -- inbox poll
 cargo run -p spex-cli -- inbox poll --inbox-key <HEX_KEY>
 cargo run -p spex-cli -- inbox poll --bridge-url <URL> --inbox-key <HEX_KEY>

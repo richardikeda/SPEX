@@ -15,12 +15,12 @@ use spex_client::{
     load_state,
     log_consistency,
     now_unix,
-    receive_inbox_payloads,
+    receive_inbox_messages,
     redeem_contact_card_payload,
     rotate_identity,
     save_checkpoint_log,
     save_state,
-    send_thread_message,
+    publish_thread_message,
     stage_p2p_inbox_delivery,
     ClientError,
     ContactState,
@@ -28,9 +28,6 @@ use spex_client::{
     InboxItem,
     MessageState,
     RequestState,
-    TransportOutboxItem,
-    chunk_states,
-    manifest_state,
 };
 use spex_core::log::{CheckpointEntry, CheckpointLog, LogConsistency};
 use spex_transport::inbox::BridgeClient;
@@ -289,25 +286,20 @@ async fn main() -> Result<(), ClientError> {
                     .threads
                     .get_mut(&thread)
                     .ok_or(ClientError::ThreadNotFound)?;
-                let (envelope, manifest, chunks) =
-                    send_thread_message(identity, thread_state, text.as_bytes())?;
+                let (envelope, outbox_item) =
+                    publish_thread_message(identity, thread_state, text.as_bytes())?;
+                let chunk_count = outbox_item.chunks.len();
                 let message = MessageState {
                     sender_user_id: identity.user_id_hex.clone(),
                     text: text.clone(),
                     sent_at: now_unix(),
                 };
                 thread_state.messages.push(message);
-                let outbox_item = TransportOutboxItem {
-                    thread_id_hex: thread_state.thread_id_hex.clone(),
-                    manifest: manifest_state(&manifest),
-                    chunks: chunk_states(&chunks),
-                    published_at: now_unix(),
-                };
                 state.transport_outbox.push(outbox_item);
                 stage_p2p_inbox_delivery(&mut state, thread_state, &identity.user_id_hex, &envelope)?;
                 println!(
                     "message published via transport ({} chunks)",
-                    chunks.len()
+                    chunk_count
                 );
             }
         },
@@ -319,17 +311,24 @@ async fn main() -> Result<(), ClientError> {
                 if let Some(inbox_key) = inbox_key {
                     let inbox_key_bytes = hex::decode(inbox_key)?;
                     let bridge = bridge_url.map(BridgeClient::new);
-                    let response = receive_inbox_payloads(
-                        &mut state,
-                        &inbox_key_bytes,
-                        bridge.as_ref(),
-                    )
-                    .await?;
+                    let response =
+                        receive_inbox_messages(&mut state, &inbox_key_bytes, bridge.as_ref()).await?;
                     for item in response.items {
-                        state.inbox.push(InboxItem {
-                            received_at: now_unix(),
-                            payload_base64: BASE64_STANDARD.encode(item),
+                        let message_text = String::from_utf8(item.plaintext)
+                            .map_err(|_| ClientError::InvalidMessageEncoding)?;
+                        let thread_state = state
+                            .threads
+                            .get_mut(&item.thread_id_hex)
+                            .ok_or(ClientError::ThreadNotFound)?;
+                        thread_state.messages.push(MessageState {
+                            sender_user_id: item.sender_user_id_hex.clone(),
+                            text: message_text.clone(),
+                            sent_at: now_unix(),
                         });
+                        println!(
+                            "message: {} -> {}",
+                            item.sender_user_id_hex, message_text
+                        );
                     }
                     println!(
                         "inbox: {} items (source: {:?})",
