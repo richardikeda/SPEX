@@ -24,7 +24,7 @@ transporte sem quebrar o wire format ou o fluxo de autenticação.
 
 - **spex-core**: tipos de dados (cards, tokens, envelopes, log), CBOR canonical (CTAP2), hashes,
   assinaturas, provas de trabalho e validações.
-- **spex-mls**: integração MLS (mls-rs) com APIs `MlsRsClient`/`MlsRsGroup` para criação de grupos, commits e validação de `cfg_hash`/`proto_suite`, além de contexto MLS e extensões SPEX.
+- **spex-mls**: integração MLS (mls-rs) com APIs `MlsRsClient`/`MlsRsGroup` para TreeKEM completo, commits, updates, add/remove, ressincronização via external commit, validação de `cfg_hash`/`proto_suite` e extensões SPEX.
 - **spex-transport**: chunking, publicação/replicação DHT, gossip com recuperação de manifestos, reassemblagem com verificação de hash, random walks robustos e inbox scanning.
 - **spex-bridge**: bridge HTTP com armazenamento SQLite e validações de rate limit/PoW.
 - **spex-cli**: CLI de referência para identidades, cartões, fluxo request/grant e mensagens.
