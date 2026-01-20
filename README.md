@@ -22,7 +22,7 @@ Implementação inicial em andamento com os seguintes componentes:
 - **spex-mls**: suporte MLS (mls-rs) com criação de grupos, commits, distribuição de secrets, cifragem/decifragem e APIs para `cfg_hash` e extensões MLS integradas ao handshake.
 - **spex-transport**: chunking por hash, publicação/replicação DHT/Kademlia (incluindo replicação passiva e renovação de TTL), gossip com recebimento de manifestos, recuperação de chunks e reconstrução de envelopes, além de random walks e inbox scanning derivado de `inbox_scan_key` com fallback via bridge HTTP.
     - **spex-bridge**: bridge HTTP com armazenamento SQLite (cards/slots) e validações básicas.
-- **spex-cli**: CLI de referência para identidades, cartões e fluxo básico de pedidos/grants.
+- **spex-cli**: CLI de referência para identidades, cartões, puzzles PoW em requests, grants assinados, rotação/revogação de chaves e envio de mensagens MLS + AEAD com publicação fragmentada.
 - **spex-core/log**: log append-only com Merkle tree para checkpoints de chaves, recovery keys e declarações de revogação.
 
 ## Documentação
@@ -80,14 +80,18 @@ cargo run -p spex-cli -- request send --to <USER_ID_HEX> --role 1
 cargo run -p spex-cli -- grant accept --request <BASE64>
 cargo run -p spex-cli -- grant deny --request <BASE64>
 
+# rotacionar chaves locais (revoga a anterior no log)
+cargo run -p spex-cli -- identity rotate
+
 # criar thread local com membros (hex separados por vírgula)
 cargo run -p spex-cli -- thread new --members <USER_ID_HEX>,<USER_ID_HEX>
 
 # enviar mensagem local para uma thread
 cargo run -p spex-cli -- msg send --thread <THREAD_ID_HEX> --text "Olá"
 
-# verificar inbox local ou via bridge HTTP
+# verificar inbox local, via cache P2P ou via bridge HTTP
 cargo run -p spex-cli -- inbox poll
+cargo run -p spex-cli -- inbox poll --inbox-key <HEX_KEY>
 cargo run -p spex-cli -- inbox poll --bridge-url <URL> --inbox-key <HEX_KEY>
 
 # checkpoints de chaves e log append-only
@@ -109,8 +113,8 @@ cargo run -p spex-bridge
 
 ### Fluxo básico de handshake (request/grant)
 
-1. O remetente envia um `RequestToken` (JSON base64) para o destinatário.
-2. O destinatário responde com um `GrantToken` (CBOR canonical base64).
+1. O remetente envia um `RequestToken` (JSON base64) com puzzle Argon2id para o destinatário.
+2. O destinatário responde com um grant **assinado** (JSON base64 com `verifying_key` + `signature`).
 3. A thread MLS é criada usando o `ThreadConfig` com o grant recebido.
 
 ### Persistência local e fingerprints
