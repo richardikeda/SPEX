@@ -1,35 +1,13 @@
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine};
 use clap::{Parser, Subcommand};
 use spex_client::{
-    accept_request_payload,
-    append_rotation_checkpoint,
-    create_checkpoint_entry,
-    create_contact_card_payload,
-    create_identity,
-    create_recovery_entry,
-    create_request_payload,
-    create_revocation_entry,
-    create_thread_state,
-    fingerprint_hex,
-    load_checkpoint_log,
-    load_state,
-    log_consistency,
-    now_unix,
-    receive_inbox_messages,
-    receive_transport_messages,
-    redeem_contact_card_payload,
-    rotate_identity,
-    save_checkpoint_log,
-    save_state,
-    publish_thread_message_transport,
-    stage_transport_delivery,
-    transport_inbox_has_items,
-    ClientError,
-    ContactState,
-    GrantState,
-    InboxItem,
-    MessageState,
-    RequestState,
+    accept_request_payload, append_rotation_checkpoint, create_checkpoint_entry,
+    create_contact_card_payload, create_identity, create_recovery_entry, create_request_payload,
+    create_revocation_entry, create_thread_state, fingerprint_hex, load_checkpoint_log, load_state,
+    log_consistency, now_unix, publish_thread_message_transport, receive_inbox_messages,
+    receive_transport_messages, redeem_contact_card_payload, rotate_identity, save_checkpoint_log,
+    save_state, stage_transport_delivery, transport_inbox_has_items, ClientError, ContactState,
+    GrantState, IdentityState, MessageState, RequestState,
 };
 use spex_core::log::{CheckpointEntry, CheckpointLog, LogConsistency};
 use libp2p::identity::Keypair;
@@ -245,9 +223,28 @@ async fn main() -> Result<(), ClientError> {
                 state.identity = Some(identity);
             }
             IdentityCommand::Rotate => {
-                let identity = state.identity.as_mut().ok_or(ClientError::MissingIdentity)?;
-                let old_verifying_key_hex = identity.verifying_key_hex.clone();
-                let rotated = rotate_identity(identity);
+                let old_verifying_key_hex = {
+                    let identity = state
+                        .identity
+                        .as_mut()
+                        .ok_or(ClientError::MissingIdentity)?;
+                    let old_verifying_key_hex = identity.verifying_key_hex.clone();
+                    rotate_identity(identity);
+                    old_verifying_key_hex
+                };
+                let rotated = {
+                    let identity = state
+                        .identity
+                        .as_ref()
+                        .ok_or(ClientError::MissingIdentity)?;
+                    IdentityState {
+                        user_id_hex: identity.user_id_hex.clone(),
+                        signing_key_hex: identity.signing_key_hex.clone(),
+                        verifying_key_hex: identity.verifying_key_hex.clone(),
+                        device_id_hex: identity.device_id_hex.clone(),
+                        device_nonce_hex: identity.device_nonce_hex.clone(),
+                    }
+                };
                 println!("new user_id: {}", rotated.user_id_hex);
                 println!(
                     "new fingerprint: {}",
@@ -255,16 +252,19 @@ async fn main() -> Result<(), ClientError> {
                 );
                 let rotation = spex_client::KeyRotationState {
                     rotated_at: now_unix(),
-                    old_verifying_key_hex,
+                    old_verifying_key_hex: old_verifying_key_hex.clone(),
                     new_verifying_key_hex: rotated.verifying_key_hex.clone(),
                 };
                 state.key_rotations.push(rotation);
-                append_rotation_checkpoint(&mut state, rotated, &old_verifying_key_hex)?;
+                append_rotation_checkpoint(&mut state, &rotated, &old_verifying_key_hex)?;
             }
         },
         Commands::Card { command } => match command {
             CardCommand::Create => {
-                let identity = state.identity.as_ref().ok_or(ClientError::MissingIdentity)?;
+                let identity = state
+                    .identity
+                    .as_ref()
+                    .ok_or(ClientError::MissingIdentity)?;
                 let payload = create_contact_card_payload(identity)?;
                 println!("card: {}", payload);
             }
@@ -297,7 +297,10 @@ async fn main() -> Result<(), ClientError> {
         },
         Commands::Request { command } => match command {
             RequestCommand::Send { to, role } => {
-                let identity = state.identity.as_ref().ok_or(ClientError::MissingIdentity)?;
+                let identity = state
+                    .identity
+                    .as_ref()
+                    .ok_or(ClientError::MissingIdentity)?;
                 let (request, token) = create_request_payload(identity, &to, role)?;
                 state.requests.push(RequestState {
                     token_base64: token.clone(),
@@ -311,7 +314,10 @@ async fn main() -> Result<(), ClientError> {
         },
         Commands::Grant { command } => match command {
             GrantCommand::Accept { request } => {
-                let identity = state.identity.as_ref().ok_or(ClientError::MissingIdentity)?;
+                let identity = state
+                    .identity
+                    .as_ref()
+                    .ok_or(ClientError::MissingIdentity)?;
                 let (request_token, signed_grant) = accept_request_payload(identity, &request)?;
                 let grant_token = BASE64_STANDARD.encode(serde_json::to_vec(&signed_grant)?);
                 state.grants.push(GrantState {
@@ -333,7 +339,10 @@ async fn main() -> Result<(), ClientError> {
         },
         Commands::Thread { command } => match command {
             ThreadCommand::New { members } => {
-                let identity = state.identity.as_ref().ok_or(ClientError::MissingIdentity)?;
+                let identity = state
+                    .identity
+                    .as_ref()
+                    .ok_or(ClientError::MissingIdentity)?;
                 let thread = create_thread_state(identity, members)?;
                 let thread_id = thread.thread_id_hex.clone();
                 state.threads.insert(thread_id.clone(), thread);
@@ -341,19 +350,24 @@ async fn main() -> Result<(), ClientError> {
             }
         },
         Commands::Msg { command } => match command {
-            MsgCommand::Send {
-                thread,
-                text,
-                p2p,
-                peer,
-                bootstrap,
-                listen_addr,
-                p2p_wait_secs,
-            } => {
-                let identity = state.identity.as_ref().ok_or(ClientError::MissingIdentity)?;
-                let thread_state = state
+            MsgCommand::Send { thread, text } => {
+                let identity = {
+                    let identity = state
+                        .identity
+                        .as_ref()
+                        .ok_or(ClientError::MissingIdentity)?;
+                    IdentityState {
+                        user_id_hex: identity.user_id_hex.clone(),
+                        signing_key_hex: identity.signing_key_hex.clone(),
+                        verifying_key_hex: identity.verifying_key_hex.clone(),
+                        device_id_hex: identity.device_id_hex.clone(),
+                        device_nonce_hex: identity.device_nonce_hex.clone(),
+                    }
+                };
+                let sender_user_id = identity.user_id_hex.clone();
+                let mut thread_state = state
                     .threads
-                    .get_mut(&thread)
+                    .remove(&thread)
                     .ok_or(ClientError::ThreadNotFound)?;
                 let (_envelope, manifest, chunks, outbox_item) =
                     publish_thread_message_transport(identity, thread_state, text.as_bytes())?;
@@ -523,7 +537,10 @@ async fn main() -> Result<(), ClientError> {
         },
         Commands::Log { command } => match command {
             LogCommand::AppendCheckpoint => {
-                let identity = state.identity.as_ref().ok_or(ClientError::MissingIdentity)?;
+                let identity = state
+                    .identity
+                    .as_ref()
+                    .ok_or(ClientError::MissingIdentity)?;
                 let entry = create_checkpoint_entry(identity)?;
                 let mut log = load_checkpoint_log(&state)?;
                 log.append(CheckpointEntry::Key(entry))
@@ -532,7 +549,10 @@ async fn main() -> Result<(), ClientError> {
                 println!("checkpoint appended (len: {})", log.entries.len());
             }
             LogCommand::CreateRecoveryKey => {
-                let identity = state.identity.as_ref().ok_or(ClientError::MissingIdentity)?;
+                let identity = state
+                    .identity
+                    .as_ref()
+                    .ok_or(ClientError::MissingIdentity)?;
                 let entry = create_recovery_entry(identity)?;
                 let mut log = load_checkpoint_log(&state)?;
                 log.append(CheckpointEntry::Recovery(entry.clone()))
@@ -546,7 +566,10 @@ async fn main() -> Result<(), ClientError> {
                 recovery_hex,
                 reason,
             } => {
-                let identity = state.identity.as_ref().ok_or(ClientError::MissingIdentity)?;
+                let identity = state
+                    .identity
+                    .as_ref()
+                    .ok_or(ClientError::MissingIdentity)?;
                 let entry = create_revocation_entry(identity, &key_hex, recovery_hex, reason)?;
                 let mut log = load_checkpoint_log(&state)?;
                 log.append(CheckpointEntry::Revocation(entry))
