@@ -355,7 +355,15 @@ async fn main() -> Result<(), ClientError> {
             }
         },
         Commands::Msg { command } => match command {
-            MsgCommand::Send { thread, text } => {
+            MsgCommand::Send {
+                thread,
+                text,
+                p2p,
+                peer,
+                bootstrap,
+                listen_addr,
+                p2p_wait_secs,
+            } => {
                 let identity = {
                     let identity = state
                         .identity
@@ -369,13 +377,15 @@ async fn main() -> Result<(), ClientError> {
                         device_nonce_hex: identity.device_nonce_hex.clone(),
                     }
                 };
-                let sender_user_id = identity.user_id_hex.clone();
                 let mut thread_state = state
                     .threads
                     .remove(&thread)
                     .ok_or(ClientError::ThreadNotFound)?;
-                let (_envelope, manifest, chunks, outbox_item) =
-                    publish_thread_message_transport(identity, thread_state, text.as_bytes())?;
+                let (_envelope, manifest, chunks, outbox_item) = publish_thread_message_transport(
+                    &identity,
+                    &mut thread_state,
+                    text.as_bytes(),
+                )?;
                 let chunk_count = chunks.len();
                 let message = MessageState {
                     sender_user_id: identity.user_id_hex.clone(),
@@ -386,7 +396,7 @@ async fn main() -> Result<(), ClientError> {
                 state.transport_outbox.push(outbox_item);
                 stage_transport_delivery(
                     &mut state,
-                    thread_state,
+                    &thread_state,
                     &identity.user_id_hex,
                     &manifest,
                     &chunks,
@@ -499,6 +509,7 @@ async fn main() -> Result<(), ClientError> {
                             receive_inbox_messages(&mut state, &inbox_key_bytes, bridge.as_ref())
                                 .await?
                         };
+                        let item_count = response.items.len();
                         for item in response.items {
                             let message_text = String::from_utf8(item.plaintext)
                                 .map_err(|_| ClientError::InvalidMessageEncoding)?;
@@ -515,7 +526,7 @@ async fn main() -> Result<(), ClientError> {
                         }
                         println!(
                             "inbox: {} items (source: {:?})",
-                            response.items.len(),
+                            item_count,
                             response.source
                         );
                     }
