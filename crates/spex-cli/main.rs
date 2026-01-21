@@ -10,8 +10,11 @@ use spex_client::{
     GrantState, IdentityState, MessageState, RequestState,
 };
 use spex_core::log::{CheckpointEntry, CheckpointLog, LogConsistency};
-use spex_transport::inbox::BridgeClient;
+use libp2p::identity::Keypair;
+use libp2p::Multiaddr;
+use spex_transport::{inbox::BridgeClient, P2pNodeConfig, P2pTransport, TransportConfig};
 use std::fs;
+use std::time::Duration;
 
 #[derive(Parser)]
 #[command(name = "spex", version, about = "SPEX CLI")]
@@ -108,6 +111,16 @@ enum MsgCommand {
         thread: String,
         #[arg(long)]
         text: String,
+        #[arg(long)]
+        p2p: bool,
+        #[arg(long, value_delimiter = ',')]
+        peer: Vec<String>,
+        #[arg(long, value_delimiter = ',')]
+        bootstrap: Vec<String>,
+        #[arg(long, value_delimiter = ',')]
+        listen_addr: Vec<String>,
+        #[arg(long, default_value_t = 2)]
+        p2p_wait_secs: u64,
     },
 }
 
@@ -118,6 +131,16 @@ enum InboxCommand {
         bridge_url: Option<String>,
         #[arg(long)]
         inbox_key: Option<String>,
+        #[arg(long)]
+        p2p: bool,
+        #[arg(long, value_delimiter = ',')]
+        peer: Vec<String>,
+        #[arg(long, value_delimiter = ',')]
+        bootstrap: Vec<String>,
+        #[arg(long, value_delimiter = ',')]
+        listen_addr: Vec<String>,
+        #[arg(long, default_value_t = 5)]
+        p2p_wait_secs: u64,
     },
 }
 
@@ -146,6 +169,42 @@ enum LogCommand {
         path: String,
     },
     Info,
+}
+
+/// Parses a list of multiaddr strings into libp2p multiaddr values.
+fn parse_multiaddrs(values: &[String]) -> Result<Vec<Multiaddr>, ClientError> {
+    values
+        .iter()
+        .map(|value| {
+            value
+                .parse()
+                .map_err(|err| ClientError::Transport(format!("invalid multiaddr: {err}")))
+        })
+        .collect()
+}
+
+/// Builds a P2P node configuration from CLI flags and default values.
+fn build_p2p_config(
+    listen_addrs: Vec<Multiaddr>,
+    peers: Vec<Multiaddr>,
+    bootstrap_nodes: Vec<Multiaddr>,
+    publish_wait: Duration,
+    manifest_wait: Duration,
+) -> P2pNodeConfig {
+    let mut config = P2pNodeConfig::default();
+    if !listen_addrs.is_empty() {
+        config.listen_addrs = listen_addrs;
+    }
+    config.peers = peers;
+    config.bootstrap_nodes = bootstrap_nodes;
+    config.publish_wait = publish_wait;
+    config.manifest_wait = manifest_wait;
+    config
+}
+
+/// Determines whether P2P networking should be enabled for a CLI command.
+fn should_use_p2p(enabled: bool, peers: &[String], bootstrap: &[String], listen: &[String]) -> bool {
+    enabled || !peers.is_empty() || !bootstrap.is_empty() || !listen.is_empty()
 }
 
 /// Runs the CLI entry point and dispatches commands.
@@ -310,64 +369,163 @@ async fn main() -> Result<(), ClientError> {
                     .threads
                     .remove(&thread)
                     .ok_or(ClientError::ThreadNotFound)?;
-                let send_result: Result<(), ClientError> = (|| {
-                    let (_envelope, manifest, chunks, outbox_item) =
-                        publish_thread_message_transport(&identity, &mut thread_state, text.as_bytes())?;
-                    let chunk_count = chunks.len();
-                    let message = MessageState {
-                        sender_user_id: sender_user_id.clone(),
-                        text: text.clone(),
-                        sent_at: now_unix(),
-                    };
-                    thread_state.messages.push(message);
-                    state.transport_outbox.push(outbox_item);
-                    stage_transport_delivery(
-                        &mut state,
-                        &thread_state,
-                        &sender_user_id,
-                        &manifest,
-                        &chunks,
-                    )?;
-                    println!("message published via transport ({} chunks)", chunk_count);
-                    Ok(())
-                })();
-                state.threads.insert(thread, thread_state);
-                send_result?;
+                let (_envelope, manifest, chunks, outbox_item) =
+                    publish_thread_message_transport(identity, thread_state, text.as_bytes())?;
+                let chunk_count = chunks.len();
+                let message = MessageState {
+                    sender_user_id: identity.user_id_hex.clone(),
+                    text: text.clone(),
+                    sent_at: now_unix(),
+                };
+                thread_state.messages.push(message);
+                state.transport_outbox.push(outbox_item);
+                stage_transport_delivery(
+                    &mut state,
+                    thread_state,
+                    &identity.user_id_hex,
+                    &manifest,
+                    &chunks,
+                )?;
+                if should_use_p2p(p2p, &peer, &bootstrap, &listen_addr) {
+                    let listen_addrs = parse_multiaddrs(&listen_addr)?;
+                    let peers = parse_multiaddrs(&peer)?;
+                    let bootstrap_nodes = parse_multiaddrs(&bootstrap)?;
+                    let node_config = build_p2p_config(
+                        listen_addrs,
+                        peers,
+                        bootstrap_nodes,
+                        Duration::from_secs(p2p_wait_secs),
+                        Duration::from_secs(p2p_wait_secs),
+                    );
+                    let mut transport = P2pTransport::new(
+                        Keypair::generate_ed25519(),
+                        TransportConfig::default(),
+                        node_config,
+                    )
+                    .await
+                    .map_err(|err| ClientError::Transport(err.to_string()))?;
+                    let inbox_keys: Vec<Vec<u8>> = thread_state
+                        .members
+                        .iter()
+                        .filter(|member| *member != &identity.user_id_hex)
+                        .map(|member| hex::decode(member))
+                        .collect::<Result<_, _>>()?;
+                    transport
+                        .publish_to_inboxes(&inbox_keys, &manifest, &chunks)
+                        .await
+                        .map_err(|err| ClientError::Transport(err.to_string()))?;
+                    println!(
+                        "p2p: published manifest to {} inboxes",
+                        inbox_keys.len()
+                    );
+                }
+                println!(
+                    "message published via transport ({} chunks)",
+                    chunk_count
+                );
             }
         },
         Commands::Inbox { command } => match command {
             InboxCommand::Poll {
                 bridge_url,
                 inbox_key,
+                p2p,
+                peer,
+                bootstrap,
+                listen_addr,
+                p2p_wait_secs,
             } => {
                 if let Some(inbox_key) = inbox_key {
                     let inbox_key_bytes = hex::decode(inbox_key)?;
-                    let response = if transport_inbox_has_items(&state, &inbox_key_bytes) {
-                        receive_transport_messages(&mut state, &inbox_key_bytes)?
+                    if should_use_p2p(p2p, &peer, &bootstrap, &listen_addr) {
+                        let listen_addrs = parse_multiaddrs(&listen_addr)?;
+                        let peers = parse_multiaddrs(&peer)?;
+                        let bootstrap_nodes = parse_multiaddrs(&bootstrap)?;
+                        let node_config = build_p2p_config(
+                            listen_addrs,
+                            peers,
+                            bootstrap_nodes,
+                            Duration::from_secs(p2p_wait_secs),
+                            Duration::from_secs(p2p_wait_secs),
+                        );
+                        let mut transport = P2pTransport::new(
+                            Keypair::generate_ed25519(),
+                            TransportConfig::default(),
+                            node_config,
+                        )
+                        .await
+                        .map_err(|err| ClientError::Transport(err.to_string()))?;
+                        let payloads = transport
+                            .recover_payloads_for_inbox(
+                                &inbox_key_bytes,
+                                Duration::from_secs(p2p_wait_secs),
+                            )
+                            .await
+                            .map_err(|err| ClientError::Transport(err.to_string()))?;
+                        let payload_count = payloads.len();
+                        for payload in payloads {
+                            let envelope = spex_client::parse_envelope_payload(&payload)?;
+                            let thread_id_hex = hex::encode(&envelope.thread_id);
+                            let plaintext =
+                                spex_client::decrypt_thread_envelope(
+                                    &state,
+                                    state
+                                        .threads
+                                        .get(&thread_id_hex)
+                                        .ok_or(ClientError::ThreadNotFound)?,
+                                    &envelope,
+                                )?;
+                            let message_text = String::from_utf8(plaintext)
+                                .map_err(|_| ClientError::InvalidMessageEncoding)?;
+                            let thread_state = state
+                                .threads
+                                .get_mut(&thread_id_hex)
+                                .ok_or(ClientError::ThreadNotFound)?;
+                            thread_state.messages.push(MessageState {
+                                sender_user_id: hex::encode(&envelope.sender_user_id),
+                                text: message_text.clone(),
+                                sent_at: now_unix(),
+                            });
+                            println!(
+                                "message: {} -> {}",
+                                hex::encode(&envelope.sender_user_id),
+                                message_text
+                            );
+                        }
+                        println!(
+                            "inbox: {} items (source: libp2p)",
+                            payload_count
+                        );
                     } else {
-                        let bridge = bridge_url.map(BridgeClient::new);
-                        receive_inbox_messages(&mut state, &inbox_key_bytes, bridge.as_ref())
-                            .await?
-                    };
-                    for item in &response.items {
-                        let message_text = String::from_utf8(item.plaintext.clone())
-                            .map_err(|_| ClientError::InvalidMessageEncoding)?;
-                        let thread_state = state
-                            .threads
-                            .get_mut(&item.thread_id_hex)
-                            .ok_or(ClientError::ThreadNotFound)?;
-                        println!("message: {} -> {}", item.sender_user_id_hex, message_text);
-                        thread_state.messages.push(MessageState {
-                            sender_user_id: item.sender_user_id_hex.clone(),
-                            text: message_text,
-                            sent_at: now_unix(),
-                        });
+                        let response = if transport_inbox_has_items(&state, &inbox_key_bytes) {
+                            receive_transport_messages(&mut state, &inbox_key_bytes)?
+                        } else {
+                            let bridge = bridge_url.map(BridgeClient::new);
+                            receive_inbox_messages(&mut state, &inbox_key_bytes, bridge.as_ref()).await?
+                        };
+                        for item in response.items {
+                            let message_text = String::from_utf8(item.plaintext)
+                                .map_err(|_| ClientError::InvalidMessageEncoding)?;
+                            let thread_state = state
+                                .threads
+                                .get_mut(&item.thread_id_hex)
+                                .ok_or(ClientError::ThreadNotFound)?;
+                            thread_state.messages.push(MessageState {
+                                sender_user_id: item.sender_user_id_hex.clone(),
+                                text: message_text.clone(),
+                                sent_at: now_unix(),
+                            });
+                            println!(
+                                "message: {} -> {}",
+                                item.sender_user_id_hex, message_text
+                            );
+                        }
+                        println!(
+                            "inbox: {} items (source: {:?})",
+                            response.items.len(),
+                            response.source
+                        );
                     }
-                    println!(
-                        "inbox: {} items (source: {:?})",
-                        response.items.len(),
-                        response.source
-                    );
                 } else {
                     println!("local inbox: {} items", state.inbox.len());
                     for item in &state.inbox {

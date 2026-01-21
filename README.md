@@ -27,7 +27,7 @@ Implementação inicial em andamento com os seguintes componentes e nível atual
   - **spex-bridge**: bridge HTTP com SQLite para cards/slots, rate limit e validações de grant/PoW,
     com endpoint de leitura de inbox (scan) como fallback.
 - **spex-cli**: CLI de referência para identidades, cartões, request/grant, threads, envio de
-  mensagens (gera envelope + chunks/manifestos) e polling de inbox via transporte ou bridge.
+  mensagens (gera envelope + chunks/manifestos) e polling de inbox via transporte, bridge ou rede P2P.
 - **spex-client**: biblioteca de alto nível para estado local, fluxo request/grant e helpers de
   chunking/MLS usados pelo CLI.
 
@@ -35,7 +35,6 @@ Implementação inicial em andamento com os seguintes componentes e nível atual
 
 - Expansão de testes MLS interop avançados com vetores externos (além dos cenários reais atuais).
 - Endpoint de inbox para escrita/ingestão na bridge (armazenar entregas para scan).
-- Integração CLI com rede P2P real (publicação/replicação e recuperação via manifestos).
 
 ## Documentação
 
@@ -111,10 +110,18 @@ cargo run -p spex-cli -- thread new --members <USER_ID_HEX>,<USER_ID_HEX>
 # enviar mensagem para uma thread via MLS + transporte
 cargo run -p spex-cli -- msg send --thread <THREAD_ID_HEX> --text "Olá"
 
+# enviar mensagem via rede P2P libp2p (bootstrap/peers)
+cargo run -p spex-cli -- msg send --thread <THREAD_ID_HEX> --text "Olá" --p2p \
+  --bootstrap /ip4/127.0.0.1/tcp/9001/p2p/<PEER_ID>
+
 # verificar inbox local, via cache P2P ou via bridge HTTP (com decifragem MLS)
 cargo run -p spex-cli -- inbox poll
 cargo run -p spex-cli -- inbox poll --inbox-key <HEX_KEY>
 cargo run -p spex-cli -- inbox poll --bridge-url <URL> --inbox-key <HEX_KEY>
+
+# recuperar inbox via rede P2P libp2p (manifestos + DHT)
+cargo run -p spex-cli -- inbox poll --p2p --inbox-key <HEX_KEY> \
+  --peer /ip4/127.0.0.1/tcp/9001/p2p/<PEER_ID>
 
 # checkpoints de chaves e log append-only
 cargo run -p spex-cli -- log append-checkpoint

@@ -8,6 +8,7 @@
 pub mod chunking;
 pub mod error;
 pub mod inbox;
+pub mod p2p;
 pub mod transport;
 
 pub use chunking::{chunk_data, reassemble_chunks, Chunk, ChunkingConfig};
@@ -15,6 +16,7 @@ pub use error::TransportError;
 pub use inbox::{
     resolve_inbox_with_fallback, BridgeClient, InboxScanRequest, InboxScanResponse,
 };
+pub use p2p::{inbox_gossip_topic, P2pNodeConfig, P2pTransport};
 pub use transport::{
     collect_manifest_chunks, parse_manifest_from_gossip, passive_replicate_chunks,
     publish_payload, random_walk, random_walk_with_key, reassemble_chunks_with_manifest,
