@@ -44,10 +44,7 @@ fn fetch_chunks_with_noise(
     // Retrieves chunks in reverse order with duplicates to mimic noisy DHT/gossip delivery.
     let mut retrieved = Vec::new();
     for descriptor in manifest.chunks.iter().rev() {
-        let data = store
-            .get(&descriptor.hash)
-            .expect("chunk present")
-            .clone();
+        let data = store.get(&descriptor.hash).expect("chunk present").clone();
         retrieved.push(Chunk {
             index: descriptor.index,
             hash: descriptor.hash.clone(),
@@ -69,7 +66,9 @@ fn reorder_and_dedupe_chunks(manifest: &ChunkManifest, chunks: &[Chunk]) -> Vec<
     // Deduplicates chunk data and restores the original manifest ordering.
     let mut by_hash = HashMap::new();
     for chunk in chunks {
-        by_hash.entry(chunk.hash.clone()).or_insert_with(|| chunk.clone());
+        by_hash
+            .entry(chunk.hash.clone())
+            .or_insert_with(|| chunk.clone());
     }
 
     let mut ordered = Vec::new();
@@ -145,8 +144,7 @@ fn two_nodes_publish_retrieve_and_reassemble_from_dht_and_gossip() {
     assert_eq!(indices, manifest_indices);
 
     let reassembled = reassemble_chunks(&ordered_chunks);
-    let decoded: Envelope =
-        from_ctap2_canonical_slice(&reassembled).expect("reassembled envelope");
+    let decoded: Envelope = from_ctap2_canonical_slice(&reassembled).expect("reassembled envelope");
     assert_eq!(decoded, envelope);
 }
 

@@ -1,6 +1,6 @@
 use ed25519_dalek::Signature;
-use spex_core::{aead_ad, hash, mls_ext, sign, test_vectors, types};
 use spex_core::hash::HashId;
+use spex_core::{aead_ad, hash, mls_ext, sign, test_vectors, types};
 
 #[test]
 fn tv1_cfg_hash_sha256_matches() {
@@ -15,7 +15,10 @@ fn tv2_ed25519_pubkey_matches_seed() {
     let seed = hex::decode(test_vectors::TV2_ED25519_SEED_HEX).unwrap();
     let sk = sign::ed25519_signing_key_from_seed(&seed).unwrap();
     let vk = sign::ed25519_verify_key(&sk);
-    assert_eq!(hex::encode(vk.to_bytes()), test_vectors::TV2_ED25519_PUB_HEX);
+    assert_eq!(
+        hex::encode(vk.to_bytes()),
+        test_vectors::TV2_ED25519_PUB_HEX
+    );
 }
 
 #[test]
@@ -55,18 +58,13 @@ fn tv3_mls_ext_cfg_hash_bytes_match() {
 
 #[test]
 fn tv4_aead_ad_matches() {
-    let thread_id = types::to_fixed::<32>(
-        &hex::decode(test_vectors::TV4_THREAD_ID_HEX).unwrap(),
-    )
-    .unwrap();
-    let cfg_hash = types::to_fixed::<32>(
-        &hex::decode(test_vectors::TV4_CFG_HASH_SHA256_HEX).unwrap(),
-    )
-    .unwrap();
-    let sender_userid = types::to_fixed::<20>(
-        &hex::decode(test_vectors::TV4_SENDER_USERID_HEX).unwrap(),
-    )
-    .unwrap();
+    let thread_id =
+        types::to_fixed::<32>(&hex::decode(test_vectors::TV4_THREAD_ID_HEX).unwrap()).unwrap();
+    let cfg_hash =
+        types::to_fixed::<32>(&hex::decode(test_vectors::TV4_CFG_HASH_SHA256_HEX).unwrap())
+            .unwrap();
+    let sender_userid =
+        types::to_fixed::<20>(&hex::decode(test_vectors::TV4_SENDER_USERID_HEX).unwrap()).unwrap();
 
     let suite = types::ProtoSuite {
         major: test_vectors::TV4_PROTO_SUITE_MAJOR,

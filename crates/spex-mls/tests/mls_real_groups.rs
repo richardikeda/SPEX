@@ -36,7 +36,10 @@ fn mls_rs_real_group_commit_update_resync_flow() {
         .process_commit_message(add_carol.commit_message.clone())
         .expect("bob process carol commit");
     let mut carol_group = carol
-        .join_group(&add_carol.welcome_messages[0], add_carol.ratchet_tree.clone())
+        .join_group(
+            &add_carol.welcome_messages[0],
+            add_carol.ratchet_tree.clone(),
+        )
         .expect("carol join");
     assert_eq!(alice_group.epoch(), 2);
     assert_eq!(bob_group.epoch(), 2);

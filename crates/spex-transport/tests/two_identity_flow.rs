@@ -5,7 +5,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use spex_core::{
     hash::{hash_bytes, HashId},
-    sign::{ed25519_sign_hash, ed25519_signing_key_from_seed, ed25519_verify_hash, ed25519_verify_key},
+    sign::{
+        ed25519_sign_hash, ed25519_signing_key_from_seed, ed25519_verify_hash, ed25519_verify_key,
+    },
     types::{ContactCard, Ctap2Cbor, Envelope, GrantToken, ProtoSuite, ThreadConfig},
 };
 use spex_mls::{cfg_hash_for_thread_config, mls_extensions, Commit, Group, GroupConfig};
@@ -122,7 +124,12 @@ fn expect_u64(value: serde_cbor::Value) -> Option<u64> {
     }
 }
 
-fn build_request_token(from_user_id: &[u8], to_user_id: &[u8], role: u64, created_at: u64) -> String {
+fn build_request_token(
+    from_user_id: &[u8],
+    to_user_id: &[u8],
+    role: u64,
+    created_at: u64,
+) -> String {
     // Builds a base64-encoded request token for the handshake flow.
     let request = RequestToken {
         from_user_id: hex::encode(from_user_id),
@@ -136,7 +143,8 @@ fn build_request_token(from_user_id: &[u8], to_user_id: &[u8], role: u64, create
 
 fn decode_request_token(token: &str) -> RequestToken {
     // Decodes a base64-encoded request token into its JSON payload.
-    serde_json::from_slice(&BASE64_STANDARD.decode(token).expect("request decode")).expect("request parse")
+    serde_json::from_slice(&BASE64_STANDARD.decode(token).expect("request decode"))
+        .expect("request parse")
 }
 
 fn build_grant_token(user_id: &[u8], role: u64) -> String {
@@ -153,7 +161,10 @@ fn build_grant_token(user_id: &[u8], role: u64) -> String {
 
 async fn spawn_bridge_with_items(items: Vec<Vec<u8>>) -> String {
     // Spawns a mock bridge server that returns the provided payloads for inbox scans.
-    let encoded_items: Vec<String> = items.iter().map(|item| BASE64_STANDARD.encode(item)).collect();
+    let encoded_items: Vec<String> = items
+        .iter()
+        .map(|item| BASE64_STANDARD.encode(item))
+        .collect();
     let app = Router::new().route(
         "/inbox/:key",
         get(move |Path(_key): Path<String>| {
@@ -201,14 +212,20 @@ async fn two_identities_exchange_cards_handshake_and_mls() {
 
     let mut unsigned_alice = received_alice.clone();
     unsigned_alice.signature = None;
-    let digest = hash_bytes(HashId::Sha256, &unsigned_alice.to_ctap2_canonical_bytes().unwrap());
+    let digest = hash_bytes(
+        HashId::Sha256,
+        &unsigned_alice.to_ctap2_canonical_bytes().unwrap(),
+    );
     let alice_verify = ed25519_verify_key(&alice.signing_key);
     ed25519_verify_hash(&alice_verify, &digest, &Signature::from_bytes(&alice_sig))
         .expect("alice signature");
 
     let mut unsigned_bob = received_bob.clone();
     unsigned_bob.signature = None;
-    let digest = hash_bytes(HashId::Sha256, &unsigned_bob.to_ctap2_canonical_bytes().unwrap());
+    let digest = hash_bytes(
+        HashId::Sha256,
+        &unsigned_bob.to_ctap2_canonical_bytes().unwrap(),
+    );
     let bob_verify = ed25519_verify_key(&bob.signing_key);
     ed25519_verify_hash(&bob_verify, &digest, &Signature::from_bytes(&bob_sig))
         .expect("bob signature");
@@ -259,8 +276,11 @@ async fn two_identities_exchange_cards_handshake_and_mls() {
     let mut commit = Commit::new(1);
     commit.flags = Some(1);
     let updated_context = group.apply_commit(commit).expect("commit");
-    let expected_updated_extensions = mls_extensions(proto_suite, 1, HashId::Sha256 as u16, &cfg_hash);
-    assert!(updated_context.extensions().contains(&expected_updated_extensions[0]));
+    let expected_updated_extensions =
+        mls_extensions(proto_suite, 1, HashId::Sha256 as u16, &cfg_hash);
+    assert!(updated_context
+        .extensions()
+        .contains(&expected_updated_extensions[0]));
 }
 
 #[tokio::test]

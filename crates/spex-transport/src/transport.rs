@@ -77,8 +77,11 @@ impl BuildTransport {
             .heartbeat_interval(Duration::from_secs(5))
             .build()
             .map_err(|err| TransportError::Libp2p(err.to_string()))?;
-        let gossip = Gossipsub::new(MessageAuthenticity::Signed(local_key.clone()), gossip_config)
-            .map_err(|err| TransportError::Libp2p(err.to_string()))?;
+        let gossip = Gossipsub::new(
+            MessageAuthenticity::Signed(local_key.clone()),
+            gossip_config,
+        )
+        .map_err(|err| TransportError::Libp2p(err.to_string()))?;
 
         let mut components = TransportComponents {
             local_peer_id,
@@ -87,7 +90,9 @@ impl BuildTransport {
         };
 
         for addr in listen_addrs {
-            components.kademlia.add_address(&local_peer_id, addr.clone());
+            components
+                .kademlia
+                .add_address(&local_peer_id, addr.clone());
         }
 
         Ok(components)
@@ -129,7 +134,11 @@ pub fn publish_payload(
 }
 
 /// Writes hash-addressed chunks to Kademlia and announces providers.
-fn publish_chunks(kademlia: &mut Kademlia<MemoryStore>, config: &TransportConfig, chunks: &[Chunk]) {
+fn publish_chunks(
+    kademlia: &mut Kademlia<MemoryStore>,
+    config: &TransportConfig,
+    chunks: &[Chunk],
+) {
     for chunk in chunks {
         let record_key = RecordKey::new(&chunk.hash);
         let record = Record {
@@ -167,9 +176,7 @@ pub fn parse_manifest_from_gossip(payload: &[u8]) -> Result<ChunkManifest, Trans
 }
 
 /// Recovers the first valid chunk manifest from a list of gossipsub payloads.
-pub fn recover_manifest_from_gossip(
-    payloads: &[Vec<u8>],
-) -> Result<ChunkManifest, TransportError> {
+pub fn recover_manifest_from_gossip(payloads: &[Vec<u8>]) -> Result<ChunkManifest, TransportError> {
     for payload in payloads {
         if let Ok(manifest) = parse_manifest_from_gossip(payload) {
             if validate_manifest(&manifest).is_ok() {
@@ -207,7 +214,10 @@ pub fn collect_manifest_chunks(
     let mut payloads = std::collections::HashMap::new();
     for result in results {
         if let GetRecordOk::FoundRecord(record) = result {
-            payloads.insert(record.record.key.as_ref().to_vec(), record.record.value.clone());
+            payloads.insert(
+                record.record.key.as_ref().to_vec(),
+                record.record.value.clone(),
+            );
         }
     }
 
@@ -268,7 +278,9 @@ pub fn reassemble_chunks_with_manifest(
         if computed != chunk.hash {
             return Err(TransportError::ChunkHashMismatch(chunk.index));
         }
-        by_hash.entry(chunk.hash.clone()).or_insert_with(|| chunk.clone());
+        by_hash
+            .entry(chunk.hash.clone())
+            .or_insert_with(|| chunk.clone());
     }
 
     let mut ordered = Vec::with_capacity(manifest.chunks.len());
@@ -358,7 +370,11 @@ pub fn renew_chunk_ttl(
 }
 
 /// Stores a chunk record with TTL and provider advertisement.
-fn store_chunk_record(kademlia: &mut Kademlia<MemoryStore>, config: &TransportConfig, chunk: &Chunk) {
+fn store_chunk_record(
+    kademlia: &mut Kademlia<MemoryStore>,
+    config: &TransportConfig,
+    chunk: &Chunk,
+) {
     let record_key = RecordKey::new(&chunk.hash);
     let record = Record {
         key: record_key.clone(),

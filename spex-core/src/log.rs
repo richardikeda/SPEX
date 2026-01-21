@@ -22,10 +22,7 @@ impl Ctap2Cbor for KeyCheckpoint {
     fn to_cbor_value(&self) -> Value {
         let mut map = BTreeMap::new();
         map.insert(Value::Integer(0), Value::Bytes(self.user_id.clone()));
-        map.insert(
-            Value::Integer(1),
-            Value::Bytes(self.verifying_key.clone()),
-        );
+        map.insert(Value::Integer(1), Value::Bytes(self.verifying_key.clone()));
         map.insert(Value::Integer(2), Value::Bytes(self.device_id.clone()));
         map.insert(Value::Integer(3), Value::Integer(self.issued_at as i128));
         Value::Map(map.into_iter().collect())

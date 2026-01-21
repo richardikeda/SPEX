@@ -1,5 +1,5 @@
-use sha2::{Digest, Sha256};
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 
 use crate::{cbor, error::SpexError, types::Ctap2Cbor};
 

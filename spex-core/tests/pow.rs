@@ -40,7 +40,9 @@ fn rejects_puzzle_below_minimum_requirements() {
 
     let result = verify_puzzle_output(b"recipient", input, &output, params);
 
-    assert!(matches!(result, Err(SpexError::InvalidInput(message)) if message.contains("below minimum")));
+    assert!(
+        matches!(result, Err(SpexError::InvalidInput(message)) if message.contains("below minimum"))
+    );
 }
 
 #[test]

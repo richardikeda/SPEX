@@ -45,9 +45,7 @@ fn group_encrypt_decrypt_roundtrip() {
     let ciphertext = group
         .encrypt("alice", 42, b"secret payload")
         .expect("encrypt");
-    let plaintext = group
-        .decrypt("alice", 42, &ciphertext)
-        .expect("decrypt");
+    let plaintext = group.decrypt("alice", 42, &ciphertext).expect("decrypt");
 
     assert_eq!(plaintext, b"secret payload".to_vec());
 }

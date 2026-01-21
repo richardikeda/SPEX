@@ -1,5 +1,7 @@
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine};
 use clap::{Parser, Subcommand};
+use libp2p::identity::Keypair;
+use libp2p::Multiaddr;
 use spex_client::{
     accept_request_payload, append_rotation_checkpoint, create_checkpoint_entry,
     create_contact_card_payload, create_identity, create_recovery_entry, create_request_payload,
@@ -10,8 +12,6 @@ use spex_client::{
     GrantState, IdentityState, MessageState, RequestState,
 };
 use spex_core::log::{CheckpointEntry, CheckpointLog, LogConsistency};
-use libp2p::identity::Keypair;
-use libp2p::Multiaddr;
 use spex_transport::{inbox::BridgeClient, P2pNodeConfig, P2pTransport, TransportConfig};
 use std::fs;
 use std::time::Duration;
@@ -203,7 +203,12 @@ fn build_p2p_config(
 }
 
 /// Determines whether P2P networking should be enabled for a CLI command.
-fn should_use_p2p(enabled: bool, peers: &[String], bootstrap: &[String], listen: &[String]) -> bool {
+fn should_use_p2p(
+    enabled: bool,
+    peers: &[String],
+    bootstrap: &[String],
+    listen: &[String],
+) -> bool {
     enabled || !peers.is_empty() || !bootstrap.is_empty() || !listen.is_empty()
 }
 
@@ -414,15 +419,9 @@ async fn main() -> Result<(), ClientError> {
                         .publish_to_inboxes(&inbox_keys, &manifest, &chunks)
                         .await
                         .map_err(|err| ClientError::Transport(err.to_string()))?;
-                    println!(
-                        "p2p: published manifest to {} inboxes",
-                        inbox_keys.len()
-                    );
+                    println!("p2p: published manifest to {} inboxes", inbox_keys.len());
                 }
-                println!(
-                    "message published via transport ({} chunks)",
-                    chunk_count
-                );
+                println!("message published via transport ({} chunks)", chunk_count);
             }
         },
         Commands::Inbox { command } => match command {
@@ -466,15 +465,14 @@ async fn main() -> Result<(), ClientError> {
                         for payload in payloads {
                             let envelope = spex_client::parse_envelope_payload(&payload)?;
                             let thread_id_hex = hex::encode(&envelope.thread_id);
-                            let plaintext =
-                                spex_client::decrypt_thread_envelope(
-                                    &state,
-                                    state
-                                        .threads
-                                        .get(&thread_id_hex)
-                                        .ok_or(ClientError::ThreadNotFound)?,
-                                    &envelope,
-                                )?;
+                            let plaintext = spex_client::decrypt_thread_envelope(
+                                &state,
+                                state
+                                    .threads
+                                    .get(&thread_id_hex)
+                                    .ok_or(ClientError::ThreadNotFound)?,
+                                &envelope,
+                            )?;
                             let message_text = String::from_utf8(plaintext)
                                 .map_err(|_| ClientError::InvalidMessageEncoding)?;
                             let thread_state = state
@@ -492,16 +490,14 @@ async fn main() -> Result<(), ClientError> {
                                 message_text
                             );
                         }
-                        println!(
-                            "inbox: {} items (source: libp2p)",
-                            payload_count
-                        );
+                        println!("inbox: {} items (source: libp2p)", payload_count);
                     } else {
                         let response = if transport_inbox_has_items(&state, &inbox_key_bytes) {
                             receive_transport_messages(&mut state, &inbox_key_bytes)?
                         } else {
                             let bridge = bridge_url.map(BridgeClient::new);
-                            receive_inbox_messages(&mut state, &inbox_key_bytes, bridge.as_ref()).await?
+                            receive_inbox_messages(&mut state, &inbox_key_bytes, bridge.as_ref())
+                                .await?
                         };
                         for item in response.items {
                             let message_text = String::from_utf8(item.plaintext)
@@ -515,10 +511,7 @@ async fn main() -> Result<(), ClientError> {
                                 text: message_text.clone(),
                                 sent_at: now_unix(),
                             });
-                            println!(
-                                "message: {} -> {}",
-                                item.sender_user_id_hex, message_text
-                            );
+                            println!("message: {} -> {}", item.sender_user_id_hex, message_text);
                         }
                         println!(
                             "inbox: {} items (source: {:?})",

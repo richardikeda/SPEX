@@ -2,7 +2,9 @@
 pub const EXT_SPEX_PROTO_SUITE: u16 = 0xF0A0;
 pub const EXT_SPEX_CFG_HASH: u16 = 0xF0A1;
 
-fn u16be(v: u16) -> [u8; 2] { v.to_be_bytes() }
+fn u16be(v: u16) -> [u8; 2] {
+    v.to_be_bytes()
+}
 
 /// ext_spex_proto_suite (0xF0A0)
 /// extension_data = major(u16) || minor(u16) || ciphersuite_id(u16) || flags(u8)

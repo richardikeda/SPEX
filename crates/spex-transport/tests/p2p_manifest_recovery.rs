@@ -57,13 +57,10 @@ async fn two_nodes_recover_payload_via_manifest() {
         manifest_wait: Duration::from_secs(6),
         ..P2pNodeConfig::default()
     };
-    let mut node_b = P2pTransport::new(
-        Keypair::generate_ed25519(),
-        transport_config,
-        node_b_config,
-    )
-    .await
-    .expect("node B");
+    let mut node_b =
+        P2pTransport::new(Keypair::generate_ed25519(), transport_config, node_b_config)
+            .await
+            .expect("node B");
     let node_b_addr = node_b
         .listen_addrs()
         .first()

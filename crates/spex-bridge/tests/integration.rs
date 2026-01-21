@@ -3,8 +3,8 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use rusqlite::{params, Connection};
 use serde_json::json;
 use spex_bridge::{app, init_state_with_clock, Clock};
-use spex_core::{hash, pow, pow::PowParams, sign, types::GrantToken};
 use spex_core::hash::HashId;
+use spex_core::{hash, pow, pow::PowParams, sign, types::GrantToken};
 use std::sync::Arc;
 use tempfile::tempdir;
 use tower::ServiceExt;
@@ -37,8 +37,7 @@ fn build_grant_payload(expires_at: u64) -> serde_json::Value {
         expires_at: Some(expires_at),
         extensions: Default::default(),
     };
-    let hash =
-        hash::hash_ctap2_cbor_value(HashId::Sha256, &grant).expect("grant hash");
+    let hash = hash::hash_ctap2_cbor_value(HashId::Sha256, &grant).expect("grant hash");
     let signature = sign::ed25519_sign_hash(&signing_key, &hash);
     json!({
         "user_id": BASE64.encode(&grant.user_id),
@@ -55,8 +54,8 @@ fn build_payload(now: u64, data: &[u8]) -> serde_json::Value {
     let recipient_key = b"recipient-key";
     let puzzle_input = b"puzzle-input";
     let params = PowParams::default();
-    let puzzle_output = pow::generate_puzzle_output(recipient_key, puzzle_input, params)
-        .expect("puzzle output");
+    let puzzle_output =
+        pow::generate_puzzle_output(recipient_key, puzzle_input, params).expect("puzzle output");
 
     json!({
         "data": BASE64.encode(data),
@@ -126,11 +125,7 @@ fn seed_inbox(db_path: &std::path::Path, inbox_key: &str, items: &[&[u8]]) {
 }
 
 /// Inserts inbox keys and items directly into the bridge database for testing.
-fn seed_inbox_with_expiry(
-    db_path: &std::path::Path,
-    inbox_key: &str,
-    items: &[InboxSeedItem<'_>],
-) {
+fn seed_inbox_with_expiry(db_path: &std::path::Path, inbox_key: &str, items: &[InboxSeedItem<'_>]) {
     let conn = Connection::open(db_path).expect("open inbox db");
     conn.execute(
         "INSERT OR IGNORE INTO inbox_keys (inbox_key) VALUES (?1)",
@@ -322,8 +317,7 @@ async fn accepts_minimum_pow_for_slot() {
     let recipient_key = b"recipient";
     let puzzle_input = b"input";
     let params = PowParams::minimum();
-    let puzzle_output =
-        pow::generate_puzzle_output(recipient_key, puzzle_input, params).unwrap();
+    let puzzle_output = pow::generate_puzzle_output(recipient_key, puzzle_input, params).unwrap();
     let payload = build_payload_with_puzzle(
         1_700_000_000,
         b"slot",
@@ -901,7 +895,10 @@ async fn get_inbox_filters_expired_items() {
         .await
         .unwrap();
     let response_json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(response_json["items"], json!([BASE64.encode(b"fresh-item")]));
+    assert_eq!(
+        response_json["items"],
+        json!([BASE64.encode(b"fresh-item")])
+    );
     assert!(response_json["next_cursor"].is_null());
 }
 

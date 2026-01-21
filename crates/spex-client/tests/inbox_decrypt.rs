@@ -1,6 +1,6 @@
 use spex_client::{
-    ContactState, LocalState, create_identity, create_thread_state, decrypt_thread_envelope,
-    fingerprint_hex, now_unix, send_thread_message,
+    create_identity, create_thread_state, decrypt_thread_envelope, fingerprint_hex, now_unix,
+    send_thread_message, ContactState, LocalState,
 };
 
 /// Ensures inbox envelope decryption succeeds with valid signatures and membership.
@@ -29,7 +29,6 @@ fn decrypts_envelope_payload_for_member() {
         },
     );
 
-    let plaintext =
-        decrypt_thread_envelope(&bob_state, &thread_state, &envelope).expect("decrypt");
+    let plaintext = decrypt_thread_envelope(&bob_state, &thread_state, &envelope).expect("decrypt");
     assert_eq!(plaintext, b"hello bob");
 }

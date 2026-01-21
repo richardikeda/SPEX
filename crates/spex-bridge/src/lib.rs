@@ -562,8 +562,8 @@ async fn get_inbox(
         limit,
         max_bytes,
     )
-        .await?
-        .ok_or(BridgeError::NotFound)?;
+    .await?
+    .ok_or(BridgeError::NotFound)?;
     Ok(Json(InboxResponse {
         items: page
             .items
@@ -673,8 +673,7 @@ fn decode_signature(value: &str) -> Result<Signature, BridgeError> {
 /// Decodes a base64 verifying key into an Ed25519 verifying key struct.
 fn decode_verifying_key(value: &str) -> Result<VerifyingKey, BridgeError> {
     let bytes: [u8; 32] = decode_fixed_bytes(value)?;
-    VerifyingKey::from_bytes(&bytes)
-        .map_err(|err| BridgeError::InvalidRequest(err.to_string()))
+    VerifyingKey::from_bytes(&bytes).map_err(|err| BridgeError::InvalidRequest(err.to_string()))
 }
 
 /// Derives a stable identity string from the grant payload.
@@ -748,7 +747,8 @@ fn required_pow_params(snapshot: &RateLimitSnapshot, limits: &RateLimitConfig) -
     let request_steps = snapshot.recent_requests / limits.difficulty_step_requests;
     let byte_steps = snapshot.recent_bytes / limits.difficulty_step_bytes;
     let volume_steps = request_steps.max(byte_steps);
-    let reputation_bonus = (snapshot.reputation_score.max(0) as u64) / limits.reputation_step as u64;
+    let reputation_bonus =
+        (snapshot.reputation_score.max(0) as u64) / limits.reputation_step as u64;
     let steps = volume_steps.saturating_sub(reputation_bonus);
     PowParams {
         memory_kib: base
@@ -866,9 +866,7 @@ async fn load_entry(
     let key = key.to_string();
     task::spawn_blocking(move || {
         let conn = Connection::open(db_path)?;
-        let mut stmt = conn.prepare(&format!(
-            "SELECT data FROM {table} WHERE {key_col} = ?1"
-        ))?;
+        let mut stmt = conn.prepare(&format!("SELECT data FROM {table} WHERE {key_col} = ?1"))?;
         let mut rows = stmt.query([key])?;
         if let Some(row) = rows.next()? {
             let data: Vec<u8> = row.get(0)?;
@@ -935,10 +933,9 @@ async fn load_inbox_items(
              WHERE inbox_key = ?1 AND (expires_at IS NULL OR expires_at > ?2) AND id > ?3 \
              ORDER BY id ASC LIMIT ?4",
         )?;
-        let rows = stmt.query_map(
-            params![inbox_key, now, cursor, fetch_limit],
-            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?)),
-        )?;
+        let rows = stmt.query_map(params![inbox_key, now, cursor, fetch_limit], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?))
+        })?;
         let mut items = Vec::new();
         let mut total_bytes = 0usize;
         let mut last_id = None;
@@ -978,7 +975,9 @@ fn compute_inbox_expiration(now: u64, ttl_seconds: Option<u64>) -> Result<u64, B
 /// Ensures inbox envelopes remain within the maximum allowed size.
 fn validate_inbox_item_size(data_len: usize) -> Result<(), BridgeError> {
     if data_len > MAX_INBOX_ITEM_BYTES {
-        return Err(BridgeError::InvalidRequest("inbox item too large".to_string()));
+        return Err(BridgeError::InvalidRequest(
+            "inbox item too large".to_string(),
+        ));
     }
     Ok(())
 }

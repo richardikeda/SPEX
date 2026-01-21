@@ -122,7 +122,10 @@ impl Ctap2Cbor for ThreadConfig {
         let mut map = BTreeMap::new();
         map.insert(Value::Integer(0), Value::Integer(self.proto_major as i128));
         map.insert(Value::Integer(1), Value::Integer(self.proto_minor as i128));
-        map.insert(Value::Integer(2), Value::Integer(self.ciphersuite_id as i128));
+        map.insert(
+            Value::Integer(2),
+            Value::Integer(self.ciphersuite_id as i128),
+        );
         map.insert(Value::Integer(3), Value::Integer(self.flags as i128));
         map.insert(Value::Integer(4), Value::Bytes(self.thread_id.clone()));
         let grants = self
@@ -205,7 +208,8 @@ impl<'de> Visitor<'de> for EnvelopeVisitor {
             thread_id: thread_id.ok_or_else(|| de::Error::missing_field("thread_id"))?,
             epoch: epoch.ok_or_else(|| de::Error::missing_field("epoch"))?,
             seq: seq.ok_or_else(|| de::Error::missing_field("seq"))?,
-            sender_user_id: sender_user_id.ok_or_else(|| de::Error::missing_field("sender_user_id"))?,
+            sender_user_id: sender_user_id
+                .ok_or_else(|| de::Error::missing_field("sender_user_id"))?,
             ciphertext: ciphertext.ok_or_else(|| de::Error::missing_field("ciphertext"))?,
             signature,
             extensions,
