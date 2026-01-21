@@ -24,6 +24,8 @@ jobs:
         with:
           shared-key: "rust-ci"
           cache-on-failure: true
+      - name: Fetch deps (warm cache)
+        run: cargo fetch --locked
       - name: Build
         run: cargo build --workspace --locked --verbose
       - name: Test
@@ -50,5 +52,7 @@ jobs:
           cache-on-failure: true
       - name: Format check
         run: cargo fmt --all -- --check
+      - name: Fetch deps (warm cache)
+        run: cargo fetch --locked
       - name: Clippy
         run: cargo clippy --workspace --locked -- -D warnings
