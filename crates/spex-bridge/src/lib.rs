@@ -504,6 +504,7 @@ async fn put_inbox(
     let snapshot = load_rate_limit_snapshot(&state.db_path, &identity, now, state.limits).await?;
     let minimum_pow = required_pow_params(&snapshot, &state.limits);
     let result = (|| -> Result<u64, BridgeError> {
+        validate_inbox_item_size(data_len)?;
         enforce_rate_limits(&snapshot, &state.limits, data_len)?;
         validate_grant_and_puzzle(&state, &payload.grant, &payload.puzzle, &minimum_pow, true)?;
         compute_inbox_expiration(now, payload.ttl_seconds)
@@ -885,6 +886,7 @@ const DEFAULT_INBOX_PAGE_LIMIT: usize = 100;
 const MAX_INBOX_PAGE_LIMIT: usize = 500;
 const DEFAULT_INBOX_TTL_SECONDS: u64 = 86_400;
 const MAX_INBOX_TTL_SECONDS: u64 = 604_800;
+const MAX_INBOX_ITEM_BYTES: usize = 262_144;
 
 /// Normalizes the inbox page size to a safe default and maximum cap.
 fn normalize_inbox_limit(limit: Option<usize>) -> usize {
@@ -971,6 +973,14 @@ fn compute_inbox_expiration(now: u64, ttl_seconds: Option<u64>) -> Result<u64, B
     }
     now.checked_add(ttl)
         .ok_or_else(|| BridgeError::InvalidRequest("invalid inbox ttl".to_string()))
+}
+
+/// Ensures inbox envelopes remain within the maximum allowed size.
+fn validate_inbox_item_size(data_len: usize) -> Result<(), BridgeError> {
+    if data_len > MAX_INBOX_ITEM_BYTES {
+        return Err(BridgeError::InvalidRequest("inbox item too large".to_string()));
+    }
+    Ok(())
 }
 
 /// Persists an inbox item and ensures the inbox key exists.
