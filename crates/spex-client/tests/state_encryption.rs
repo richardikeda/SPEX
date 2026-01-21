@@ -1,6 +1,6 @@
 use std::{env, fs};
 
-use spex_client::{IdentityState, LocalState, load_state, random_hex, save_state};
+use spex_client::{load_state, random_hex, save_state, IdentityState, LocalState};
 
 /// Ensures encrypted state persists and restores using a passphrase.
 #[test]

@@ -1,6 +1,6 @@
 use ed25519_dalek::Signature;
-use spex_core::{hash, sign, types};
 use spex_core::hash::HashId;
+use spex_core::{hash, sign, types};
 
 /// Build a deterministic Ed25519 signing key for tests.
 fn test_signing_key() -> ed25519_dalek::SigningKey {
@@ -38,7 +38,10 @@ fn contact_card_signature_validation() {
     let mutated_hash = hash::hash_ctap2_cbor_value(HashId::Sha256, &card)
         .expect("hashing mutated ContactCard should succeed");
     let validation = sign::ed25519_verify_hash(&verify_key, &mutated_hash, &signature);
-    assert!(validation.is_err(), "mutated ContactCard should fail validation");
+    assert!(
+        validation.is_err(),
+        "mutated ContactCard should fail validation"
+    );
 }
 
 /// Sign and verify a GrantToken, then confirm validation fails after mutation.
@@ -68,5 +71,8 @@ fn grant_token_signature_validation() {
     let mutated_hash = hash::hash_ctap2_cbor_value(HashId::Sha256, &grant)
         .expect("hashing mutated GrantToken should succeed");
     let validation = sign::ed25519_verify_hash(&verify_key, &mutated_hash, &signature);
-    assert!(validation.is_err(), "mutated GrantToken should fail validation");
+    assert!(
+        validation.is_err(),
+        "mutated GrantToken should fail validation"
+    );
 }

@@ -11,7 +11,10 @@ use spex_core::{
     cbor::from_ctap2_canonical_slice,
     error::SpexError,
     hash::{hash_bytes, hash_ctap2_cbor_value, HashId},
-    log::{CheckpointEntry, CheckpointLog, KeyCheckpoint, LogConsistency, RecoveryKey, RevocationDeclaration},
+    log::{
+        CheckpointEntry, CheckpointLog, KeyCheckpoint, LogConsistency, RecoveryKey,
+        RevocationDeclaration,
+    },
     pow,
     sign::{ed25519_sign_hash, ed25519_verify_hash, ed25519_verify_key},
     types::{to_fixed, ContactCard, Ctap2Cbor, GrantToken, ProtoSuite, ThreadConfig},
@@ -22,8 +25,8 @@ use spex_transport::{
     chunking::{chunk_data, Chunk, ChunkingConfig},
     inbox::{derive_inbox_scan_key, BridgeClient, InboxScanResponse, InboxSource},
     transport::{
-        ChunkDescriptor, ChunkManifest, TransportConfig, manifest_payload,
-        recover_chunks_from_store, recover_manifest_from_gossip, reassemble_chunks_with_manifest,
+        manifest_payload, reassemble_chunks_with_manifest, recover_chunks_from_store,
+        recover_manifest_from_gossip, ChunkDescriptor, ChunkManifest, TransportConfig,
     },
 };
 use std::{
@@ -414,7 +417,10 @@ pub fn build_contact_card(identity: &IdentityState) -> Result<ContactCard, Clien
 }
 
 /// Signs a contact card using the local identity signing key.
-pub fn sign_contact_card(identity: &IdentityState, card: &ContactCard) -> Result<Vec<u8>, ClientError> {
+pub fn sign_contact_card(
+    identity: &IdentityState,
+    card: &ContactCard,
+) -> Result<Vec<u8>, ClientError> {
     let signing_key = signing_key_from_hex(&identity.signing_key_hex)?;
     let payload = card.to_ctap2_canonical_bytes()?;
     let digest = hash_bytes(HashId::Sha256, &payload);
@@ -423,7 +429,10 @@ pub fn sign_contact_card(identity: &IdentityState, card: &ContactCard) -> Result
 }
 
 /// Verifies the signature embedded in a contact card.
-pub fn verify_contact_card_signature(card: &ContactCard, signature: &[u8]) -> Result<(), ClientError> {
+pub fn verify_contact_card_signature(
+    card: &ContactCard,
+    signature: &[u8],
+) -> Result<(), ClientError> {
     let verifying_key_bytes: [u8; 32] = card
         .verifying_key
         .as_slice()
@@ -521,7 +530,10 @@ pub fn build_request_puzzle(recipient_key: &[u8]) -> Result<PuzzleToken, ClientE
 }
 
 /// Validates the PoW puzzle embedded in a request token.
-pub fn validate_request_puzzle(puzzle: &PuzzleToken, recipient_key: &[u8]) -> Result<(), ClientError> {
+pub fn validate_request_puzzle(
+    puzzle: &PuzzleToken,
+    recipient_key: &[u8],
+) -> Result<(), ClientError> {
     let recipient_bytes = BASE64_STANDARD
         .decode(puzzle.recipient_key.as_bytes())
         .map_err(|_| ClientError::InvalidPuzzle)?;
@@ -556,13 +568,15 @@ pub fn validate_request_puzzle(puzzle: &PuzzleToken, recipient_key: &[u8]) -> Re
 }
 
 /// Validates a signed grant token payload against signature and expiration rules.
-pub fn validate_signed_grant(grant: &SignedGrantToken, now: u64) -> Result<GrantToken, ClientError> {
+pub fn validate_signed_grant(
+    grant: &SignedGrantToken,
+    now: u64,
+) -> Result<GrantToken, ClientError> {
     let user_id = decode_base64_field(&grant.user_id)?;
     let verifying_key_bytes = decode_fixed_base64::<32>(&grant.verifying_key)?;
     let signature_bytes = decode_fixed_base64::<64>(&grant.signature)?;
-    let verifying_key =
-        ed25519_dalek::VerifyingKey::from_bytes(&verifying_key_bytes)
-            .map_err(|_| ClientError::GrantInvalid)?;
+    let verifying_key = ed25519_dalek::VerifyingKey::from_bytes(&verifying_key_bytes)
+        .map_err(|_| ClientError::GrantInvalid)?;
     let signature = ed25519_dalek::Signature::from_bytes(&signature_bytes);
     let token = GrantToken {
         user_id,
@@ -589,13 +603,14 @@ fn decode_base64_field(value: &str) -> Result<Vec<u8>, ClientError> {
 /// Decodes a fixed-length base64-encoded field into an array for validation helpers.
 fn decode_fixed_base64<const N: usize>(value: &str) -> Result<[u8; N], ClientError> {
     let bytes = decode_base64_field(value)?;
-    bytes
-        .try_into()
-        .map_err(|_| ClientError::GrantInvalid)
+    bytes.try_into().map_err(|_| ClientError::GrantInvalid)
 }
 
 /// Signs a grant token and returns a payload compatible with bridge storage requests.
-pub fn sign_grant(identity: &IdentityState, grant: &GrantToken) -> Result<SignedGrantToken, ClientError> {
+pub fn sign_grant(
+    identity: &IdentityState,
+    grant: &GrantToken,
+) -> Result<SignedGrantToken, ClientError> {
     let signing_key = signing_key_from_hex(&identity.signing_key_hex)?;
     let verifying_key = ed25519_verify_key(&signing_key);
     let hash = hash_ctap2_cbor_value(HashId::Sha256, grant)?;
@@ -611,7 +626,10 @@ pub fn sign_grant(identity: &IdentityState, grant: &GrantToken) -> Result<Signed
 }
 
 /// Builds a thread configuration hash for MLS metadata.
-pub fn build_thread_cfg_hash(thread_id_hex: &str, proto_suite: &ProtoSuite) -> Result<Vec<u8>, ClientError> {
+pub fn build_thread_cfg_hash(
+    thread_id_hex: &str,
+    proto_suite: &ProtoSuite,
+) -> Result<Vec<u8>, ClientError> {
     let thread_id = hex::decode(thread_id_hex)?;
     let thread_config = ThreadConfig {
         proto_major: proto_suite.major,
@@ -634,7 +652,12 @@ pub fn rebuild_thread_group(thread_state: &ThreadState) -> Result<Group, ClientE
         ciphersuite_id: thread_state.ciphersuite_id,
     };
     let cfg_hash = hex::decode(&thread_state.cfg_hash_hex)?;
-    build_group_for_members(&thread_state.members, &cfg_hash, &thread_state.initial_secret_hex, proto_suite)
+    build_group_for_members(
+        &thread_state.members,
+        &cfg_hash,
+        &thread_state.initial_secret_hex,
+        proto_suite,
+    )
 }
 
 /// Builds a new MLS group and adds the provided members in order.
@@ -646,13 +669,8 @@ pub fn build_group_for_members(
 ) -> Result<Group, ClientError> {
     let initial_secret = hex::decode(initial_secret_hex)?;
     let mut group = Group::create(
-        GroupConfig::new(
-            proto_suite,
-            0,
-            HashId::Sha256 as u16,
-            cfg_hash.to_vec(),
-        )
-        .with_initial_secret(initial_secret),
+        GroupConfig::new(proto_suite, 0, HashId::Sha256 as u16, cfg_hash.to_vec())
+            .with_initial_secret(initial_secret),
     )
     .map_err(|err| ClientError::Mls(err.to_string()))?;
     for member in members {
@@ -685,7 +703,14 @@ pub fn encrypt_and_chunk_message(
     let cfg_hash = to_fixed::<32>(&cfg_hash_bytes)?;
     let sender_id_bytes = hex::decode(&identity.user_id_hex)?;
     let sender_ad_id = derive_sender_ad_id(&sender_id_bytes);
-    let ad = aead_ad::build_ad(&thread_id, epoch, &cfg_hash, proto_suite, seq, &sender_ad_id);
+    let ad = aead_ad::build_ad(
+        &thread_id,
+        epoch,
+        &cfg_hash,
+        proto_suite,
+        seq,
+        &sender_ad_id,
+    );
     let ciphertext = encrypt_payload_with_aead(group.group_secret(), plaintext, &ad)?;
     let envelope = build_envelope(identity, thread_state, epoch, seq, ciphertext)?;
     let payload = envelope.to_ctap2_canonical_bytes()?;
@@ -716,7 +741,13 @@ pub fn encrypt_payload_with_aead(
     rand::thread_rng().fill_bytes(&mut nonce_bytes);
     let nonce = Nonce::from_slice(&nonce_bytes);
     let ciphertext = cipher
-        .encrypt(nonce, Payload { msg: plaintext, aad: ad })
+        .encrypt(
+            nonce,
+            Payload {
+                msg: plaintext,
+                aad: ad,
+            },
+        )
         .map_err(|err| ClientError::Crypto(err.to_string()))?;
     let mut output = Vec::with_capacity(nonce_bytes.len() + ciphertext.len());
     output.extend_from_slice(&nonce_bytes);
@@ -919,12 +950,10 @@ pub fn receive_transport_messages(
         let manifest = recover_manifest_from_gossip(&[payload])
             .map_err(|err| ClientError::Transport(err.to_string()))?;
         let store = build_transport_chunk_store(state, &manifest)?;
-        let chunks =
-            recover_chunks_from_store(&manifest, &store, &config)
-                .map_err(|err| ClientError::Transport(err.to_string()))?;
-        let payload =
-            reassemble_chunks_with_manifest(&manifest, &chunks, &config)
-                .map_err(|err| ClientError::Transport(err.to_string()))?;
+        let chunks = recover_chunks_from_store(&manifest, &store, &config)
+            .map_err(|err| ClientError::Transport(err.to_string()))?;
+        let payload = reassemble_chunks_with_manifest(&manifest, &chunks, &config)
+            .map_err(|err| ClientError::Transport(err.to_string()))?;
         let envelope = parse_envelope_payload(&payload)?;
         let thread_id_hex = hex::encode(&envelope.thread_id);
         let thread_state = state
@@ -1018,10 +1047,9 @@ pub fn state_path() -> Result<PathBuf, ClientError> {
     if let Ok(path) = std::env::var("SPEX_STATE_PATH") {
         return Ok(PathBuf::from(path));
     }
-    let home = dirs::home_dir().ok_or_else(|| std::io::Error::new(
-        std::io::ErrorKind::NotFound,
-        "home directory not found",
-    ))?;
+    let home = dirs::home_dir().ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::NotFound, "home directory not found")
+    })?;
     Ok(home.join(Path::new(".spex/state.json")))
 }
 
@@ -1101,11 +1129,7 @@ fn decrypt_state_file(state_file: &EncryptedStateFile) -> Result<LocalState, Cli
             let key_bytes = resolve_keychain_key()?;
             parse_keychain_key(&key_bytes)?
         }
-        other => {
-            return Err(ClientError::StateEncryption(format!(
-                "unknown kdf {other}"
-            )))
-        }
+        other => return Err(ClientError::StateEncryption(format!("unknown kdf {other}"))),
     };
     let cipher = ChaCha20Poly1305::new_from_slice(&key)
         .map_err(|err| ClientError::StateEncryption(err.to_string()))?;
@@ -1286,7 +1310,8 @@ pub fn publish_thread_message(
     thread_state: &mut ThreadState,
     plaintext: &[u8],
 ) -> Result<(spex_core::types::Envelope, TransportOutboxItem), ClientError> {
-    let (envelope, manifest, chunks) = encrypt_and_chunk_message(identity, thread_state, plaintext)?;
+    let (envelope, manifest, chunks) =
+        encrypt_and_chunk_message(identity, thread_state, plaintext)?;
     let outbox_item = TransportOutboxItem {
         thread_id_hex: thread_state.thread_id_hex.clone(),
         manifest: manifest_state(&manifest),
@@ -1301,9 +1326,17 @@ pub fn publish_thread_message_transport(
     identity: &IdentityState,
     thread_state: &mut ThreadState,
     plaintext: &[u8],
-) -> Result<(spex_core::types::Envelope, ChunkManifest, Vec<Chunk>, TransportOutboxItem), ClientError>
-{
-    let (envelope, manifest, chunks) = encrypt_and_chunk_message(identity, thread_state, plaintext)?;
+) -> Result<
+    (
+        spex_core::types::Envelope,
+        ChunkManifest,
+        Vec<Chunk>,
+        TransportOutboxItem,
+    ),
+    ClientError,
+> {
+    let (envelope, manifest, chunks) =
+        encrypt_and_chunk_message(identity, thread_state, plaintext)?;
     let outbox_item = TransportOutboxItem {
         thread_id_hex: thread_state.thread_id_hex.clone(),
         manifest: manifest_state(&manifest),
@@ -1498,6 +1531,12 @@ pub fn decrypt_payload_with_aead(
     let (nonce_bytes, payload) = ciphertext.split_at(12);
     let nonce = Nonce::from_slice(nonce_bytes);
     cipher
-        .decrypt(nonce, Payload { msg: payload, aad: ad })
+        .decrypt(
+            nonce,
+            Payload {
+                msg: payload,
+                aad: ad,
+            },
+        )
         .map_err(|err| ClientError::Crypto(err.to_string()))
 }

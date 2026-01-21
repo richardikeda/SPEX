@@ -41,9 +41,7 @@ fn mls_rs_commits_update_membership_and_epoch() {
     assert_eq!(group.epoch(), 1);
     assert_eq!(group.member_identities().len(), 2);
 
-    group
-        .remove_member_by_identity(b"bob")
-        .expect("remove bob");
+    group.remove_member_by_identity(b"bob").expect("remove bob");
     assert_eq!(group.epoch(), 2);
     assert_eq!(group.member_identities(), vec![b"alice".to_vec()]);
 }

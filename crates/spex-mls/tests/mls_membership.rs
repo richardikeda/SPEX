@@ -45,31 +45,17 @@ fn group_message_validation_rejects_divergent_metadata() {
     let mut group = Group::create(config).expect("group");
     group.add_member("alice").expect("add alice");
 
-    let valid_message = GroupMessage::new(
-        group.epoch(),
-        cfg_hash.clone(),
-        proto_suite,
-        vec![1, 2, 3],
-    );
+    let valid_message =
+        GroupMessage::new(group.epoch(), cfg_hash.clone(), proto_suite, vec![1, 2, 3]);
     assert!(group.validate_message(&valid_message).is_ok());
 
-    let wrong_epoch = GroupMessage::new(
-        group.epoch() + 1,
-        cfg_hash.clone(),
-        proto_suite,
-        vec![],
-    );
+    let wrong_epoch = GroupMessage::new(group.epoch() + 1, cfg_hash.clone(), proto_suite, vec![]);
     assert!(matches!(
         group.validate_message(&wrong_epoch),
         Err(ValidationError::EpochMismatch { .. })
     ));
 
-    let wrong_cfg_hash = GroupMessage::new(
-        group.epoch(),
-        vec![0xFF; 32],
-        proto_suite,
-        vec![],
-    );
+    let wrong_cfg_hash = GroupMessage::new(group.epoch(), vec![0xFF; 32], proto_suite, vec![]);
     assert!(matches!(
         group.validate_message(&wrong_cfg_hash),
         Err(ValidationError::CfgHashMismatch)

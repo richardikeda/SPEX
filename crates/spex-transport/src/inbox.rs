@@ -125,12 +125,7 @@ impl BridgeClient {
             if let Some(cursor_value) = cursor {
                 url.push_str(&format!("&cursor={cursor_value}"));
             }
-            let response = self
-                .client
-                .get(url)
-                .send()
-                .await?
-                .error_for_status()?;
+            let response = self.client.get(url).send().await?.error_for_status()?;
             let payload: BridgeInboxResponse = response.json().await?;
             for item in payload.items {
                 let decoded = BASE64_STANDARD

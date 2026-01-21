@@ -11,7 +11,7 @@ use libp2p::identity::Keypair;
 use libp2p::kad::store::MemoryStore;
 use libp2p::kad::{
     Behaviour as Kademlia, Config as KademliaConfig, Event as KademliaEvent, GetRecordOk, Mode,
-    QueryId, QueryResult, Record, RecordKey, Quorum,
+    QueryId, QueryResult, Quorum, Record, RecordKey,
 };
 use libp2p::multiaddr::Protocol;
 use libp2p::swarm::{NetworkBehaviour, Swarm, SwarmEvent};
@@ -22,7 +22,9 @@ use spex_core::hash::HashId;
 use crate::chunking::Chunk;
 use crate::error::TransportError;
 use crate::inbox::derive_inbox_scan_key;
-use crate::transport::{manifest_payload, reassemble_payload_from_store, ChunkManifest, TransportConfig};
+use crate::transport::{
+    manifest_payload, reassemble_payload_from_store, ChunkManifest, TransportConfig,
+};
 
 /// Configuration for running a libp2p-backed transport node.
 #[derive(Clone, Debug)]
@@ -144,7 +146,10 @@ impl P2pTransport {
             .behaviour_mut()
             .kademlia
             .add_address(&peer_id, base_addr);
-        self.swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer_id);
+        self.swarm
+            .behaviour_mut()
+            .gossipsub
+            .add_explicit_peer(&peer_id);
         self.swarm
             .dial(addr)
             .map_err(|err| TransportError::Libp2p(err.to_string()))?;
@@ -265,8 +270,7 @@ impl P2pTransport {
         duration: Duration,
         payloads: &mut Vec<Vec<u8>>,
         mut handler: F,
-    )
-    where
+    ) where
         F: FnMut(SwarmEvent<SpexBehaviourEvent>, &mut Vec<Vec<u8>>),
     {
         let deadline = tokio::time::sleep(duration);
@@ -288,11 +292,7 @@ impl P2pTransport {
         }
         let deadline = Instant::now() + Duration::from_secs(2);
         while Instant::now() < deadline {
-            if let SwarmEvent::NewListenAddr { address, .. } = self
-                .swarm
-                .select_next_some()
-                .await
-            {
+            if let SwarmEvent::NewListenAddr { address, .. } = self.swarm.select_next_some().await {
                 self.listen_addrs.push(address);
                 if self.listen_addrs.len() >= self.node_config.listen_addrs.len() {
                     break;
@@ -395,7 +395,10 @@ fn build_swarm(keypair: &Keypair) -> Result<Swarm<SpexBehaviour>, TransportError
     let gossipsub = Gossipsub::new(MessageAuthenticity::Signed(keypair.clone()), gossip_config)
         .map_err(|err| TransportError::Libp2p(err.to_string()))?;
 
-    let identify = Identify::new(IdentifyConfig::new("spex/transport/1.0".into(), keypair.public()));
+    let identify = Identify::new(IdentifyConfig::new(
+        "spex/transport/1.0".into(),
+        keypair.public(),
+    ));
 
     let behaviour = SpexBehaviour {
         kademlia,
@@ -430,8 +433,7 @@ fn split_peer_addr(addr: &Multiaddr) -> Result<(PeerId, Multiaddr), TransportErr
             base.push(protocol);
         }
     }
-    let peer_id =
-        peer_id.ok_or_else(|| TransportError::Libp2p("missing peer id".to_string()))?;
+    let peer_id = peer_id.ok_or_else(|| TransportError::Libp2p("missing peer id".to_string()))?;
     Ok((peer_id, base))
 }
 

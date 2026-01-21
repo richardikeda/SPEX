@@ -5,8 +5,8 @@ use std::collections::BTreeMap;
 
 // Builds the ThreadConfig instance that matches the TV1 test vector.
 fn build_tv1_config() -> ThreadConfig {
-    let thread_id = hex::decode("00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff")
-        .unwrap();
+    let thread_id =
+        hex::decode("00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff").unwrap();
 
     let grant1 = GrantToken {
         user_id: vec![0xa1; 20],
@@ -37,10 +37,7 @@ fn build_tv1_config() -> ThreadConfig {
 // Builds the ContactCard instance that matches the TV2 test vector without a signature.
 fn build_tv2_card() -> ContactCard {
     let mut extensions = BTreeMap::new();
-    extensions.insert(
-        6,
-        Value::Bytes(hex::decode("deadbeefcafebabe").unwrap()),
-    );
+    extensions.insert(6, Value::Bytes(hex::decode("deadbeefcafebabe").unwrap()));
 
     let invite = InviteToken {
         major: 1,

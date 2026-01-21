@@ -10,8 +10,7 @@ use spex_core::{
     log::{CheckpointEntry, CheckpointLog, RevocationDeclaration},
     pow,
     sign::{
-        ed25519_sign_hash, ed25519_signing_key_from_seed, ed25519_verify_hash,
-        ed25519_verify_key,
+        ed25519_sign_hash, ed25519_signing_key_from_seed, ed25519_verify_hash, ed25519_verify_key,
     },
     types::{ContactCard, Ctap2Cbor, Envelope, GrantToken, ProtoSuite, ThreadConfig},
 };
@@ -68,8 +67,7 @@ fn build_grant_payload(expires_at: u64) -> serde_json::Value {
         expires_at: Some(expires_at),
         extensions: BTreeMap::new(),
     };
-    let hash =
-        hash_ctap2_cbor_value(HashId::Sha256, &grant).expect("grant hash");
+    let hash = hash_ctap2_cbor_value(HashId::Sha256, &grant).expect("grant hash");
     let signature = ed25519_sign_hash(&signing_key, &hash);
     json!({
         "user_id": BASE64_STANDARD.encode(&grant.user_id),
@@ -172,7 +170,12 @@ fn expect_u64(value: serde_cbor::Value) -> Option<u64> {
     }
 }
 
-fn build_request_token(from_user_id: &[u8], to_user_id: &[u8], role: u64, created_at: u64) -> String {
+fn build_request_token(
+    from_user_id: &[u8],
+    to_user_id: &[u8],
+    role: u64,
+    created_at: u64,
+) -> String {
     // Builds a base64-encoded request token for the handshake flow.
     let request = RequestToken {
         from_user_id: hex::encode(from_user_id),
@@ -276,14 +279,20 @@ async fn full_identity_bridge_mls_flow() {
 
     let mut unsigned_alice = received_alice.clone();
     unsigned_alice.signature = None;
-    let digest = hash_bytes(HashId::Sha256, &unsigned_alice.to_ctap2_canonical_bytes().unwrap());
+    let digest = hash_bytes(
+        HashId::Sha256,
+        &unsigned_alice.to_ctap2_canonical_bytes().unwrap(),
+    );
     let alice_verify = ed25519_verify_key(&alice.signing_key);
     ed25519_verify_hash(&alice_verify, &digest, &Signature::from_bytes(&alice_sig))
         .expect("alice signature");
 
     let mut unsigned_bob = received_bob.clone();
     unsigned_bob.signature = None;
-    let digest = hash_bytes(HashId::Sha256, &unsigned_bob.to_ctap2_canonical_bytes().unwrap());
+    let digest = hash_bytes(
+        HashId::Sha256,
+        &unsigned_bob.to_ctap2_canonical_bytes().unwrap(),
+    );
     let bob_verify = ed25519_verify_key(&bob.signing_key);
     ed25519_verify_hash(&bob_verify, &digest, &Signature::from_bytes(&bob_sig))
         .expect("bob signature");
@@ -299,11 +308,18 @@ async fn full_identity_bridge_mls_flow() {
         expires_at: None,
         extensions: BTreeMap::new(),
     };
-    assert!(!grant_token.to_ctap2_canonical_bytes().expect("grant").is_empty());
+    assert!(!grant_token
+        .to_ctap2_canonical_bytes()
+        .expect("grant")
+        .is_empty());
 
     let puzzle_input = b"puzzle-input";
-    let puzzle_output = pow::generate_puzzle_output(bob.user_id.as_slice(), puzzle_input, pow::PowParams::default())
-        .expect("puzzle output");
+    let puzzle_output = pow::generate_puzzle_output(
+        bob.user_id.as_slice(),
+        puzzle_input,
+        pow::PowParams::default(),
+    )
+    .expect("puzzle output");
     let payload = build_storage_payload(
         1_700_000_000,
         b"slot-data",
@@ -383,8 +399,11 @@ async fn full_identity_bridge_mls_flow() {
     let mut commit = Commit::new(1);
     commit.flags = Some(1);
     let updated_context = group.apply_commit(commit).expect("commit");
-    let expected_updated_extensions = mls_extensions(proto_suite, 1, HashId::Sha256 as u16, &cfg_hash);
-    assert!(updated_context.extensions().contains(&expected_updated_extensions[0]));
+    let expected_updated_extensions =
+        mls_extensions(proto_suite, 1, HashId::Sha256 as u16, &cfg_hash);
+    assert!(updated_context
+        .extensions()
+        .contains(&expected_updated_extensions[0]));
 
     let plaintext = b"hello bob";
     let cipher_key = 0x5a;
@@ -430,15 +449,28 @@ async fn full_identity_bridge_mls_flow() {
 
     let alice_verify = ed25519_verify_key(&alice.signing_key);
     let sig: [u8; 64] = signature.clone().try_into().expect("signature size");
-    ed25519_verify_hash(&alice_verify, &ciphertext_digest, &Signature::from_bytes(&sig))
-        .expect("signature valid");
+    ed25519_verify_hash(
+        &alice_verify,
+        &ciphertext_digest,
+        &Signature::from_bytes(&sig),
+    )
+    .expect("signature valid");
 
     let mut tampered_digest = ciphertext_digest.clone();
     tampered_digest[0] ^= 0xff;
-    assert!(ed25519_verify_hash(&alice_verify, &tampered_digest, &Signature::from_bytes(&sig)).is_err());
+    assert!(ed25519_verify_hash(
+        &alice_verify,
+        &tampered_digest,
+        &Signature::from_bytes(&sig)
+    )
+    .is_err());
 
     let inbox_key = hex::encode(&bob.user_id);
-    seed_inbox(tmp.path().join("bridge.db").as_path(), &inbox_key, &[&payload]);
+    seed_inbox(
+        tmp.path().join("bridge.db").as_path(),
+        &inbox_key,
+        &[&payload],
+    );
     let bridge_url = spawn_bridge_server(app.clone()).await;
     let client = BridgeClient::new(bridge_url);
     let response = client.scan_inbox(&bob.user_id).await.expect("scan");
@@ -459,8 +491,5 @@ async fn full_identity_bridge_mls_flow() {
         .expect("append revocation");
     assert!(!root.is_empty());
     assert_eq!(log.entries.len(), 1);
-    assert_eq!(
-        log.entries[0],
-        CheckpointEntry::Revocation(revocation)
-    );
+    assert_eq!(log.entries[0], CheckpointEntry::Revocation(revocation));
 }
