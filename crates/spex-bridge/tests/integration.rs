@@ -637,6 +637,33 @@ async fn rejects_weak_pow_on_inbox() {
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
 
+/// Ensures invalid grant signatures are rejected by the inbox endpoint.
+#[tokio::test]
+async fn rejects_invalid_grant_signature_on_inbox() {
+    let tmp = tempdir().expect("tempdir");
+    let clock = Arc::new(FixedClock { now: 1_700_000_000 });
+    let state = init_state_with_clock(tmp.path().join("bridge.db"), clock).unwrap();
+    let app = app(state);
+
+    let inbox_key = "invalid-grant";
+    let mut payload = build_inbox_payload(1_700_000_000, b"inbox-item", Some(60));
+    payload["grant"]["signature"] = json!(BASE64.encode([9u8; 64]));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri(format!("/inbox/{inbox_key}"))
+                .header("content-type", "application/json")
+                .body(Body::from(payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
 /// Ensures puzzles derived from a different recipient key are rejected.
 #[tokio::test]
 async fn rejects_incorrect_pow_salt() {

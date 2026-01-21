@@ -169,6 +169,7 @@ Armazena um envelope (CBOR base64) associado ao `inbox_key`. O payload segue o m
 - `grant` válido e não expirado.
 - `puzzle` válido para o `recipient_key` informado.
 - `ttl_seconds` deve estar entre 1s e 604.800s (padrão 86.400s).
+- `data` deve ter no máximo 262.144 bytes.
 
 **Request**
 

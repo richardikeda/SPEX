@@ -340,6 +340,7 @@ Content-Type: application/json
 ```
 
 - `ttl_seconds` é opcional (padrão 86.400s, máximo 604.800s).
+- `data` limitado a 262.144 bytes por envelope.
 
 ### GET /inbox/:key (bridge fallback)
 
