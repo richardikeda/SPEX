@@ -691,12 +691,12 @@ fn extract_ip(connect_info: Option<ConnectInfo<SocketAddr>>) -> String {
 
 /// Loads recent request volume and reputation for rate limiting.
 async fn load_rate_limit_snapshot(
-    db_path: &PathBuf,
+    db_path: &FsPath,
     identity: &str,
     now: u64,
     limits: RateLimitConfig,
 ) -> Result<RateLimitSnapshot, BridgeError> {
-    let db_path = db_path.clone();
+    let db_path = db_path.to_path_buf();
     let identity = identity.to_string();
     task::spawn_blocking(move || {
         let conn = Connection::open(db_path)?;
@@ -761,8 +761,9 @@ fn required_pow_params(snapshot: &RateLimitSnapshot, limits: &RateLimitConfig) -
 }
 
 /// Persists an audit log entry for a request attempt.
+#[allow(clippy::too_many_arguments)]
 async fn record_request_log(
-    db_path: &PathBuf,
+    db_path: &FsPath,
     timestamp: u64,
     identity: &str,
     ip: &str,
@@ -771,7 +772,7 @@ async fn record_request_log(
     kind: RequestKind,
     outcome: RequestOutcome,
 ) -> Result<(), BridgeError> {
-    let db_path = db_path.clone();
+    let db_path = db_path.to_path_buf();
     let identity = identity.to_string();
     let ip = ip.to_string();
     let slot_id = slot_id.map(|value| value.to_string());
@@ -793,11 +794,11 @@ async fn record_request_log(
 
 /// Updates the local reputation score based on request outcome.
 async fn update_reputation(
-    db_path: &PathBuf,
+    db_path: &FsPath,
     identity: &str,
     outcome: RequestOutcome,
 ) -> Result<(), BridgeError> {
-    let db_path = db_path.clone();
+    let db_path = db_path.to_path_buf();
     let identity = identity.to_string();
     task::spawn_blocking(move || {
         let conn = Connection::open(db_path)?;
@@ -827,13 +828,13 @@ async fn update_reputation(
 
 /// Stores binary data in the requested table under the provided key.
 async fn store_entry(
-    db_path: &PathBuf,
+    db_path: &FsPath,
     table: &str,
     key_col: &str,
     key: &str,
     data: Vec<u8>,
 ) -> Result<(), BridgeError> {
-    let db_path = db_path.clone();
+    let db_path = db_path.to_path_buf();
     let table = table.to_string();
     let key_col = key_col.to_string();
     let key = key.to_string();
@@ -855,12 +856,12 @@ async fn store_entry(
 
 /// Loads binary data for the requested key from the database.
 async fn load_entry(
-    db_path: &PathBuf,
+    db_path: &FsPath,
     table: &str,
     key_col: &str,
     key: &str,
 ) -> Result<Option<Vec<u8>>, BridgeError> {
-    let db_path = db_path.clone();
+    let db_path = db_path.to_path_buf();
     let table = table.to_string();
     let key_col = key_col.to_string();
     let key = key.to_string();
@@ -905,14 +906,14 @@ fn normalize_inbox_max_bytes(max_bytes: Option<usize>, max_allowed: u64) -> usiz
 
 /// Loads inbox items for the given key, returning None when the inbox is missing.
 async fn load_inbox_items(
-    db_path: &PathBuf,
+    db_path: &FsPath,
     inbox_key: &str,
     now: u64,
     cursor: Option<i64>,
     limit: usize,
     max_bytes: usize,
 ) -> Result<Option<InboxPage>, BridgeError> {
-    let db_path = db_path.clone();
+    let db_path = db_path.to_path_buf();
     let inbox_key = inbox_key.to_string();
     task::spawn_blocking(move || {
         let conn = Connection::open(db_path)?;
@@ -984,12 +985,12 @@ fn validate_inbox_item_size(data_len: usize) -> Result<(), BridgeError> {
 
 /// Persists an inbox item and ensures the inbox key exists.
 async fn store_inbox_item(
-    db_path: &PathBuf,
+    db_path: &FsPath,
     inbox_key: &str,
     item: Vec<u8>,
     expires_at: u64,
 ) -> Result<(), BridgeError> {
-    let db_path = db_path.clone();
+    let db_path = db_path.to_path_buf();
     let inbox_key = inbox_key.to_string();
     task::spawn_blocking(move || {
         let conn = Connection::open(db_path)?;

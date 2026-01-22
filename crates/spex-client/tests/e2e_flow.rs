@@ -162,8 +162,10 @@ async fn e2e_two_identities_card_request_grant_pow_mls_bridge_p2p() {
     let mut thread_state =
         create_thread_state(&alice_identity, vec![bob_user_id_hex.clone()]).expect("thread");
 
-    let mut bob_state = LocalState::default();
-    bob_state.identity = Some(bob_identity);
+    let mut bob_state = LocalState {
+        identity: Some(bob_identity),
+        ..Default::default()
+    };
     bob_state.contacts.insert(
         alice_user_id_hex.clone(),
         contact_state_from_card(&alice_card),
@@ -217,8 +219,10 @@ fn e2e_two_identities_transport_publish_recover_and_decrypt() {
     let alice_card_payload = create_contact_card_payload(&alice_identity).expect("card");
     let alice_card = redeem_contact_card_payload(&alice_card_payload).expect("redeem");
 
-    let mut bob_state = LocalState::default();
-    bob_state.identity = Some(bob_identity);
+    let mut bob_state = LocalState {
+        identity: Some(bob_identity),
+        ..Default::default()
+    };
     bob_state.contacts.insert(
         alice_user_id_hex.clone(),
         contact_state_from_card(&alice_card),
@@ -357,8 +361,10 @@ fn decrypts_envelope_with_contact_state() {
     let (envelope, _manifest, _chunks) =
         send_thread_message(&alice_identity, &mut thread_state, b"hello").expect("send");
 
-    let mut bob_state = LocalState::default();
-    bob_state.identity = Some(bob_identity);
+    let mut bob_state = LocalState {
+        identity: Some(bob_identity),
+        ..Default::default()
+    };
     let alice_card_payload = create_contact_card_payload(&alice_identity).expect("card");
     let alice_card = redeem_contact_card_payload(&alice_card_payload).expect("redeem");
     bob_state.contacts.insert(

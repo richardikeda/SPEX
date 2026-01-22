@@ -10,14 +10,16 @@ fn saves_and_loads_encrypted_state_with_passphrase() {
     env::set_var("SPEX_STATE_PASSPHRASE", "test-passphrase");
     env::set_var("SPEX_STATE_PATH", &state_path);
 
-    let mut state = LocalState::default();
-    state.identity = Some(IdentityState {
-        user_id_hex: random_hex(32),
-        signing_key_hex: random_hex(32),
-        verifying_key_hex: random_hex(32),
-        device_id_hex: random_hex(16),
-        device_nonce_hex: random_hex(16),
-    });
+    let state = LocalState {
+        identity: Some(IdentityState {
+            user_id_hex: random_hex(32),
+            signing_key_hex: random_hex(32),
+            verifying_key_hex: random_hex(32),
+            device_id_hex: random_hex(16),
+            device_nonce_hex: random_hex(16),
+        }),
+        ..Default::default()
+    };
     let expected_user_id = state
         .identity
         .as_ref()

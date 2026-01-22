@@ -1073,7 +1073,7 @@ fn encrypt_state_file(state: &LocalState) -> Result<String, ClientError> {
             let mut salt = [0u8; 16];
             rand::thread_rng().fill_bytes(&mut salt);
             let key = derive_key_from_passphrase(&passphrase, &salt)?;
-            ("argon2id".to_string(), BASE64_STANDARD.encode(&salt), key)
+            ("argon2id".to_string(), BASE64_STANDARD.encode(salt), key)
         }
         StateKeySource::Keychain(key_bytes) => {
             let key = parse_keychain_key(&key_bytes)?;
@@ -1096,7 +1096,7 @@ fn encrypt_state_file(state: &LocalState) -> Result<String, ClientError> {
         version: STATE_ENCRYPTION_VERSION,
         kdf,
         salt_base64,
-        nonce_base64: BASE64_STANDARD.encode(&nonce),
+        nonce_base64: BASE64_STANDARD.encode(nonce),
         ciphertext_base64: BASE64_STANDARD.encode(ciphertext),
     };
     Ok(serde_json::to_string_pretty(&wrapper)?)

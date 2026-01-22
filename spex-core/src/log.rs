@@ -161,13 +161,11 @@ impl MerkleState {
     /// Computes the Merkle root from the current frontier.
     fn root(&self) -> Vec<u8> {
         let mut root: Option<Vec<u8>> = None;
-        for node in self.frontier.iter().rev() {
-            if let Some(hash) = node {
-                root = Some(match root {
-                    None => hash.clone(),
-                    Some(accum) => hash_node(hash, &accum),
-                });
-            }
+        for hash in self.frontier.iter().rev().flatten() {
+            root = Some(match root {
+                None => hash.clone(),
+                Some(accum) => hash_node(hash, &accum),
+            });
         }
         root.unwrap_or_default()
     }

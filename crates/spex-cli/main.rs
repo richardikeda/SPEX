@@ -519,7 +519,7 @@ async fn main() -> Result<(), ClientError> {
                         .members
                         .iter()
                         .filter(|member| *member != &identity.user_id_hex)
-                        .map(|member| hex::decode(member))
+                        .map(hex::decode)
                         .collect::<Result<_, _>>()?;
                     transport
                         .publish_to_inboxes(&inbox_keys, &manifest, &chunks)
