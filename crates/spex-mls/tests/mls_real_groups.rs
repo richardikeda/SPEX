@@ -87,3 +87,76 @@ fn mls_rs_real_group_commit_update_resync_flow() {
     assert_eq!(carol_group.member_identities().len(), 3);
     assert_eq!(dave_group.epoch(), alice_group.epoch());
 }
+
+/// Ensures MLS-rs groups validate extensions across multi-member add/remove flows.
+#[test]
+fn mls_rs_multi_member_add_remove_validates_extensions() {
+    let proto_suite = test_proto_suite();
+    let cfg_hash = vec![0x77; 32];
+    let config = GroupConfig::new(proto_suite, 0, 1, cfg_hash);
+
+    let alice = MlsRsClient::new(proto_suite, b"alice".to_vec()).expect("alice client");
+    let bob = MlsRsClient::new(proto_suite, b"bob".to_vec()).expect("bob client");
+    let carol = MlsRsClient::new(proto_suite, b"carol".to_vec()).expect("carol client");
+    let dave = MlsRsClient::new(proto_suite, b"dave".to_vec()).expect("dave client");
+
+    let mut alice_group = alice.create_group(config).expect("create group");
+    alice_group
+        .validate_cfg_hash_proto_suite()
+        .expect("alice extensions");
+    assert_eq!(alice_group.epoch(), 0);
+
+    let add_bob = alice_group.add_member(&bob).expect("add bob");
+    let mut bob_group = bob
+        .join_group(&add_bob.welcome_messages[0], add_bob.ratchet_tree.clone())
+        .expect("bob join");
+    bob_group
+        .validate_cfg_hash_proto_suite()
+        .expect("bob extensions");
+    assert_eq!(alice_group.epoch(), 1);
+    assert_eq!(bob_group.epoch(), 1);
+
+    let add_carol = alice_group.add_member(&carol).expect("add carol");
+    bob_group
+        .process_commit_message(add_carol.commit_message.clone())
+        .expect("bob process carol commit");
+    let mut carol_group = carol
+        .join_group(
+            &add_carol.welcome_messages[0],
+            add_carol.ratchet_tree.clone(),
+        )
+        .expect("carol join");
+    carol_group
+        .validate_cfg_hash_proto_suite()
+        .expect("carol extensions");
+    assert_eq!(alice_group.epoch(), 2);
+    assert_eq!(bob_group.epoch(), 2);
+    assert_eq!(carol_group.epoch(), 2);
+
+    let remove_bob = alice_group
+        .remove_member_by_identity(b"bob")
+        .expect("remove bob");
+    let bob_removal = bob_group
+        .process_commit_message(remove_bob.commit_message.clone())
+        .expect("bob sees removal");
+    carol_group
+        .process_commit_message(remove_bob.commit_message.clone())
+        .expect("carol process removal");
+    assert!(matches!(bob_removal.effect, CommitEffect::Removed { .. }));
+    assert_eq!(alice_group.epoch(), 3);
+    assert_eq!(bob_group.epoch(), 2);
+    assert_eq!(carol_group.epoch(), 3);
+    assert_eq!(alice_group.member_identities().len(), 2);
+    assert_eq!(carol_group.member_identities().len(), 2);
+
+    let add_dave = alice_group.add_member(&dave).expect("add dave");
+    carol_group
+        .process_commit_message(add_dave.commit_message.clone())
+        .expect("carol process dave commit");
+    let dave_group = dave
+        .join_group(&add_dave.welcome_messages[0], add_dave.ratchet_tree.clone())
+        .expect("dave join");
+    assert_eq!(alice_group.epoch(), 4);
+    assert_eq!(carol_group.epoch(), 4);
+    assert_eq!(dave_group.epoch(), 4);
+}
