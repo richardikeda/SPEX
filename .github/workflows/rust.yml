@@ -29,7 +29,8 @@ jobs:
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: "rust-ci"
+          # Avoid cache key collisions between parallel jobs
+          shared-key: "rust-ci-${{ github.job }}"
           cache-on-failure: true
           cache-directories: |
             /home/runner/.cache/sccache
@@ -37,10 +38,13 @@ jobs:
       - name: Fetch deps (warm cache)
         run: cargo fetch --locked
 
-      - name: Build
+      - name: Build (workspace)
         run: cargo build --workspace --locked --verbose
 
-      - name: Test
+      - name: Test (default features)
+        run: cargo test --workspace --locked --verbose
+
+      - name: Test (all features)
         run: cargo test --workspace --locked --all-features --verbose
 
       - name: sccache stats
@@ -70,7 +74,8 @@ jobs:
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: "rust-ci"
+          # Avoid cache key collisions between parallel jobs
+          shared-key: "rust-ci-${{ github.job }}"
           cache-on-failure: true
           cache-directories: |
             /home/runner/.cache/sccache
