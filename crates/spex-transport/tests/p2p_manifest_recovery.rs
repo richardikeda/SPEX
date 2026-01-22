@@ -259,8 +259,7 @@ async fn two_nodes_reject_corrupt_chunks() {
         .iter()
         .map(|chunk| (chunk.hash.clone(), chunk.data.clone()))
         .collect();
-    let recovered = recovered.or_else(|_| {
-        reassemble_payload_from_store(&manifest, &store, &transport_config)
-    });
+    let recovered =
+        recovered.or_else(|_| reassemble_payload_from_store(&manifest, &store, &transport_config));
     assert!(recovered.is_err());
 }
