@@ -18,7 +18,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
       - name: Install sccache
-        uses: mozilla-actions/sccache-action@v0.0.3
+        uses: mozilla-actions/sccache-action@8417cffc2ec64127ad83077aceaa8631f7cdc83e
       - name: Validate native dependencies (pkg-config)
         run: pkg-config --version
       - name: Cache Rust build artifacts
@@ -46,7 +46,7 @@ jobs:
         with:
           components: rustfmt, clippy
       - name: Install sccache
-        uses: mozilla-actions/sccache-action@v0.0.3
+        uses: mozilla-actions/sccache-action@8417cffc2ec64127ad83077aceaa8631f7cdc83e
       - name: Validate native dependencies (pkg-config)
         run: pkg-config --version
       - name: Cache Rust build artifacts
