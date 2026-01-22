@@ -143,7 +143,7 @@ const STATE_KEYCHAIN_USER: &str = "local-state";
 const STATE_PASSPHRASE_ENV: &str = "SPEX_STATE_PASSPHRASE";
 
 /// Identity data stored for the local user.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IdentityState {
     pub user_id_hex: String,
     pub signing_key_hex: String,
@@ -153,7 +153,7 @@ pub struct IdentityState {
 }
 
 /// Contact metadata stored after redeeming a card.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContactState {
     pub user_id_hex: String,
     pub verifying_key_hex: String,
@@ -248,7 +248,7 @@ pub struct CheckpointLogState {
 }
 
 /// Plain request token data.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RequestToken {
     pub from_user_id: String,
     pub to_user_id: String,
@@ -325,6 +325,54 @@ pub struct KeyRotationState {
     pub new_verifying_key_hex: String,
 }
 
+/// Summary of an identity rotation performed against local state.
+#[derive(Debug, Clone)]
+pub struct IdentityRotationOutcome {
+    pub old_verifying_key_hex: String,
+    pub new_identity: IdentityState,
+}
+
+/// Details captured when a contact card is redeemed into local state.
+#[derive(Debug, Clone)]
+pub struct ContactRedeemOutcome {
+    pub contact: ContactState,
+    pub previous_fingerprint: Option<String>,
+    pub key_changed: bool,
+}
+
+/// Response returned after creating a request token and storing it locally.
+#[derive(Debug, Clone)]
+pub struct RequestCreationOutcome {
+    pub request: RequestToken,
+    pub token_base64: String,
+}
+
+/// Response returned after accepting a request and storing the grant locally.
+#[derive(Debug, Clone)]
+pub struct GrantAcceptanceOutcome {
+    pub request: RequestToken,
+    pub grant_token_base64: String,
+}
+
+/// Transport payloads produced for a thread message send.
+#[derive(Debug)]
+pub struct ThreadMessageDispatch {
+    pub thread_id_hex: String,
+    pub sender_user_id_hex: String,
+    pub manifest: ChunkManifest,
+    pub chunks: Vec<Chunk>,
+    pub chunk_count: usize,
+    pub recipient_inbox_keys: Vec<Vec<u8>>,
+}
+
+/// Summary of a decrypted inbox message stored in local state.
+#[derive(Debug, Clone)]
+pub struct InboxMessageReceipt {
+    pub thread_id_hex: String,
+    pub sender_user_id_hex: String,
+    pub text: String,
+}
+
 /// Generates a new identity state with fresh keys and device metadata.
 pub fn create_identity() -> IdentityState {
     let mut seed = [0u8; 32];
@@ -343,6 +391,13 @@ pub fn create_identity() -> IdentityState {
     }
 }
 
+/// Creates a new identity and stores it on local state.
+pub fn create_identity_in_state(state: &mut LocalState) -> IdentityState {
+    let identity = create_identity();
+    state.identity = Some(identity.clone());
+    identity
+}
+
 /// Rotates the local identity signing and verification keys in place.
 pub fn rotate_identity(identity: &mut IdentityState) -> &IdentityState {
     let mut seed = [0u8; 32];
@@ -353,6 +408,30 @@ pub fn rotate_identity(identity: &mut IdentityState) -> &IdentityState {
     identity.verifying_key_hex = hex::encode(verifying_key.to_bytes());
     identity.device_nonce_hex = hex::encode(random_bytes(16));
     identity
+}
+
+/// Rotates the local identity and persists rotation metadata in state.
+pub fn rotate_identity_in_state(
+    state: &mut LocalState,
+) -> Result<IdentityRotationOutcome, ClientError> {
+    let identity = state
+        .identity
+        .as_mut()
+        .ok_or(ClientError::MissingIdentity)?;
+    let old_verifying_key_hex = identity.verifying_key_hex.clone();
+    rotate_identity(identity);
+    let rotated = identity.clone();
+    let rotation = KeyRotationState {
+        rotated_at: now_unix(),
+        old_verifying_key_hex: old_verifying_key_hex.clone(),
+        new_verifying_key_hex: rotated.verifying_key_hex.clone(),
+    };
+    state.key_rotations.push(rotation);
+    append_rotation_checkpoint(state, &rotated, &old_verifying_key_hex)?;
+    Ok(IdentityRotationOutcome {
+        old_verifying_key_hex,
+        new_identity: rotated,
+    })
 }
 
 /// Builds a signing key from a hex-encoded 32-byte secret.
@@ -846,9 +925,26 @@ pub fn stage_transport_delivery(
     manifest: &ChunkManifest,
     chunks: &[Chunk],
 ) -> Result<(), ClientError> {
+    stage_transport_delivery_for_members(
+        state,
+        &thread_state.members,
+        sender_user_id_hex,
+        manifest,
+        chunks,
+    )
+}
+
+/// Stages manifest gossip payloads and chunks into the local transport cache for members.
+pub fn stage_transport_delivery_for_members(
+    state: &mut LocalState,
+    members: &[String],
+    sender_user_id_hex: &str,
+    manifest: &ChunkManifest,
+    chunks: &[Chunk],
+) -> Result<(), ClientError> {
     let manifest_payload =
         manifest_payload(manifest).map_err(|err| ClientError::Transport(err.to_string()))?;
-    for member in &thread_state.members {
+    for member in members {
         if member == sender_user_id_hex {
             continue;
         }
@@ -1218,6 +1314,38 @@ pub fn redeem_contact_card_payload(payload: &str) -> Result<ContactCard, ClientE
     Ok(card)
 }
 
+/// Redeems a contact card payload and persists the contact in local state.
+pub fn redeem_contact_card_to_state(
+    state: &mut LocalState,
+    payload: &str,
+) -> Result<ContactRedeemOutcome, ClientError> {
+    let card = redeem_contact_card_payload(payload)?;
+    let user_id_hex = hex::encode(&card.user_id);
+    let verifying_hex = hex::encode(&card.verifying_key);
+    let fingerprint = fingerprint_hex(&card.verifying_key);
+    let previous_fingerprint = state
+        .contacts
+        .get(&user_id_hex)
+        .map(|contact| contact.fingerprint.clone());
+    let key_changed = previous_fingerprint
+        .as_ref()
+        .map(|existing| existing != &fingerprint)
+        .unwrap_or(false);
+    let contact = ContactState {
+        user_id_hex: user_id_hex.clone(),
+        verifying_key_hex: verifying_hex,
+        fingerprint: fingerprint.clone(),
+        device_id_hex: hex::encode(&card.device_id),
+        last_seen_at: now_unix(),
+    };
+    state.contacts.insert(user_id_hex, contact.clone());
+    Ok(ContactRedeemOutcome {
+        contact,
+        previous_fingerprint,
+        key_changed,
+    })
+}
+
 /// Creates a new request token and returns its JSON/base64 representation.
 pub fn create_request_payload(
     identity: &IdentityState,
@@ -1236,6 +1364,36 @@ pub fn create_request_payload(
     let payload = serde_json::to_vec(&request)?;
     let token = BASE64_STANDARD.encode(payload);
     Ok((request, token))
+}
+
+/// Extracts a cloned identity from local state or returns an error.
+fn clone_identity_from_state(state: &LocalState) -> Result<IdentityState, ClientError> {
+    state
+        .identity
+        .as_ref()
+        .cloned()
+        .ok_or(ClientError::MissingIdentity)
+}
+
+/// Creates a request token, stores it in local state, and returns the payload.
+pub fn create_request_for_state(
+    state: &mut LocalState,
+    to_user_id_hex: &str,
+    role: u64,
+) -> Result<RequestCreationOutcome, ClientError> {
+    let identity = clone_identity_from_state(state)?;
+    let (request, token) = create_request_payload(&identity, to_user_id_hex, role)?;
+    state.requests.push(RequestState {
+        token_base64: token.clone(),
+        to_user_id: to_user_id_hex.to_string(),
+        role,
+        created_at: request.created_at,
+        puzzle: request.puzzle.clone(),
+    });
+    Ok(RequestCreationOutcome {
+        request,
+        token_base64: token,
+    })
 }
 
 /// Accepts a request payload and returns the signed grant token.
@@ -1259,6 +1417,27 @@ pub fn accept_request_payload(
     };
     let signed_grant = sign_grant(identity, &grant)?;
     Ok((request_token, signed_grant))
+}
+
+/// Accepts a request payload, stores the grant in state, and returns the grant token.
+pub fn accept_request_for_state(
+    state: &mut LocalState,
+    request_payload: &str,
+) -> Result<GrantAcceptanceOutcome, ClientError> {
+    let identity = clone_identity_from_state(state)?;
+    let (request_token, signed_grant) = accept_request_payload(&identity, request_payload)?;
+    let grant_token = BASE64_STANDARD.encode(serde_json::to_vec(&signed_grant)?);
+    state.grants.push(GrantState {
+        token_base64: grant_token.clone(),
+        from_user_id: request_token.from_user_id.clone(),
+        role: request_token.role,
+        created_at: now_unix(),
+        signature_base64: Some(signed_grant.signature.clone()),
+    });
+    Ok(GrantAcceptanceOutcome {
+        request: request_token,
+        grant_token_base64: grant_token,
+    })
 }
 
 /// Creates a new thread state with MLS metadata for the provided members.
@@ -1295,6 +1474,31 @@ pub fn create_thread_state(
     })
 }
 
+/// Creates a thread state and stores it in local state.
+pub fn create_thread_for_state(
+    state: &mut LocalState,
+    members: Vec<String>,
+) -> Result<String, ClientError> {
+    let identity = clone_identity_from_state(state)?;
+    let thread = create_thread_state(&identity, members)?;
+    let thread_id = thread.thread_id_hex.clone();
+    state.threads.insert(thread_id.clone(), thread);
+    Ok(thread_id)
+}
+
+/// Derives inbox scan keys for thread recipients excluding the sender.
+pub fn inbox_keys_for_thread(
+    thread_state: &ThreadState,
+    sender_user_id_hex: &str,
+) -> Result<Vec<Vec<u8>>, ClientError> {
+    thread_state
+        .members
+        .iter()
+        .filter(|member| *member != sender_user_id_hex)
+        .map(|member| hex::decode(member).map_err(ClientError::from))
+        .collect()
+}
+
 /// Sends a plaintext message for a thread and returns transport payloads.
 pub fn send_thread_message(
     identity: &IdentityState,
@@ -1302,6 +1506,54 @@ pub fn send_thread_message(
     plaintext: &[u8],
 ) -> Result<(spex_core::types::Envelope, ChunkManifest, Vec<Chunk>), ClientError> {
     encrypt_and_chunk_message(identity, thread_state, plaintext)
+}
+
+/// Sends a thread message, persists local state changes, and returns transport payloads.
+pub fn send_thread_message_for_state(
+    state: &mut LocalState,
+    thread_id_hex: &str,
+    text: &str,
+) -> Result<ThreadMessageDispatch, ClientError> {
+    let identity = clone_identity_from_state(state)?;
+    let (thread_id_hex, members, manifest, chunks, outbox_item, recipient_inbox_keys) = {
+        let thread_state = state
+            .threads
+            .get_mut(thread_id_hex)
+            .ok_or(ClientError::ThreadNotFound)?;
+        let (_envelope, manifest, chunks, outbox_item) =
+            publish_thread_message_transport(&identity, thread_state, text.as_bytes())?;
+        let recipient_inbox_keys = inbox_keys_for_thread(thread_state, &identity.user_id_hex)?;
+        let message = MessageState {
+            sender_user_id: identity.user_id_hex.clone(),
+            text: text.to_string(),
+            sent_at: now_unix(),
+        };
+        thread_state.messages.push(message);
+        (
+            thread_state.thread_id_hex.clone(),
+            thread_state.members.clone(),
+            manifest,
+            chunks,
+            outbox_item,
+            recipient_inbox_keys,
+        )
+    };
+    state.transport_outbox.push(outbox_item);
+    stage_transport_delivery_for_members(
+        state,
+        &members,
+        &identity.user_id_hex,
+        &manifest,
+        &chunks,
+    )?;
+    Ok(ThreadMessageDispatch {
+        thread_id_hex,
+        sender_user_id_hex: identity.user_id_hex,
+        chunk_count: chunks.len(),
+        manifest,
+        chunks,
+        recipient_inbox_keys,
+    })
 }
 
 /// Publishes a thread message via transport chunking and returns the envelope and outbox record.
@@ -1381,6 +1633,70 @@ pub async fn receive_inbox_messages(
         items,
         source: response.source,
     })
+}
+
+/// Decrypts envelope payloads, updates local thread state, and returns receipts.
+pub fn ingest_inbox_payloads(
+    state: &mut LocalState,
+    payloads: Vec<Vec<u8>>,
+) -> Result<Vec<InboxMessageReceipt>, ClientError> {
+    let mut receipts = Vec::new();
+    for payload in payloads {
+        let envelope = parse_envelope_payload(&payload)?;
+        let thread_id_hex = hex::encode(&envelope.thread_id);
+        let plaintext = decrypt_thread_envelope(
+            state,
+            state
+                .threads
+                .get(&thread_id_hex)
+                .ok_or(ClientError::ThreadNotFound)?,
+            &envelope,
+        )?;
+        let message_text =
+            String::from_utf8(plaintext).map_err(|_| ClientError::InvalidMessageEncoding)?;
+        let thread_state = state
+            .threads
+            .get_mut(&thread_id_hex)
+            .ok_or(ClientError::ThreadNotFound)?;
+        thread_state.messages.push(MessageState {
+            sender_user_id: hex::encode(&envelope.sender_user_id),
+            text: message_text.clone(),
+            sent_at: now_unix(),
+        });
+        receipts.push(InboxMessageReceipt {
+            thread_id_hex,
+            sender_user_id_hex: hex::encode(&envelope.sender_user_id),
+            text: message_text,
+        });
+    }
+    Ok(receipts)
+}
+
+/// Records decrypted inbox items into local thread state and returns receipts.
+pub fn record_inbox_messages(
+    state: &mut LocalState,
+    items: Vec<DecryptedInboxItem>,
+) -> Result<Vec<InboxMessageReceipt>, ClientError> {
+    let mut receipts = Vec::new();
+    for item in items {
+        let message_text =
+            String::from_utf8(item.plaintext).map_err(|_| ClientError::InvalidMessageEncoding)?;
+        let thread_state = state
+            .threads
+            .get_mut(&item.thread_id_hex)
+            .ok_or(ClientError::ThreadNotFound)?;
+        thread_state.messages.push(MessageState {
+            sender_user_id: item.sender_user_id_hex.clone(),
+            text: message_text.clone(),
+            sent_at: now_unix(),
+        });
+        receipts.push(InboxMessageReceipt {
+            thread_id_hex: item.thread_id_hex,
+            sender_user_id_hex: item.sender_user_id_hex,
+            text: message_text,
+        });
+    }
+    Ok(receipts)
 }
 
 /// Creates a recovery key entry for the local log.

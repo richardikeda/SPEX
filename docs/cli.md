@@ -11,6 +11,10 @@ Por padrão, o CLI persiste chaves, contatos e threads em:
 
 O caminho pode ser sobrescrito definindo `SPEX_STATE_PATH`.
 
+O fluxo de identidade, cartões, requests, grants, threads e mensagens é implementado no
+`spex-client`, que padroniza a criação de estado local, a cifragem MLS e as validações
+compartilhadas (assinaturas, PoW e autorização por thread).
+
 ## Subcomandos
 
 ### `identity`
@@ -44,7 +48,7 @@ O caminho pode ser sobrescrito definindo `SPEX_STATE_PATH`.
 
 - `msg send --thread <THREAD_ID_HEX> --text "..."`: envia mensagem para uma thread existente usando
   MLS + AEAD, fragmentando o envelope, publicando manifestos/chunks via spex-transport e registrando
-  o envio no outbox local.
+  o envio no outbox local (fluxo consolidado no `spex-client`).
 - Flags P2P opcionais:
   - `--p2p`: habilita publicação via rede libp2p.
   - `--peer <MULTIADDR>`: conecta a peers conhecidos (`/ip4/.../tcp/.../p2p/<PEER_ID>`).

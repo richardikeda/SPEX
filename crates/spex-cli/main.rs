@@ -1,15 +1,14 @@
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine};
 use clap::{Parser, Subcommand};
 use libp2p::identity::Keypair;
 use libp2p::Multiaddr;
 use spex_client::{
-    accept_request_payload, append_rotation_checkpoint, create_checkpoint_entry,
-    create_contact_card_payload, create_identity, create_recovery_entry, create_request_payload,
-    create_revocation_entry, create_thread_state, fingerprint_hex, load_checkpoint_log, load_state,
-    log_consistency, now_unix, publish_thread_message_transport, receive_inbox_messages,
-    receive_transport_messages, redeem_contact_card_payload, rotate_identity, save_checkpoint_log,
-    save_state, stage_transport_delivery, transport_inbox_has_items, ClientError, ContactState,
-    GrantState, IdentityState, MessageState, RequestState,
+    accept_request_for_state, create_checkpoint_entry, create_contact_card_payload,
+    create_identity_in_state, create_recovery_entry, create_request_for_state,
+    create_revocation_entry, create_thread_for_state, fingerprint_hex, ingest_inbox_payloads,
+    load_checkpoint_log, load_state, log_consistency, receive_inbox_messages,
+    receive_transport_messages, record_inbox_messages, redeem_contact_card_to_state,
+    rotate_identity_in_state, save_checkpoint_log, save_state, send_thread_message_for_state,
+    transport_inbox_has_items, ClientError,
 };
 use spex_core::log::{CheckpointEntry, CheckpointLog, LogConsistency};
 use spex_transport::{
@@ -285,44 +284,6 @@ async fn recover_payloads_with_fallback(
     })
 }
 
-/// Decrypts inbox payloads, updates thread state, and returns the message count.
-fn ingest_inbox_payloads(
-    state: &mut spex_client::LocalState,
-    payloads: Vec<Vec<u8>>,
-) -> Result<usize, ClientError> {
-    let mut count = 0;
-    for payload in payloads {
-        let envelope = spex_client::parse_envelope_payload(&payload)?;
-        let thread_id_hex = hex::encode(&envelope.thread_id);
-        let plaintext = spex_client::decrypt_thread_envelope(
-            state,
-            state
-                .threads
-                .get(&thread_id_hex)
-                .ok_or(ClientError::ThreadNotFound)?,
-            &envelope,
-        )?;
-        let message_text =
-            String::from_utf8(plaintext).map_err(|_| ClientError::InvalidMessageEncoding)?;
-        let thread_state = state
-            .threads
-            .get_mut(&thread_id_hex)
-            .ok_or(ClientError::ThreadNotFound)?;
-        thread_state.messages.push(MessageState {
-            sender_user_id: hex::encode(&envelope.sender_user_id),
-            text: message_text.clone(),
-            sent_at: now_unix(),
-        });
-        println!(
-            "message: {} -> {}",
-            hex::encode(&envelope.sender_user_id),
-            message_text
-        );
-        count += 1;
-    }
-    Ok(count)
-}
-
 /// Runs the CLI entry point and dispatches commands.
 #[tokio::main]
 async fn main() -> Result<(), ClientError> {
@@ -332,47 +293,18 @@ async fn main() -> Result<(), ClientError> {
     match cli.command {
         Commands::Identity { command } => match command {
             IdentityCommand::New => {
-                let identity = create_identity();
+                let identity = create_identity_in_state(&mut state);
                 let fingerprint = fingerprint_hex(&hex::decode(&identity.verifying_key_hex)?);
                 println!("user_id: {}", identity.user_id_hex);
                 println!("fingerprint: {}", fingerprint);
-                state.identity = Some(identity);
             }
             IdentityCommand::Rotate => {
-                let old_verifying_key_hex = {
-                    let identity = state
-                        .identity
-                        .as_mut()
-                        .ok_or(ClientError::MissingIdentity)?;
-                    let old_verifying_key_hex = identity.verifying_key_hex.clone();
-                    rotate_identity(identity);
-                    old_verifying_key_hex
-                };
-                let rotated = {
-                    let identity = state
-                        .identity
-                        .as_ref()
-                        .ok_or(ClientError::MissingIdentity)?;
-                    IdentityState {
-                        user_id_hex: identity.user_id_hex.clone(),
-                        signing_key_hex: identity.signing_key_hex.clone(),
-                        verifying_key_hex: identity.verifying_key_hex.clone(),
-                        device_id_hex: identity.device_id_hex.clone(),
-                        device_nonce_hex: identity.device_nonce_hex.clone(),
-                    }
-                };
-                println!("new user_id: {}", rotated.user_id_hex);
+                let rotation = rotate_identity_in_state(&mut state)?;
+                println!("new user_id: {}", rotation.new_identity.user_id_hex);
                 println!(
                     "new fingerprint: {}",
-                    fingerprint_hex(&hex::decode(&rotated.verifying_key_hex)?)
+                    fingerprint_hex(&hex::decode(&rotation.new_identity.verifying_key_hex)?)
                 );
-                let rotation = spex_client::KeyRotationState {
-                    rotated_at: now_unix(),
-                    old_verifying_key_hex: old_verifying_key_hex.clone(),
-                    new_verifying_key_hex: rotated.verifying_key_hex.clone(),
-                };
-                state.key_rotations.push(rotation);
-                append_rotation_checkpoint(&mut state, &rotated, &old_verifying_key_hex)?;
             }
         },
         Commands::Card { command } => match command {
@@ -385,65 +317,29 @@ async fn main() -> Result<(), ClientError> {
                 println!("card: {}", payload);
             }
             CardCommand::Redeem { card } => {
-                let card = redeem_contact_card_payload(&card)?;
-                let user_id_hex = hex::encode(&card.user_id);
-                let verifying_hex = hex::encode(&card.verifying_key);
-                let fingerprint = fingerprint_hex(&card.verifying_key);
-                if let Some(existing) = state.contacts.get(&user_id_hex) {
-                    if existing.verifying_key_hex != verifying_hex {
+                let outcome = redeem_contact_card_to_state(&mut state, &card)?;
+                if outcome.key_changed {
+                    if let Some(previous) = outcome.previous_fingerprint.as_ref() {
                         println!(
                             "ALERT: key change detected for {} (old {}, new {})",
-                            user_id_hex, existing.fingerprint, fingerprint
+                            outcome.contact.user_id_hex, previous, outcome.contact.fingerprint
                         );
                     }
                 }
-                state.contacts.insert(
-                    user_id_hex.clone(),
-                    ContactState {
-                        user_id_hex: user_id_hex.clone(),
-                        verifying_key_hex: verifying_hex,
-                        fingerprint: fingerprint.clone(),
-                        device_id_hex: hex::encode(&card.device_id),
-                        last_seen_at: now_unix(),
-                    },
-                );
-                println!("contact saved: {}", user_id_hex);
-                println!("fingerprint: {}", fingerprint);
+                println!("contact saved: {}", outcome.contact.user_id_hex);
+                println!("fingerprint: {}", outcome.contact.fingerprint);
             }
         },
         Commands::Request { command } => match command {
             RequestCommand::Send { to, role } => {
-                let identity = state
-                    .identity
-                    .as_ref()
-                    .ok_or(ClientError::MissingIdentity)?;
-                let (request, token) = create_request_payload(identity, &to, role)?;
-                state.requests.push(RequestState {
-                    token_base64: token.clone(),
-                    to_user_id: to,
-                    role,
-                    created_at: request.created_at,
-                    puzzle: request.puzzle,
-                });
-                println!("request: {}", token);
+                let outcome = create_request_for_state(&mut state, &to, role)?;
+                println!("request: {}", outcome.token_base64);
             }
         },
         Commands::Grant { command } => match command {
             GrantCommand::Accept { request } => {
-                let identity = state
-                    .identity
-                    .as_ref()
-                    .ok_or(ClientError::MissingIdentity)?;
-                let (request_token, signed_grant) = accept_request_payload(identity, &request)?;
-                let grant_token = BASE64_STANDARD.encode(serde_json::to_vec(&signed_grant)?);
-                state.grants.push(GrantState {
-                    token_base64: grant_token.clone(),
-                    from_user_id: request_token.from_user_id,
-                    role: request_token.role,
-                    created_at: now_unix(),
-                    signature_base64: Some(signed_grant.signature.clone()),
-                });
-                println!("grant: {}", grant_token);
+                let outcome = accept_request_for_state(&mut state, &request)?;
+                println!("grant: {}", outcome.grant_token_base64);
             }
             GrantCommand::Deny { request } => {
                 let request_token = spex_client::parse_request_token(&request)?;
@@ -455,13 +351,7 @@ async fn main() -> Result<(), ClientError> {
         },
         Commands::Thread { command } => match command {
             ThreadCommand::New { members } => {
-                let identity = state
-                    .identity
-                    .as_ref()
-                    .ok_or(ClientError::MissingIdentity)?;
-                let thread = create_thread_state(identity, members)?;
-                let thread_id = thread.thread_id_hex.clone();
-                state.threads.insert(thread_id.clone(), thread);
+                let thread_id = create_thread_for_state(&mut state, members)?;
                 println!("thread: {}", thread_id);
             }
         },
@@ -475,59 +365,27 @@ async fn main() -> Result<(), ClientError> {
                 listen_addr,
                 p2p_wait_secs,
             } => {
-                let identity = {
-                    let identity = state
-                        .identity
-                        .as_ref()
-                        .ok_or(ClientError::MissingIdentity)?;
-                    IdentityState {
-                        user_id_hex: identity.user_id_hex.clone(),
-                        signing_key_hex: identity.signing_key_hex.clone(),
-                        verifying_key_hex: identity.verifying_key_hex.clone(),
-                        device_id_hex: identity.device_id_hex.clone(),
-                        device_nonce_hex: identity.device_nonce_hex.clone(),
-                    }
-                };
-                let mut thread_state = state
-                    .threads
-                    .remove(&thread)
-                    .ok_or(ClientError::ThreadNotFound)?;
-                let (_envelope, manifest, chunks, outbox_item) = publish_thread_message_transport(
-                    &identity,
-                    &mut thread_state,
-                    text.as_bytes(),
-                )?;
-                let chunk_count = chunks.len();
-                let message = MessageState {
-                    sender_user_id: identity.user_id_hex.clone(),
-                    text: text.clone(),
-                    sent_at: now_unix(),
-                };
-                thread_state.messages.push(message);
-                state.transport_outbox.push(outbox_item);
-                stage_transport_delivery(
-                    &mut state,
-                    &thread_state,
-                    &identity.user_id_hex,
-                    &manifest,
-                    &chunks,
-                )?;
+                let dispatch = send_thread_message_for_state(&mut state, &thread, &text)?;
                 if should_use_p2p(p2p, &peer, &bootstrap, &listen_addr) {
                     let mut transport =
                         build_p2p_transport(&listen_addr, &peer, &bootstrap, p2p_wait_secs).await?;
-                    let inbox_keys: Vec<Vec<u8>> = thread_state
-                        .members
-                        .iter()
-                        .filter(|member| *member != &identity.user_id_hex)
-                        .map(hex::decode)
-                        .collect::<Result<_, _>>()?;
                     transport
-                        .publish_to_inboxes(&inbox_keys, &manifest, &chunks)
+                        .publish_to_inboxes(
+                            &dispatch.recipient_inbox_keys,
+                            &dispatch.manifest,
+                            &dispatch.chunks,
+                        )
                         .await
                         .map_err(|err| ClientError::Transport(err.to_string()))?;
-                    println!("p2p: published manifest to {} inboxes", inbox_keys.len());
+                    println!(
+                        "p2p: published manifest to {} inboxes",
+                        dispatch.recipient_inbox_keys.len()
+                    );
                 }
-                println!("message published via transport ({} chunks)", chunk_count);
+                println!(
+                    "message published via transport ({} chunks)",
+                    dispatch.chunk_count
+                );
             }
         },
         Commands::Inbox { command } => match command {
@@ -554,10 +412,17 @@ async fn main() -> Result<(), ClientError> {
                             bridge.as_ref(),
                         )
                         .await?;
-                        let payload_count = ingest_inbox_payloads(&mut state, response.items)?;
+                        let receipts = ingest_inbox_payloads(&mut state, response.items)?;
+                        for receipt in &receipts {
+                            println!(
+                                "message: {} -> {}",
+                                receipt.sender_user_id_hex, receipt.text
+                            );
+                        }
                         println!(
                             "inbox: {} items (source: {:?})",
-                            payload_count, response.source
+                            receipts.len(),
+                            response.source
                         );
                     } else {
                         let response = if transport_inbox_has_items(&state, &inbox_key_bytes) {
@@ -567,24 +432,17 @@ async fn main() -> Result<(), ClientError> {
                             receive_inbox_messages(&mut state, &inbox_key_bytes, bridge.as_ref())
                                 .await?
                         };
-                        let item_count = response.items.len();
-                        for item in response.items {
-                            let message_text = String::from_utf8(item.plaintext)
-                                .map_err(|_| ClientError::InvalidMessageEncoding)?;
-                            let thread_state = state
-                                .threads
-                                .get_mut(&item.thread_id_hex)
-                                .ok_or(ClientError::ThreadNotFound)?;
-                            thread_state.messages.push(MessageState {
-                                sender_user_id: item.sender_user_id_hex.clone(),
-                                text: message_text.clone(),
-                                sent_at: now_unix(),
-                            });
-                            println!("message: {} -> {}", item.sender_user_id_hex, message_text);
+                        let receipts = record_inbox_messages(&mut state, response.items)?;
+                        for receipt in &receipts {
+                            println!(
+                                "message: {} -> {}",
+                                receipt.sender_user_id_hex, receipt.text
+                            );
                         }
                         println!(
                             "inbox: {} items (source: {:?})",
-                            item_count, response.source
+                            receipts.len(),
+                            response.source
                         );
                     }
                 } else {
