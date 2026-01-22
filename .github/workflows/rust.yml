@@ -55,4 +55,4 @@ jobs:
       - name: Fetch deps (warm cache)
         run: cargo fetch --locked
       - name: Clippy
-        run: cargo clippy --workspace --locked -- -D warnings
+        run: cargo clippy --workspace --locked --all-targets -- -D warnings
