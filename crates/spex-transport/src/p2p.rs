@@ -195,8 +195,7 @@ impl P2pTransport {
             .await;
         for inbox_key in inbox_keys {
             let connect_deadline = Instant::now() + self.node_config.publish_wait;
-            while self.swarm.connected_peers().next().is_none()
-                && Instant::now() < connect_deadline
+            while self.swarm.connected_peers().next().is_none() && Instant::now() < connect_deadline
             {
                 self.drive_swarm(Duration::from_millis(200), &mut ignored, |_, _| {})
                     .await;
@@ -431,8 +430,11 @@ impl P2pTransport {
         manifest: &ChunkManifest,
     ) -> Result<HashMap<Vec<u8>, Vec<u8>>, TransportError> {
         let mut pending: HashMap<QueryId, Vec<u8>> = HashMap::new();
-        let expected: std::collections::HashSet<Vec<u8>> =
-            manifest.chunks.iter().map(|chunk| chunk.hash.clone()).collect();
+        let expected: std::collections::HashSet<Vec<u8>> = manifest
+            .chunks
+            .iter()
+            .map(|chunk| chunk.hash.clone())
+            .collect();
         for descriptor in &manifest.chunks {
             let record_key = RecordKey::new(&descriptor.hash);
             let query_id = self.swarm.behaviour_mut().kademlia.get_record(record_key);
@@ -460,10 +462,11 @@ impl P2pTransport {
                                     if Instant::now() < deadline {
                                         if let Some(hash) = pending.get(&id).cloned() {
                                             let record_key = RecordKey::new(&hash);
-                                            let new_id =
-                                                self.swarm.behaviour_mut().kademlia.get_record(
-                                                    record_key,
-                                                );
+                                            let new_id = self
+                                                .swarm
+                                                .behaviour_mut()
+                                                .kademlia
+                                                .get_record(record_key);
                                             pending.insert(new_id, hash);
                                         }
                                     }

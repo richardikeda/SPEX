@@ -87,10 +87,7 @@ pub fn validate_p2p_puzzle_payload(payload: &P2pPuzzlePayload) -> Result<(), Tra
     let recipient_key = decode_base64(&payload.recipient_key)?;
     let puzzle_input = decode_base64(&payload.puzzle_input)?;
     let puzzle_output = decode_base64(&payload.puzzle_output)?;
-    let params = payload
-        .params
-        .unwrap_or_default()
-        .to_params();
+    let params = payload.params.unwrap_or_default().to_params();
     validation::validate_pow_puzzle(
         &recipient_key,
         &puzzle_input,
@@ -136,6 +133,5 @@ fn decode_signature(value: &str) -> Result<Signature, TransportError> {
 /// Decodes a base64-encoded Ed25519 verifying key.
 fn decode_verifying_key(value: &str) -> Result<VerifyingKey, TransportError> {
     let bytes: [u8; 32] = decode_fixed_bytes(value)?;
-    VerifyingKey::from_bytes(&bytes)
-        .map_err(|err| TransportError::InvalidPayload(err.to_string()))
+    VerifyingKey::from_bytes(&bytes).map_err(|err| TransportError::InvalidPayload(err.to_string()))
 }
