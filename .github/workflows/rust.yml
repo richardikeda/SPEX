@@ -31,7 +31,7 @@ jobs:
       - name: Build
         run: cargo build --workspace --locked --verbose
       - name: Test
-        run: cargo test --workspace --locked --verbose
+        run: cargo test --workspace --locked --all-features --verbose
 
   lint:
     runs-on: ubuntu-24.04
