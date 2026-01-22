@@ -30,8 +30,8 @@ Implementação inicial em andamento com os seguintes componentes e nível atual
     com endpoint de leitura de inbox (scan) como fallback.
 - **spex-cli**: CLI de referência para identidades, cartões, request/grant, threads, envio de
   mensagens (gera envelope + chunks/manifestos) e polling de inbox via transporte, bridge ou rede P2P.
-- **spex-client**: biblioteca de alto nível para estado local, fluxo request/grant e helpers de
-  chunking/MLS usados pelo CLI.
+- **spex-client**: biblioteca de alto nível que padroniza criação de estado local, cifragem MLS,
+  validações de request/grant e helpers de chunking usados pelo CLI.
 
 ## O que falta implementar
 
@@ -85,6 +85,9 @@ Os testes incluem vetores, integrações (handshake, PoW, MLS, DHT/bridge) e val
 assinatura para `ContactCard` e `GrantToken`.
 
 ### Uso rápido (CLI)
+
+Os comandos abaixo usam o fluxo consolidado do `spex-client` para criação de estado local, cifragem
+MLS e validações de request/grant.
 
 ```bash
 # gerar identidade local
