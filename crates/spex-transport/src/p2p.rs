@@ -461,11 +461,8 @@ impl P2pTransport {
                             if Instant::now() < deadline {
                                 if let Some(hash) = pending.get(&id).cloned() {
                                     let record_key = RecordKey::new(&hash);
-                                    let new_id = self
-                                        .swarm
-                                        .behaviour_mut()
-                                        .kademlia
-                                        .get_record(record_key);
+                                    let new_id =
+                                        self.swarm.behaviour_mut().kademlia.get_record(record_key);
                                     pending.insert(new_id, hash);
                                 }
                             }
