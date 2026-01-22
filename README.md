@@ -24,7 +24,8 @@ Implementação inicial em andamento com os seguintes componentes e nível atual
   fluxos de ressincronização para grupos multi-membros.
 - **spex-transport**: base libp2p com chunking e manifestos, DHT/Kademlia, gossip, rotinas
   de inbox scanning e validação de ingestão P2P (grant/PoW).
-  de reassemblagem/verificação e helpers de publicação/recuperação via manifestos.
+  de reassemblagem/verificação e helpers de publicação/recuperação via manifestos, incluindo
+  publicação direta de chunks e recuperação de payloads a partir de manifestos compartilhados.
   - **spex-bridge**: bridge HTTP com SQLite para cards/slots, rate limit e validações de grant/PoW,
     com endpoint de leitura de inbox (scan) como fallback.
 - **spex-cli**: CLI de referência para identidades, cartões, request/grant, threads, envio de

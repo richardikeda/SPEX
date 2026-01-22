@@ -17,13 +17,14 @@ use libp2p::multiaddr::Protocol;
 use libp2p::swarm::{NetworkBehaviour, Swarm, SwarmEvent};
 use libp2p::{Multiaddr, PeerId, SwarmBuilder};
 
-use spex_core::hash::HashId;
+use spex_core::hash::{hash_bytes, HashId};
 
 use crate::chunking::Chunk;
 use crate::error::TransportError;
 use crate::inbox::derive_inbox_scan_key;
 use crate::transport::{
-    manifest_payload, reassemble_payload_from_store, ChunkManifest, TransportConfig,
+    manifest_payload, parse_manifest_from_gossip, reassemble_payload_from_store, ChunkManifest,
+    TransportConfig,
 };
 
 /// Configuration for running a libp2p-backed transport node.
@@ -139,6 +140,11 @@ impl P2pTransport {
         &self.listen_addrs
     }
 
+    /// Returns the number of currently connected peers for this node.
+    pub fn connected_peer_count(&self) -> usize {
+        self.swarm.connected_peers().count()
+    }
+
     /// Dials a peer multiaddr and registers it for Kademlia and gossipsub.
     pub fn dial_peer(&mut self, addr: Multiaddr) -> Result<(), TransportError> {
         let (peer_id, base_addr) = split_peer_addr(&addr)?;
@@ -188,6 +194,13 @@ impl P2pTransport {
         self.drive_swarm(self.node_config.publish_wait, &mut ignored, |_, _| {})
             .await;
         for inbox_key in inbox_keys {
+            let connect_deadline = Instant::now() + self.node_config.publish_wait;
+            while self.swarm.connected_peers().next().is_none()
+                && Instant::now() < connect_deadline
+            {
+                self.drive_swarm(Duration::from_millis(200), &mut ignored, |_, _| {})
+                    .await;
+            }
             let scan = derive_inbox_scan_key(HashId::Sha256, inbox_key);
             let topic = inbox_gossip_topic(&scan.hashed_key);
             self.swarm
@@ -195,7 +208,22 @@ impl P2pTransport {
                 .gossipsub
                 .subscribe(&topic)
                 .map_err(|err| TransportError::Libp2p(err.to_string()))?;
-            let mut attempts = 0;
+            let deadline = Instant::now() + self.node_config.publish_wait;
+            let topic_hash = topic.hash();
+            while Instant::now() < deadline {
+                let has_subscribers = self
+                    .swarm
+                    .behaviour()
+                    .gossipsub
+                    .all_peers()
+                    .any(|(_, topics)| topics.iter().any(|candidate| *candidate == &topic_hash));
+                if has_subscribers {
+                    break;
+                }
+                let _ = self.swarm.behaviour_mut().gossipsub.subscribe(&topic);
+                self.drive_swarm(Duration::from_millis(200), &mut ignored, |_, _| {})
+                    .await;
+            }
             loop {
                 match self
                     .swarm
@@ -204,8 +232,7 @@ impl P2pTransport {
                     .publish(topic.clone(), payload.clone())
                 {
                     Ok(_) => break,
-                    Err(PublishError::InsufficientPeers) if attempts < 3 => {
-                        attempts += 1;
+                    Err(PublishError::InsufficientPeers) if Instant::now() < deadline => {
                         self.drive_swarm(Duration::from_millis(200), &mut ignored, |_, _| {})
                             .await;
                     }
@@ -213,6 +240,33 @@ impl P2pTransport {
                 }
             }
         }
+        self.drive_swarm(self.node_config.publish_wait, &mut ignored, |_, _| {})
+            .await;
+        Ok(())
+    }
+
+    /// Publishes chunk data to the DHT without gossipsub announcement.
+    pub async fn publish_chunks(&mut self, chunks: &[Chunk]) -> Result<(), TransportError> {
+        for chunk in chunks {
+            let record_key = RecordKey::new(&chunk.hash);
+            let record = Record {
+                key: record_key.clone(),
+                value: chunk.data.clone(),
+                publisher: None,
+                expires: Some(Instant::now() + self.config.record_ttl),
+            };
+            let _ = self
+                .swarm
+                .behaviour_mut()
+                .kademlia
+                .put_record(record, Quorum::One);
+            let _ = self
+                .swarm
+                .behaviour_mut()
+                .kademlia
+                .start_providing(record_key);
+        }
+        let mut ignored = Vec::new();
         self.drive_swarm(self.node_config.publish_wait, &mut ignored, |_, _| {})
             .await;
         Ok(())
@@ -233,28 +287,54 @@ impl P2pTransport {
             .map_err(|err| TransportError::Libp2p(err.to_string()))?;
 
         let mut payloads = Vec::new();
-        self.drive_swarm(wait, &mut payloads, |event, payloads| {
-            if let SwarmEvent::Behaviour(SpexBehaviourEvent::Gossipsub(GossipsubEvent::Message {
-                message,
-                ..
-            })) = event
-            {
-                payloads.push(message.data.clone());
+        let mut resubscribe_at = Instant::now();
+        let deadline = Instant::now() + wait;
+        while Instant::now() < deadline {
+            if Instant::now() >= resubscribe_at {
+                let _ = self.swarm.behaviour_mut().gossipsub.subscribe(&topic);
+                resubscribe_at = Instant::now() + Duration::from_secs(1);
             }
-        })
-        .await;
+            let delay = tokio::time::sleep(Duration::from_millis(200));
+            tokio::pin!(delay);
+            tokio::select! {
+                _ = &mut delay => {}
+                event = self.swarm.select_next_some() => {
+                    if let SwarmEvent::Behaviour(SpexBehaviourEvent::Gossipsub(
+                        GossipsubEvent::Message { message, .. },
+                    )) = event
+                    {
+                        payloads.push(message.data.clone());
+                    }
+                }
+            }
+        }
 
         let mut recovered = Vec::new();
         for payload in payloads {
-            let manifest: ChunkManifest = match serde_json::from_slice(&payload) {
+            let manifest = match parse_manifest_from_gossip(&payload) {
                 Ok(parsed) => parsed,
                 Err(_) => continue,
             };
-            let store = self.fetch_manifest_chunks(&manifest).await?;
-            let payload = reassemble_payload_from_store(&manifest, &store, &self.config)?;
+            let store = match self.fetch_manifest_chunks(&manifest).await {
+                Ok(store) => store,
+                Err(_) => continue,
+            };
+            let payload = match reassemble_payload_from_store(&manifest, &store, &self.config) {
+                Ok(payload) => payload,
+                Err(_) => continue,
+            };
             recovered.push(payload);
         }
         Ok(recovered)
+    }
+
+    /// Recovers a payload directly from a manifest by fetching and validating its chunks.
+    pub async fn recover_payload_from_manifest(
+        &mut self,
+        manifest: &ChunkManifest,
+    ) -> Result<Vec<u8>, TransportError> {
+        let store = self.fetch_manifest_chunks(manifest).await?;
+        reassemble_payload_from_store(manifest, &store, &self.config)
     }
 
     /// Builds a multiaddr with the local peer ID appended.
@@ -262,6 +342,12 @@ impl P2pTransport {
         let mut addr = base.clone();
         addr.push(Protocol::P2p(self.local_peer_id().into()));
         addr
+    }
+
+    /// Drives the swarm for a fixed duration without collecting payloads.
+    pub async fn drive_for(&mut self, duration: Duration) {
+        let mut ignored = Vec::new();
+        self.drive_swarm(duration, &mut ignored, |_, _| {}).await;
     }
 
     /// Drives the libp2p swarm for a bounded amount of time while handling events.
@@ -345,6 +431,8 @@ impl P2pTransport {
         manifest: &ChunkManifest,
     ) -> Result<HashMap<Vec<u8>, Vec<u8>>, TransportError> {
         let mut pending: HashMap<QueryId, Vec<u8>> = HashMap::new();
+        let expected: std::collections::HashSet<Vec<u8>> =
+            manifest.chunks.iter().map(|chunk| chunk.hash.clone()).collect();
         for descriptor in &manifest.chunks {
             let record_key = RecordKey::new(&descriptor.hash);
             let query_id = self.swarm.behaviour_mut().kademlia.get_record(record_key);
@@ -360,7 +448,27 @@ impl P2pTransport {
                 )) => {
                     if let QueryResult::GetRecord(result) = result {
                         if let Ok(record_ok) = result {
-                            store.extend(extract_records(record_ok));
+                            match record_ok {
+                                GetRecordOk::FoundRecord(record) => {
+                                    store.extend(extract_records(
+                                        GetRecordOk::FoundRecord(record),
+                                        &expected,
+                                        self.config.chunking.hash_id,
+                                    ));
+                                }
+                                GetRecordOk::FinishedWithNoAdditionalRecord { .. } => {
+                                    if Instant::now() < deadline {
+                                        if let Some(hash) = pending.get(&id).cloned() {
+                                            let record_key = RecordKey::new(&hash);
+                                            let new_id =
+                                                self.swarm.behaviour_mut().kademlia.get_record(
+                                                    record_key,
+                                                );
+                                            pending.insert(new_id, hash);
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                     pending.remove(&id);
@@ -389,7 +497,7 @@ fn build_swarm(keypair: &Keypair) -> Result<Swarm<SpexBehaviour>, TransportError
     kademlia.set_mode(Some(Mode::Server));
 
     let gossip_config = GossipsubConfigBuilder::default()
-        .heartbeat_interval(Duration::from_secs(5))
+        .heartbeat_interval(Duration::from_secs(1))
         .build()
         .map_err(|err| TransportError::Libp2p(err.to_string()))?;
     let gossipsub = Gossipsub::new(MessageAuthenticity::Signed(keypair.clone()), gossip_config)
@@ -437,12 +545,21 @@ fn split_peer_addr(addr: &Multiaddr) -> Result<(PeerId, Multiaddr), TransportErr
     Ok((peer_id, base))
 }
 
-/// Extracts chunk records from Kademlia results and validates their hash keys.
-fn extract_records(result: GetRecordOk) -> HashMap<Vec<u8>, Vec<u8>> {
+/// Extracts chunk records from Kademlia results and validates their hashes.
+fn extract_records(
+    result: GetRecordOk,
+    expected: &std::collections::HashSet<Vec<u8>>,
+    hash_id: HashId,
+) -> HashMap<Vec<u8>, Vec<u8>> {
     let mut store = HashMap::new();
     if let GetRecordOk::FoundRecord(record) = result {
         let hash = record.record.key.as_ref().to_vec();
-        store.insert(hash, record.record.value);
+        if expected.contains(&hash) {
+            let computed = hash_bytes(hash_id, &record.record.value);
+            if computed == hash {
+                store.insert(hash, record.record.value);
+            }
+        }
     }
     store
 }
