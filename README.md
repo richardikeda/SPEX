@@ -121,9 +121,10 @@ cargo run -p spex-cli -- inbox poll
 cargo run -p spex-cli -- inbox poll --inbox-key <HEX_KEY>
 cargo run -p spex-cli -- inbox poll --bridge-url <URL> --inbox-key <HEX_KEY>
 
-# recuperar inbox via rede P2P libp2p (manifestos + DHT)
+# recuperar inbox via rede P2P libp2p (manifestos + DHT) com fallback HTTP opcional
 cargo run -p spex-cli -- inbox poll --p2p --inbox-key <HEX_KEY> \
-  --peer /ip4/127.0.0.1/tcp/9001/p2p/<PEER_ID>
+  --peer /ip4/127.0.0.1/tcp/9001/p2p/<PEER_ID> \
+  --bridge-url <URL>
 
 # checkpoints de chaves e log append-only
 cargo run -p spex-cli -- log append-checkpoint
