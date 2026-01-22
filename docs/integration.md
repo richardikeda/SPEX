@@ -47,6 +47,8 @@ O fluxo básico é:
 Para integrações em Rust, o `spex-core` expõe validadores compartilhados de grant e PoW
 (`validation::validate_grant_token` e `validation::validate_pow_puzzle`) que podem ser usados
 antes de aceitar tokens recebidos via transporte P2P ou bridge HTTP.
+O `spex-transport` também expõe validadores de ingestão P2P (`validate_p2p_grant_payload` e
+`validate_p2p_puzzle_payload`) que reaproveitam a validação do core com payloads base64.
 
 ### Exemplo em Rust (request/grant)
 

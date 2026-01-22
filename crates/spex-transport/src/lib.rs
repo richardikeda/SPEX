@@ -7,12 +7,17 @@
 
 pub mod chunking;
 pub mod error;
+pub mod ingest;
 pub mod inbox;
 pub mod p2p;
 pub mod transport;
 
 pub use chunking::{chunk_data, reassemble_chunks, Chunk, ChunkingConfig};
 pub use error::TransportError;
+pub use ingest::{
+    validate_p2p_grant_payload, validate_p2p_puzzle_payload, P2pGrantPayload, P2pPuzzlePayload,
+    PowParamsPayload,
+};
 pub use inbox::{resolve_inbox_with_fallback, BridgeClient, InboxScanRequest, InboxScanResponse};
 pub use p2p::{inbox_gossip_topic, P2pNodeConfig, P2pTransport};
 pub use transport::manifest_payload;
