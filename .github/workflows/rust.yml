@@ -8,47 +8,86 @@ on:
 
 jobs:
   build-test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       RUSTC_WRAPPER: sccache
-      SCCACHE_GHA_ENABLED: "true"
+      SCCACHE_GHA_ENABLED: "false"
+      SCCACHE_DIR: /home/runner/.cache/sccache
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+
       - name: Install sccache
-        uses: mozilla-actions/sccache-action@v0.0.3
+        uses: mozilla-actions/sccache-action@8417cffc2ec64127ad83077aceaa8631f7cdc83e
+
+      - name: Validate native dependencies (pkg-config)
+        run: pkg-config --version
+
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: "rust-ci"
+          shared-key: "rust-ci-${{ github.job }}"
           cache-on-failure: true
-      - name: Build
+          add-job-id-key: false
+          cache-directories: |
+            /home/runner/.cache/sccache
+
+      - name: Fetch deps (warm cache)
+        run: cargo fetch --locked
+
+      - name: Build (workspace)
         run: cargo build --workspace --locked --verbose
-      - name: Test
+
+      - name: Test (default features)
         run: cargo test --workspace --locked --verbose
 
+      - name: Test (all features)
+        run: cargo test --workspace --locked --all-features --verbose
+
+      - name: sccache stats
+        run: sccache --show-stats || true
+
   lint:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       RUSTC_WRAPPER: sccache
-      SCCACHE_GHA_ENABLED: "true"
+      SCCACHE_GHA_ENABLED: "false"
+      SCCACHE_DIR: /home/runner/.cache/sccache
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
       - name: Install Rust toolchain (fmt, clippy)
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+
       - name: Install sccache
-        uses: mozilla-actions/sccache-action@v0.0.3
+        uses: mozilla-actions/sccache-action@8417cffc2ec64127ad83077aceaa8631f7cdc83e
+
+      - name: Validate native dependencies (pkg-config)
+        run: pkg-config --version
+
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: "rust-ci"
+          shared-key: "rust-ci-${{ github.job }}"
           cache-on-failure: true
+          add-job-id-key: false
+          cache-directories: |
+            /home/runner/.cache/sccache
+
+      - name: Fetch deps (warm cache)
+        run: cargo fetch --locked
+
       - name: Format check
         run: cargo fmt --all -- --check
+
       - name: Clippy
-        run: cargo clippy --workspace --locked -- -D warnings
+        run: cargo clippy --workspace --locked --all-targets -- -D warnings
+
+      - name: sccache stats
+        run: sccache --show-stats || true

@@ -1,5 +1,5 @@
 use spex_core::types::ProtoSuite;
-use spex_mls::{Group, GroupConfig, MlsError};
+use spex_mls::{Group, GroupConfig, MlsError, ValidationError};
 
 /// Builds a default protocol suite for secret tests.
 fn test_proto_suite() -> ProtoSuite {
@@ -60,4 +60,55 @@ fn group_encrypt_rejects_unknown_member() {
 
     let error = group.encrypt("mallory", 1, b"oops").expect_err("error");
     assert!(matches!(error, MlsError::UnknownMember(_)));
+}
+
+/// Ensures decryption rejects messages with mismatched epoch or configuration metadata.
+#[test]
+fn group_rejects_messages_with_invalid_epoch_or_config() {
+    let proto_suite = test_proto_suite();
+    let cfg_hash = vec![0x66; 32];
+    let config = GroupConfig::new(proto_suite, 0, 1, cfg_hash);
+    let mut group = Group::create(config).expect("group");
+
+    group.add_member("alice").expect("add alice");
+    group.add_member("bob").expect("add bob");
+
+    let initial_message = group
+        .encrypt("alice", 1, b"epoch zero")
+        .expect("encrypt");
+
+    group.add_member("carol").expect("add carol");
+
+    let epoch_error = group
+        .decrypt("alice", 1, &initial_message)
+        .expect_err("epoch mismatch");
+    assert!(matches!(
+        epoch_error,
+        MlsError::Validation(ValidationError::EpochMismatch { .. })
+    ));
+
+    let current_message = group
+        .encrypt("alice", 2, b"epoch one")
+        .expect("encrypt");
+
+    let mut cfg_mismatch = current_message.clone();
+    cfg_mismatch.cfg_hash[0] ^= 0xFF;
+    let cfg_error = group
+        .decrypt("alice", 2, &cfg_mismatch)
+        .expect_err("cfg hash mismatch");
+    assert!(matches!(
+        cfg_error,
+        MlsError::Validation(ValidationError::CfgHashMismatch)
+    ));
+
+    let mut suite_mismatch = current_message.clone();
+    suite_mismatch.proto_suite.ciphersuite_id =
+        suite_mismatch.proto_suite.ciphersuite_id.wrapping_add(1);
+    let suite_error = group
+        .decrypt("alice", 2, &suite_mismatch)
+        .expect_err("proto suite mismatch");
+    assert!(matches!(
+        suite_error,
+        MlsError::Validation(ValidationError::ProtoSuiteMismatch)
+    ));
 }
