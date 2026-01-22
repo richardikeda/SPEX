@@ -26,6 +26,16 @@ pub enum TransportError {
     InvalidManifest(String),
     #[error("payload length mismatch (expected {expected}, got {actual})")]
     PayloadLengthMismatch { expected: usize, actual: usize },
+    #[error("invalid payload: {0}")]
+    InvalidPayload(String),
+    #[error("grant signature invalid")]
+    GrantInvalid,
+    #[error("grant expired")]
+    GrantExpired,
+    #[error("pow parameters below minimum")]
+    PowTooWeak,
+    #[error("pow puzzle invalid")]
+    PowInvalid,
 }
 
 impl From<libp2p::gossipsub::PublishError> for TransportError {
