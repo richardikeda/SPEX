@@ -73,9 +73,7 @@ fn group_rejects_messages_with_invalid_epoch_or_config() {
     group.add_member("alice").expect("add alice");
     group.add_member("bob").expect("add bob");
 
-    let initial_message = group
-        .encrypt("alice", 1, b"epoch zero")
-        .expect("encrypt");
+    let initial_message = group.encrypt("alice", 1, b"epoch zero").expect("encrypt");
 
     group.add_member("carol").expect("add carol");
 
@@ -87,9 +85,7 @@ fn group_rejects_messages_with_invalid_epoch_or_config() {
         MlsError::Validation(ValidationError::EpochMismatch { .. })
     ));
 
-    let current_message = group
-        .encrypt("alice", 2, b"epoch one")
-        .expect("encrypt");
+    let current_message = group.encrypt("alice", 2, b"epoch one").expect("encrypt");
 
     let mut cfg_mismatch = current_message.clone();
     cfg_mismatch.cfg_hash[0] ^= 0xFF;

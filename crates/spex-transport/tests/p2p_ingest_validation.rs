@@ -2,7 +2,8 @@ use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine};
 use spex_core::{
     hash::{hash_ctap2_cbor_value, HashId},
     pow::{self, PowParams},
-    sign, types::GrantToken,
+    sign,
+    types::GrantToken,
 };
 use spex_transport::{
     validate_p2p_grant_payload, validate_p2p_puzzle_payload, P2pGrantPayload, P2pPuzzlePayload,
