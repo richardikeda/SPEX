@@ -100,7 +100,7 @@ async fn two_nodes_publish_and_recover_manifest_delivery() {
     });
     tokio::time::sleep(Duration::from_millis(200)).await;
     node_a
-        .publish_to_inboxes(&[inbox_key.clone()], &manifest, &chunks)
+        .publish_to_inboxes(std::slice::from_ref(&inbox_key), &manifest, &chunks)
         .await
         .expect("publish to inbox");
 

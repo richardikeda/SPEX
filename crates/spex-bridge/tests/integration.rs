@@ -117,7 +117,7 @@ fn seed_inbox(db_path: &std::path::Path, inbox_key: &str, items: &[&[u8]]) {
         &items
             .iter()
             .map(|item| InboxSeedItem {
-                payload: *item,
+                payload: item,
                 expires_at: None,
             })
             .collect::<Vec<_>>(),
@@ -938,5 +938,5 @@ async fn get_inbox_filters_expired_items() {
 #[test]
 #[ignore]
 fn tls_validation_checklist() {
-    assert!(true, "Run bridge with TLS and verify certificate trust.");
+    println!("Run bridge with TLS and verify certificate trust.");
 }

@@ -215,7 +215,7 @@ impl P2pTransport {
                     .behaviour()
                     .gossipsub
                     .all_peers()
-                    .any(|(_, topics)| topics.iter().any(|candidate| *candidate == &topic_hash));
+                    .any(|(_, topics)| topics.contains(&&topic_hash));
                 if has_subscribers {
                     break;
                 }
@@ -339,7 +339,7 @@ impl P2pTransport {
     /// Builds a multiaddr with the local peer ID appended.
     pub fn local_peer_multiaddr(&self, base: &Multiaddr) -> Multiaddr {
         let mut addr = base.clone();
-        addr.push(Protocol::P2p(self.local_peer_id().into()));
+        addr.push(Protocol::P2p(self.local_peer_id()));
         addr
     }
 
@@ -444,39 +444,35 @@ impl P2pTransport {
         let deadline = Instant::now() + self.node_config.query_timeout;
         let mut store = HashMap::new();
         while !pending.is_empty() && Instant::now() < deadline {
-            match self.swarm.select_next_some().await {
-                SwarmEvent::Behaviour(SpexBehaviourEvent::Kademlia(
-                    KademliaEvent::OutboundQueryProgressed { id, result, .. },
-                )) => {
-                    if let QueryResult::GetRecord(result) = result {
-                        if let Ok(record_ok) = result {
-                            match record_ok {
-                                GetRecordOk::FoundRecord(record) => {
-                                    store.extend(extract_records(
-                                        GetRecordOk::FoundRecord(record),
-                                        &expected,
-                                        self.config.chunking.hash_id,
-                                    ));
-                                }
-                                GetRecordOk::FinishedWithNoAdditionalRecord { .. } => {
-                                    if Instant::now() < deadline {
-                                        if let Some(hash) = pending.get(&id).cloned() {
-                                            let record_key = RecordKey::new(&hash);
-                                            let new_id = self
-                                                .swarm
-                                                .behaviour_mut()
-                                                .kademlia
-                                                .get_record(record_key);
-                                            pending.insert(new_id, hash);
-                                        }
-                                    }
+            if let SwarmEvent::Behaviour(SpexBehaviourEvent::Kademlia(
+                KademliaEvent::OutboundQueryProgressed { id, result, .. },
+            )) = self.swarm.select_next_some().await
+            {
+                if let QueryResult::GetRecord(Ok(record_ok)) = result {
+                    match record_ok {
+                        GetRecordOk::FoundRecord(record) => {
+                            store.extend(extract_records(
+                                GetRecordOk::FoundRecord(record),
+                                &expected,
+                                self.config.chunking.hash_id,
+                            ));
+                        }
+                        GetRecordOk::FinishedWithNoAdditionalRecord { .. } => {
+                            if Instant::now() < deadline {
+                                if let Some(hash) = pending.get(&id).cloned() {
+                                    let record_key = RecordKey::new(&hash);
+                                    let new_id = self
+                                        .swarm
+                                        .behaviour_mut()
+                                        .kademlia
+                                        .get_record(record_key);
+                                    pending.insert(new_id, hash);
                                 }
                             }
                         }
                     }
-                    pending.remove(&id);
                 }
-                _ => {}
+                pending.remove(&id);
             }
         }
 

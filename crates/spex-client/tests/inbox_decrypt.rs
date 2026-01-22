@@ -15,8 +15,10 @@ fn decrypts_envelope_payload_for_member() {
     let (envelope, _manifest, _chunks) =
         send_thread_message(&alice, &mut thread_state, b"hello bob").expect("send");
 
-    let mut bob_state = LocalState::default();
-    bob_state.identity = Some(bob);
+    let mut bob_state = LocalState {
+        identity: Some(bob),
+        ..Default::default()
+    };
     let verifying_key_bytes = hex::decode(&alice.verifying_key_hex).expect("verify key");
     bob_state.contacts.insert(
         alice.user_id_hex.clone(),

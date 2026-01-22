@@ -62,8 +62,8 @@ fn build_tv2_card() -> ContactCard {
 fn map_keys(value: &Value) -> Vec<i128> {
     match value {
         Value::Map(entries) => entries
-            .iter()
-            .map(|(key, _)| match key {
+            .keys()
+            .map(|key| match key {
                 Value::Integer(value) => *value,
                 _ => panic!("expected integer key"),
             })

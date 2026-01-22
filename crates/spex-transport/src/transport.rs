@@ -62,6 +62,7 @@ pub struct BuildTransport;
 
 impl BuildTransport {
     /// Builds libp2p transport components for Kademlia and gossipsub.
+    #[allow(clippy::new_ret_no_self)]
     pub fn new(
         local_key: &Keypair,
         listen_addrs: &[Multiaddr],
