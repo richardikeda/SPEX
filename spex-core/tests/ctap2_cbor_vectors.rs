@@ -77,7 +77,8 @@ fn map_keys(value: &Value) -> Vec<i128> {
 fn tv1_thread_config_ctap2_bytes_match() {
     let config = build_tv1_config();
     let got = config.to_ctap2_canonical_bytes().unwrap();
-    assert_eq!(hex::encode(got), test_vectors::TV1_CONFIG_CBOR_HEX);
+    let expected = hex::decode(test_vectors::TV1_CONFIG_CBOR_HEX).unwrap();
+    assert_eq!(got, expected);
 }
 
 #[test]
@@ -85,7 +86,8 @@ fn tv1_thread_config_ctap2_bytes_match() {
 fn tv2_contact_card_ctap2_bytes_match() {
     let card = build_tv2_card();
     let got = card.to_ctap2_canonical_bytes().unwrap();
-    assert_eq!(hex::encode(got), test_vectors::TV2_CARD_WO_SIG_CBOR_HEX);
+    let expected = hex::decode(test_vectors::TV2_CARD_WO_SIG_CBOR_HEX).unwrap();
+    assert_eq!(got, expected);
 }
 
 #[test]

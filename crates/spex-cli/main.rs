@@ -526,8 +526,7 @@ async fn main() -> Result<(), ClientError> {
                         }
                         println!(
                             "inbox: {} items (source: {:?})",
-                            item_count,
-                            response.source
+                            item_count, response.source
                         );
                     }
                 } else {
