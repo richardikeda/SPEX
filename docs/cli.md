@@ -60,6 +60,7 @@ O caminho pode ser sobrescrito definindo `SPEX_STATE_PATH`.
 - `inbox poll --bridge-url <URL> --inbox-key <HEX_KEY>`: consulta inbox via bridge HTTP e decifra mensagens.
 - Flags P2P opcionais:
   - `--p2p`: habilita recuperação via libp2p (manifestos + DHT).
+  - `--bridge-url <URL>`: usa a bridge como fallback HTTP caso não haja manifestos recebidos.
   - `--peer <MULTIADDR>`: conecta a peers conhecidos (`/ip4/.../tcp/.../p2p/<PEER_ID>`).
   - `--bootstrap <MULTIADDR>`: usa peers de bootstrap para descoberta DHT.
   - `--listen-addr <MULTIADDR>`: endereço local de escuta.
