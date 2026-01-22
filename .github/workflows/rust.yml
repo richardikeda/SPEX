@@ -29,9 +29,9 @@ jobs:
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          # Avoid cache key collisions between parallel jobs
           shared-key: "rust-ci-${{ github.job }}"
           cache-on-failure: true
+          add-job-id-key: false
           cache-directories: |
             /home/runner/.cache/sccache
 
@@ -74,9 +74,9 @@ jobs:
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          # Avoid cache key collisions between parallel jobs
           shared-key: "rust-ci-${{ github.job }}"
           cache-on-failure: true
+          add-job-id-key: false
           cache-directories: |
             /home/runner/.cache/sccache
 
