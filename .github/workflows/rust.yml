@@ -8,7 +8,7 @@ on:
 
 jobs:
   build-test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       RUSTC_WRAPPER: sccache
       SCCACHE_GHA_ENABLED: "true"
@@ -19,6 +19,8 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Install sccache
         uses: mozilla-actions/sccache-action@v0.0.3
+      - name: Validate native dependencies (pkg-config)
+        run: pkg-config --version
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
         with:
@@ -32,7 +34,7 @@ jobs:
         run: cargo test --workspace --locked --verbose
 
   lint:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       RUSTC_WRAPPER: sccache
       SCCACHE_GHA_ENABLED: "true"
@@ -45,6 +47,8 @@ jobs:
           components: rustfmt, clippy
       - name: Install sccache
         uses: mozilla-actions/sccache-action@v0.0.3
+      - name: Validate native dependencies (pkg-config)
+        run: pkg-config --version
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
         with:
