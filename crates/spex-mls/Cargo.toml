@@ -8,6 +8,7 @@ license = "Apache-2.0 OR MIT"
 mls-rs = "0.51"
 mls-rs-crypto-rustcrypto = "0.19"
 spex-core = { path = "../../spex-core" }
+chacha20poly1305 = "0.10"
 
 [dev-dependencies]
 hex = "0.4"
