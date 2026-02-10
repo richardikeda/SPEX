@@ -9,6 +9,10 @@ use mls_rs::{
     CipherSuite, CipherSuiteProvider, Client, CryptoProvider, Extension, ExtensionList,
     Group as MlsRsGroupState, MlsMessage, ProtocolVersion,
 };
+use chacha20poly1305::{
+    aead::{Aead, KeyInit},
+    ChaCha20Poly1305, Key, Nonce,
+};
 use mls_rs_crypto_rustcrypto::RustCryptoProvider;
 use spex_core::{
     error::SpexError,
@@ -281,16 +285,15 @@ impl Group {
         plaintext: &[u8],
     ) -> Result<GroupMessage, MlsError> {
         self.ensure_member(sender_id)?;
-        let ciphertext = xor_with_keystream(
-            plaintext,
-            &derive_message_keystream(
-                self.hash_id,
-                self.secrets.group_secret(),
-                sender_id,
-                message_id,
-                plaintext.len(),
-            ),
-        );
+        let key =
+            derive_aead_key(self.hash_id, self.secrets.group_secret(), sender_id, message_id)?;
+        let nonce =
+            derive_aead_nonce(self.hash_id, self.secrets.group_secret(), sender_id, message_id)?;
+        let cipher = ChaCha20Poly1305::new(&key);
+        let ciphertext = cipher
+            .encrypt(&nonce, plaintext)
+            .map_err(|_| MlsError::Encryption)?;
+
         Ok(GroupMessage::new(
             self.epoch,
             self.context.cfg_hash.clone(),
@@ -309,14 +312,15 @@ impl Group {
         self.ensure_member(sender_id)?;
         self.validate_message(message)
             .map_err(MlsError::Validation)?;
-        let keystream = derive_message_keystream(
-            self.hash_id,
-            self.secrets.group_secret(),
-            sender_id,
-            message_id,
-            message.body.len(),
-        );
-        Ok(xor_with_keystream(&message.body, &keystream))
+        let key =
+            derive_aead_key(self.hash_id, self.secrets.group_secret(), sender_id, message_id)?;
+        let nonce =
+            derive_aead_nonce(self.hash_id, self.secrets.group_secret(), sender_id, message_id)?;
+        let cipher = ChaCha20Poly1305::new(&key);
+        let plaintext = cipher
+            .decrypt(&nonce, message.body.as_slice())
+            .map_err(|_| MlsError::Decryption)?;
+        Ok(plaintext)
     }
 
     /// Validates that a message matches the current group epoch and configuration.
@@ -400,6 +404,8 @@ pub enum MlsError {
     UnsupportedHashId(u16),
     Validation(ValidationError),
     UnknownMember(String),
+    Encryption,
+    Decryption,
     Spex(SpexError),
 }
 
@@ -410,6 +416,8 @@ impl fmt::Display for MlsError {
             Self::UnsupportedHashId(value) => write!(f, "unsupported hash id: {value}"),
             Self::Validation(err) => write!(f, "validation error: {err:?}"),
             Self::UnknownMember(member) => write!(f, "unknown member: {member}"),
+            Self::Encryption => write!(f, "encryption error"),
+            Self::Decryption => write!(f, "decryption error"),
             Self::Spex(err) => write!(f, "spex error: {err}"),
         }
     }
@@ -485,37 +493,48 @@ fn derive_member_secret(hash_id: HashId, group_secret: &[u8], member_id: &str) -
     hash_bytes(hash_id, &data)
 }
 
-/// Builds a keystream for encrypting or decrypting a message payload.
-fn derive_message_keystream(
+/// Derives an AEAD key for encrypting or decrypting a message payload.
+fn derive_aead_key(
     hash_id: HashId,
     group_secret: &[u8],
     sender_id: &str,
     message_id: u64,
-    length: usize,
-) -> Vec<u8> {
-    let mut out = Vec::with_capacity(length);
-    let mut counter = 0u32;
-    while out.len() < length {
-        let mut data = Vec::new();
-        data.extend_from_slice(group_secret);
-        data.extend_from_slice(sender_id.as_bytes());
-        data.extend_from_slice(&message_id.to_be_bytes());
-        data.extend_from_slice(&counter.to_be_bytes());
-        out.extend_from_slice(&hash_bytes(hash_id, &data));
-        counter = counter.saturating_add(1);
-    }
-    out.truncate(length);
-    out
+) -> Result<Key<ChaCha20Poly1305>, MlsError> {
+    let hash = derive_message_metadata_hash(hash_id, group_secret, sender_id, message_id, b"key");
+    hash.get(..32)
+        .map(|bytes| *Key::<ChaCha20Poly1305>::from_slice(bytes))
+        .ok_or(MlsError::Encryption)
 }
 
-/// XORs the payload with the provided keystream.
-fn xor_with_keystream(payload: &[u8], keystream: &[u8]) -> Vec<u8> {
-    payload
-        .iter()
-        .zip(keystream.iter())
-        .map(|(byte, key)| byte ^ key)
-        .collect()
+/// Derives an AEAD nonce for encrypting or decrypting a message payload.
+fn derive_aead_nonce(
+    hash_id: HashId,
+    group_secret: &[u8],
+    sender_id: &str,
+    message_id: u64,
+) -> Result<Nonce, MlsError> {
+    let hash = derive_message_metadata_hash(hash_id, group_secret, sender_id, message_id, b"nonce");
+    hash.get(..12)
+        .map(|bytes| *Nonce::from_slice(bytes))
+        .ok_or(MlsError::Encryption)
 }
+
+/// Helper to derive a hash from message metadata and a label.
+fn derive_message_metadata_hash(
+    hash_id: HashId,
+    group_secret: &[u8],
+    sender_id: &str,
+    message_id: u64,
+    label: &[u8],
+) -> Vec<u8> {
+    let mut data = Vec::new();
+    data.extend_from_slice(group_secret);
+    data.extend_from_slice(sender_id.as_bytes());
+    data.extend_from_slice(&message_id.to_be_bytes());
+    data.extend_from_slice(label);
+    hash_bytes(hash_id, &data)
+}
+
 
 type MlsRsConfig = IntoConfigOutput<
     WithIdentityProvider<BasicIdentityProvider, WithCryptoProvider<RustCryptoProvider, BaseConfig>>,
