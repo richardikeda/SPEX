@@ -32,3 +32,67 @@ pub fn hash_ctap2_cbor_value(
     let cbor = value.to_ctap2_canonical_bytes()?;
     Ok(hash_bytes(hash_id, &cbor))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_vectors;
+    use serde::Serialize;
+
+    /// Test that SHA256 hashing of raw bytes matches known test vectors.
+    #[test]
+    fn test_hash_bytes_sha256() {
+        let data = hex::decode(test_vectors::TV1_CONFIG_CBOR_HEX).expect("invalid TV hex");
+        let expected = hex::decode(test_vectors::TV1_CFG_HASH_SHA256_HEX).expect("invalid TV hex");
+        let got = hash_bytes(HashId::Sha256, &data);
+        assert_eq!(got, expected, "SHA256 hash mismatch for TV1");
+
+        let data2 = hex::decode(test_vectors::TV2_CARD_WO_SIG_CBOR_HEX).expect("invalid TV hex");
+        let expected2 = hex::decode(test_vectors::TV2_CARD_HASH_SHA256_HEX).expect("invalid TV hex");
+        let got2 = hash_bytes(HashId::Sha256, &data2);
+        assert_eq!(got2, expected2, "SHA256 hash mismatch for TV2");
+    }
+
+    /// Test that Blake3 hashing produces deterministic output of the correct length.
+    #[test]
+    #[cfg(feature = "blake3_hash")]
+    fn test_hash_bytes_blake3() {
+        let data = b"SPEX blake3 test";
+        let got = hash_bytes(HashId::Blake3, data);
+        assert_eq!(got.len(), 32, "Blake3 hash should be 32 bytes");
+
+        let got2 = hash_bytes(HashId::Blake3, data);
+        assert_eq!(got, got2, "Blake3 hash should be deterministic");
+    }
+
+    /// Test hashing of a CBOR-serializable structure using CTAP2 canonicalization.
+    #[test]
+    fn test_hash_ctap2_cbor() {
+        #[derive(Serialize)]
+        struct Simple {
+            z: u32,
+            a: u32,
+        }
+        let val = Simple { z: 20, a: 10 };
+        let res = hash_ctap2_cbor(HashId::Sha256, &val);
+        assert!(res.is_ok());
+        let hash = res.unwrap();
+        assert_eq!(hash.len(), 32);
+    }
+
+    /// Test hashing of a SPEX type implementing Ctap2Cbor.
+    #[test]
+    fn test_hash_ctap2_cbor_value() {
+        use crate::types::InviteToken;
+        let invite = InviteToken {
+            major: 1,
+            minor: 2,
+            requires_puzzle: true,
+            extensions: Default::default(),
+        };
+        let res = hash_ctap2_cbor_value(HashId::Sha256, &invite);
+        assert!(res.is_ok());
+        let hash = res.unwrap();
+        assert_eq!(hash.len(), 32);
+    }
+}
