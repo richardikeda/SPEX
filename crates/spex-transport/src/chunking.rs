@@ -42,13 +42,50 @@ pub fn chunk_data(config: &ChunkingConfig, data: &[u8]) -> Vec<Chunk> {
 }
 
 /// Reassembles chunks into the original byte payload based on chunk indices.
+///
+/// This function sorts references to chunks rather than cloning the chunks themselves
+/// to improve performance, especially for large payloads.
 pub fn reassemble_chunks(chunks: &[Chunk]) -> Vec<u8> {
-    let mut sorted = chunks.to_vec();
-    sorted.sort_by_key(|chunk| chunk.index);
+    // Collect references to chunks into a vector for sorting without cloning data.
+    let mut sorted: Vec<&Chunk> = chunks.iter().collect();
+
+    // Sort chunks by their index to ensure correct reassembly order.
+    // Using unstable sort is slightly faster as stable order for identical indices is not required.
+    sorted.sort_unstable_by_key(|chunk| chunk.index);
+
+    // Calculate total length to pre-allocate memory for the reassembled data.
     let total_len: usize = sorted.iter().map(|chunk| chunk.data.len()).sum();
     let mut data = Vec::with_capacity(total_len);
+
+    // Append each chunk's data to the reassembled buffer.
     for chunk in sorted {
         data.extend_from_slice(&chunk.data);
     }
+
     data
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_chunking_and_reassembly() {
+        let config = ChunkingConfig::default();
+        let original_data = b"Hello, SPEX reassembly test! This should work correctly with optimized sorting.".to_vec();
+
+        let mut chunks = chunk_data(&config, &original_data);
+        // Shuffle chunks to ensure reassemble_chunks correctly sorts them by index.
+        chunks.reverse();
+
+        let reassembled = reassemble_chunks(&chunks);
+        assert_eq!(reassembled, original_data);
+    }
+
+    #[test]
+    fn test_reassemble_empty_chunks() {
+        let chunks: Vec<Chunk> = Vec::new();
+        let reassembled = reassemble_chunks(&chunks);
+        assert!(reassembled.is_empty());
+    }
 }
