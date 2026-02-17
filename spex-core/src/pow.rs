@@ -65,12 +65,12 @@ impl Default for PowNonceParams {
 }
 
 /// Generates a recipient-derived salt using the default context label.
-pub fn derive_recipient_salt(recipient_key: &[u8]) -> [u8; 32] {
+pub(crate) fn derive_recipient_salt(recipient_key: &[u8]) -> [u8; 32] {
     derive_recipient_salt_with_context(recipient_key, SALT_CONTEXT)
 }
 
 /// Generates a recipient-derived salt using a custom context label.
-pub fn derive_recipient_salt_with_context(recipient_key: &[u8], context: &[u8]) -> [u8; 32] {
+pub(crate) fn derive_recipient_salt_with_context(recipient_key: &[u8], context: &[u8]) -> [u8; 32] {
     let mut hasher = Sha256::new();
     hasher.update(context);
     hasher.update(recipient_key);
