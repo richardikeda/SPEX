@@ -1,5 +1,9 @@
 use std::fmt;
 
+use chacha20poly1305::{
+    aead::{Aead, KeyInit},
+    ChaCha20Poly1305, Key, Nonce,
+};
 use mls_rs::extension::ExtensionType;
 use mls_rs::{
     client_builder::{BaseConfig, IntoConfigOutput, WithCryptoProvider, WithIdentityProvider},
@@ -8,10 +12,6 @@ use mls_rs::{
     identity::SigningIdentity,
     CipherSuite, CipherSuiteProvider, Client, CryptoProvider, Extension, ExtensionList,
     Group as MlsRsGroupState, MlsMessage, ProtocolVersion,
-};
-use chacha20poly1305::{
-    aead::{Aead, KeyInit},
-    ChaCha20Poly1305, Key, Nonce,
 };
 use mls_rs_crypto_rustcrypto::RustCryptoProvider;
 use spex_core::{
@@ -285,10 +285,18 @@ impl Group {
         plaintext: &[u8],
     ) -> Result<GroupMessage, MlsError> {
         self.ensure_member(sender_id)?;
-        let key =
-            derive_aead_key(self.hash_id, self.secrets.group_secret(), sender_id, message_id)?;
-        let nonce =
-            derive_aead_nonce(self.hash_id, self.secrets.group_secret(), sender_id, message_id)?;
+        let key = derive_aead_key(
+            self.hash_id,
+            self.secrets.group_secret(),
+            sender_id,
+            message_id,
+        )?;
+        let nonce = derive_aead_nonce(
+            self.hash_id,
+            self.secrets.group_secret(),
+            sender_id,
+            message_id,
+        )?;
         let cipher = ChaCha20Poly1305::new(&key);
         let ciphertext = cipher
             .encrypt(&nonce, plaintext)
@@ -312,10 +320,18 @@ impl Group {
         self.ensure_member(sender_id)?;
         self.validate_message(message)
             .map_err(MlsError::Validation)?;
-        let key =
-            derive_aead_key(self.hash_id, self.secrets.group_secret(), sender_id, message_id)?;
-        let nonce =
-            derive_aead_nonce(self.hash_id, self.secrets.group_secret(), sender_id, message_id)?;
+        let key = derive_aead_key(
+            self.hash_id,
+            self.secrets.group_secret(),
+            sender_id,
+            message_id,
+        )?;
+        let nonce = derive_aead_nonce(
+            self.hash_id,
+            self.secrets.group_secret(),
+            sender_id,
+            message_id,
+        )?;
         let cipher = ChaCha20Poly1305::new(&key);
         let plaintext = cipher
             .decrypt(&nonce, message.body.as_slice())
@@ -534,7 +550,6 @@ fn derive_message_metadata_hash(
     data.extend_from_slice(label);
     hash_bytes(hash_id, &data)
 }
-
 
 type MlsRsConfig = IntoConfigOutput<
     WithIdentityProvider<BasicIdentityProvider, WithCryptoProvider<RustCryptoProvider, BaseConfig>>,

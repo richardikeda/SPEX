@@ -682,11 +682,28 @@ fn identity_from_grant(grant: &GrantTokenPayload) -> Result<String, BridgeError>
     Ok(hex::encode(user_id))
 }
 
-/// Extracts a client IP string from connection info when available.
+/// Extracts a client IP string from connection info when available, masking it for privacy.
 fn extract_ip(connect_info: Option<ConnectInfo<SocketAddr>>) -> String {
     connect_info
-        .map(|info| info.0.ip().to_string())
+        .map(|info| mask_ip(info.0.ip()))
         .unwrap_or_else(|| "unknown".to_string())
+}
+
+/// Masks an IP address for privacy by zeroing out the last octet (IPv4) or several segments (IPv6).
+fn mask_ip(ip: std::net::IpAddr) -> String {
+    match ip {
+        std::net::IpAddr::V4(v4) => {
+            let octets = v4.octets();
+            format!("{}.{}.{}.0", octets[0], octets[1], octets[2])
+        }
+        std::net::IpAddr::V6(v6) => {
+            let segments = v6.segments();
+            format!(
+                "{:x}:{:x}:{:x}:0:0:0:0:0",
+                segments[0], segments[1], segments[2]
+            )
+        }
+    }
 }
 
 /// Loads recent request volume and reputation for rate limiting.
@@ -1019,5 +1036,21 @@ mod tests {
         let data = b"hello";
         let expected = hex::encode(hash::hash_bytes(hash::HashId::Sha256, data));
         assert!(validate_hash(&expected, data).is_ok());
+    }
+
+    /// Ensures IPv4 addresses are masked by zeroing the last octet.
+    #[test]
+    fn mask_ip_v4_zeroes_last_octet() {
+        let ip = "192.168.1.123".parse().unwrap();
+        let masked = mask_ip(ip);
+        assert_eq!(masked, "192.168.1.0");
+    }
+
+    /// Ensures IPv6 addresses are masked by zeroing several segments.
+    #[test]
+    fn mask_ip_v6_zeroes_segments() {
+        let ip = "2001:db8:85a3:8d3:1319:8a2e:370:7348".parse().unwrap();
+        let masked = mask_ip(ip);
+        assert_eq!(masked, "2001:db8:85a3:0:0:0:0:0");
     }
 }
