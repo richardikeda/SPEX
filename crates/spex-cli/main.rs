@@ -8,7 +8,7 @@ use spex_client::{
     load_checkpoint_log, load_state, log_consistency, receive_inbox_messages,
     receive_transport_messages, record_inbox_messages, redeem_contact_card_to_state,
     rotate_identity_in_state, save_checkpoint_log, save_state, send_thread_message_for_state,
-    transport_inbox_has_items, ClientError,
+    transport_inbox_has_items, ClientError, ClientFailureReason,
 };
 use spex_core::log::{CheckpointEntry, CheckpointLog, LogConsistency};
 use spex_transport::{
@@ -286,7 +286,16 @@ async fn recover_payloads_with_fallback(
 
 /// Runs the CLI entry point and dispatches commands.
 #[tokio::main]
-async fn main() -> Result<(), ClientError> {
+async fn main() {
+    if let Err(err) = run_cli().await {
+        let reason = ClientFailureReason::from(&err);
+        eprintln!("Error: {}", reason);
+        eprintln!("Details: {}", err);
+        std::process::exit(1);
+    }
+}
+
+async fn run_cli() -> Result<(), ClientError> {
     let cli = Cli::parse();
     let mut state = load_state()?;
 
@@ -318,11 +327,11 @@ async fn main() -> Result<(), ClientError> {
             }
             CardCommand::Redeem { card } => {
                 let outcome = redeem_contact_card_to_state(&mut state, &card)?;
-                if outcome.key_changed {
+                if let Some(reason) = outcome.failure_reason() {
                     if let Some(previous) = outcome.previous_fingerprint.as_ref() {
                         println!(
-                            "ALERT: key change detected for {} (old {}, new {})",
-                            outcome.contact.user_id_hex, previous, outcome.contact.fingerprint
+                            "ALERT: {} (old {}, new {})",
+                            reason, previous, outcome.contact.fingerprint
                         );
                     }
                 }
