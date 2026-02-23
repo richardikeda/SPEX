@@ -145,3 +145,31 @@ impl BridgeClient {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use spex_core::hash::HashId;
+
+    /// Tests that the inbox scan key is correctly derived using SHA-256.
+    #[test]
+    fn test_derive_inbox_scan_key() {
+        let scan_key = b"test_scan_key";
+        let hash_id = HashId::Sha256;
+        let request = derive_inbox_scan_key(hash_id, scan_key);
+
+        // Verify the hashed key matches the SHA-256 hash of the scan key.
+        let expected_hash = spex_core::hash::hash_bytes(hash_id, scan_key);
+        assert_eq!(
+            request.hashed_key, expected_hash,
+            "Hashed key mismatch for derive_inbox_scan_key"
+        );
+
+        // Verify the record key is correctly created from the hashed key.
+        assert_eq!(
+            request.record_key,
+            RecordKey::new(&expected_hash),
+            "Record key mismatch for derive_inbox_scan_key"
+        );
+    }
+}
