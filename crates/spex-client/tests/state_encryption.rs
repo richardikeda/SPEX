@@ -7,7 +7,10 @@ use spex_client::{load_state, random_hex, save_state, IdentityState, LocalState}
 fn saves_and_loads_encrypted_state_with_passphrase() {
     let dir = tempfile::tempdir().expect("temp dir");
     let state_path = dir.path().join("state.json");
-    env::set_var("SPEX_STATE_PASSPHRASE", "test-passphrase");
+    let passphrase_path = dir.path().join("passphrase.txt");
+    std::fs::write(&passphrase_path, "test-passphrase").expect("write passphrase");
+
+    env::set_var("SPEX_STATE_PASSPHRASE_FILE", &passphrase_path);
     env::set_var("SPEX_STATE_PATH", &state_path);
 
     let state = LocalState {
@@ -36,6 +39,6 @@ fn saves_and_loads_encrypted_state_with_passphrase() {
     let loaded_identity = loaded.identity.expect("loaded identity");
     assert_eq!(loaded_identity.user_id_hex, expected_user_id);
 
-    env::remove_var("SPEX_STATE_PASSPHRASE");
+    env::remove_var("SPEX_STATE_PASSPHRASE_FILE");
     env::remove_var("SPEX_STATE_PATH");
 }
