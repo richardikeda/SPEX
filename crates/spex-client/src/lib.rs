@@ -2021,6 +2021,8 @@ mod tests {
         };
         assert_eq!(outcome_ok.failure_reason(), None);
     }
+}
+
 /// Publishes an envelope to the bridge inbox, handling PoW and Grant generation.
 pub async fn publish_via_bridge(
     identity: &IdentityState,
