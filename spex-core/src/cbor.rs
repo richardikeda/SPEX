@@ -61,6 +61,14 @@ pub fn ctap2_canonical_value_bytes(value: &Value) -> Result<Vec<u8>, SpexError> 
 /// Deserialize a CTAP2 canonical CBOR payload into a CBOR value.
 ///
 /// The input must already be canonical. Non-canonical encodings are rejected.
+/// Parses arbitrary CBOR payload bytes into a generic CBOR value.
+///
+/// This function is intended for robustness checks and boundary validation,
+/// and must return explicit errors for malformed payloads.
+pub fn parse_cbor_payload(bytes: &[u8]) -> Result<Value, SpexError> {
+    Ok(serde_cbor::from_slice(bytes)?)
+}
+
 pub fn ctap2_canonical_value_from_slice(bytes: &[u8]) -> Result<Value, SpexError> {
     let value = serde_cbor::from_slice(bytes)?;
     let canonical = ctap2_canonical_value_bytes(&value)?;
@@ -187,4 +195,42 @@ fn encode_float(value: f64, output: &mut Vec<u8>) {
 
     output.push(MAJOR_SIMPLE | 27);
     output.extend_from_slice(&value.to_bits().to_be_bytes());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ctap2_canonical_value_bytes, parse_cbor_payload};
+    use proptest::prelude::*;
+    use serde_cbor::Value;
+
+    fn stable_roundtrip(value: &Value) -> bool {
+        let canonical = match ctap2_canonical_value_bytes(value) {
+            Ok(bytes) => bytes,
+            Err(_) => return true,
+        };
+        let decoded: Value = match serde_cbor::from_slice(&canonical) {
+            Ok(decoded) => decoded,
+            Err(_) => return false,
+        };
+        let recanonical = match ctap2_canonical_value_bytes(&decoded) {
+            Ok(bytes) => bytes,
+            Err(_) => return false,
+        };
+        canonical == recanonical
+    }
+
+    proptest! {
+        /// Ensures CTAP2 canonicalization is idempotent for arbitrary CBOR-friendly values.
+        #[test]
+        fn canonicalization_is_idempotent_for_integer_arrays(values in proptest::collection::vec(any::<i64>(), 0..128)) {
+            let value = Value::Array(values.into_iter().map(|item| Value::Integer(item as i128)).collect());
+            prop_assert!(stable_roundtrip(&value));
+        }
+
+        /// Ensures arbitrary CBOR bytes never panic while being parsed.
+        #[test]
+        fn parse_cbor_payload_never_panics(input in proptest::collection::vec(any::<u8>(), 0..2048)) {
+            let _ = parse_cbor_payload(&input);
+        }
+    }
 }

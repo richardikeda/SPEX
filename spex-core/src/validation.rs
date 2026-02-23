@@ -64,3 +64,23 @@ pub fn validate_pow_puzzle(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::types::{ContactCard, GrantToken};
+    use proptest::prelude::*;
+
+    proptest! {
+        /// Ensures arbitrary bytes never panic during GrantToken decoding.
+        #[test]
+        fn grant_token_decode_never_panics(input in proptest::collection::vec(any::<u8>(), 0..2048)) {
+            let _ = GrantToken::decode_ctap2(&input);
+        }
+
+        /// Ensures arbitrary bytes never panic during ContactCard decoding.
+        #[test]
+        fn contact_card_decode_never_panics(input in proptest::collection::vec(any::<u8>(), 0..2048)) {
+            let _ = ContactCard::decode_ctap2(&input);
+        }
+    }
+}

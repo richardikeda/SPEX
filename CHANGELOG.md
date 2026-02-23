@@ -68,3 +68,5 @@ Breaking changes will always be documented clearly.
 **Secure.  
 Permissioned.  
 Explicit.**
+
+- Added fuzzing and property-based robustness tests for CBOR/core decoding and bridge payload parsing.

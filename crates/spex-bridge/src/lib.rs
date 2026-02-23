@@ -132,6 +132,56 @@ struct InboxStoreRequest {
     ttl_seconds: Option<u64>,
 }
 
+impl StorageRequest {
+    /// Parses a JSON payload into a storage request structure.
+    ///
+    /// The function keeps parsing failures explicit and never relies on panics
+    /// for malformed or hostile input.
+    fn from_bytes(bytes: &[u8]) -> Result<Self, BridgeError> {
+        serde_json::from_slice(bytes)
+            .map_err(|err| BridgeError::InvalidRequest(format!("invalid storage payload: {err}")))
+    }
+}
+
+impl InboxStoreRequest {
+    /// Parses a JSON payload into an inbox storage request structure.
+    ///
+    /// This parser intentionally returns structured errors for invalid JSON
+    /// and is suitable for robustness and fuzz testing entrypoints.
+    fn from_bytes(bytes: &[u8]) -> Result<Self, BridgeError> {
+        serde_json::from_slice(bytes)
+            .map_err(|err| BridgeError::InvalidRequest(format!("invalid inbox payload: {err}")))
+    }
+}
+
+/// Parses raw JSON bytes as a storage request and runs strict field decoding.
+///
+/// This helper is designed for robustness tests/fuzzers and ensures malformed
+/// encodings produce explicit `BridgeError` values.
+pub fn parse_storage_request_bytes(bytes: &[u8]) -> Result<(), BridgeError> {
+    let request = StorageRequest::from_bytes(bytes)?;
+    let _ = decode_base64(&request.data)?;
+    let _ = identity_from_grant(&request.grant)?;
+    let _ = decode_base64(&request.puzzle.recipient_key)?;
+    let _ = decode_base64(&request.puzzle.puzzle_input)?;
+    let _ = decode_base64(&request.puzzle.puzzle_output)?;
+    Ok(())
+}
+
+/// Parses raw JSON bytes as an inbox request and runs strict field decoding.
+///
+/// This helper preserves the same error semantics used by HTTP handlers while
+/// offering a direct boundary for fuzz and property-based testing.
+pub fn parse_inbox_store_request_bytes(bytes: &[u8]) -> Result<(), BridgeError> {
+    let request = InboxStoreRequest::from_bytes(bytes)?;
+    let _ = decode_base64(&request.data)?;
+    let _ = identity_from_grant(&request.grant)?;
+    let _ = decode_base64(&request.puzzle.recipient_key)?;
+    let _ = decode_base64(&request.puzzle.puzzle_input)?;
+    let _ = decode_base64(&request.puzzle.puzzle_output)?;
+    Ok(())
+}
+
 #[derive(Debug, Deserialize)]
 struct GrantTokenPayload {
     user_id: String,
@@ -1099,5 +1149,31 @@ mod tests {
         let ip = "2001:db8:85a3:8d3:1319:8a2e:370:7348".parse().unwrap();
         let masked = mask_ip(ip);
         assert_eq!(masked, "2001:db8:85a3:0:0:0:0:0");
+    }
+}
+
+#[cfg(test)]
+mod property_tests {
+    use super::{decode_base64, parse_inbox_store_request_bytes, parse_storage_request_bytes};
+    use proptest::prelude::*;
+
+    proptest! {
+        /// Ensures invalid UTF-8/base64-like inputs never panic and map to explicit errors/success.
+        #[test]
+        fn invalid_base64_is_handled_without_panic(input in "[^A-Za-z0-9+/=]{1,128}") {
+            let _ = decode_base64(&input);
+        }
+
+        /// Ensures arbitrary byte payloads never panic the storage request parser.
+        #[test]
+        fn storage_request_parser_never_panics(input in proptest::collection::vec(any::<u8>(), 0..4096)) {
+            let _ = parse_storage_request_bytes(&input);
+        }
+
+        /// Ensures arbitrary byte payloads never panic the inbox request parser.
+        #[test]
+        fn inbox_request_parser_never_panics(input in proptest::collection::vec(any::<u8>(), 0..4096)) {
+            let _ = parse_inbox_store_request_bytes(&input);
+        }
     }
 }

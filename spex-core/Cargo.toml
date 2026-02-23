@@ -22,3 +22,6 @@ base64 = "0.22"
 [features]
 default = []
 blake3_hash = ["dep:blake3"]
+
+[dev-dependencies]
+proptest = "1"

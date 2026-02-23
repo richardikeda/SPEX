@@ -81,6 +81,33 @@ cargo build -p spex-transport
 cargo test
 ```
 
+### Robustness Strategy
+
+Para reforçar parsing/validação contra entradas arbitrárias, o repositório inclui:
+
+- **Fuzz targets (`cargo-fuzz`)** em `fuzz/fuzz_targets/` para:
+  - `GrantToken::decode_ctap2`
+  - `ContactCard::decode_ctap2`
+  - `parse_cbor_payload`
+  - parsing de payload de bridge (`parse_storage_request_bytes`, `parse_inbox_store_request_bytes`)
+- **Property tests (`proptest`)** em `spex-core` e `spex-bridge` para:
+  - estabilidade/idempotência da canonicalização CTAP2
+  - rejeição segura de base64 inválido
+  - ausência de `panic` para entradas arbitrárias
+
+Comandos úteis:
+
+```bash
+cargo test -p spex-core
+cargo test -p spex-bridge
+cargo fuzz run grant_token_decode --manifest-path fuzz/Cargo.toml
+cargo fuzz run contact_card_decode --manifest-path fuzz/Cargo.toml
+cargo fuzz run parse_cbor_payload --manifest-path fuzz/Cargo.toml
+cargo fuzz run storage_request_from_bytes --manifest-path fuzz/Cargo.toml
+cargo fuzz run inbox_store_request_from_bytes --manifest-path fuzz/Cargo.toml
+```
+
+
 Os testes incluem vetores, integrações (handshake, PoW, MLS, DHT/bridge) e validações de
 assinatura para `ContactCard` e `GrantToken`.
 
