@@ -22,7 +22,7 @@ https://semver.org/
 - Security policy and governance documents
 
 ### Changed
-- N/A
+- Documentation: clarified bridge bind address (0.0.0.0:3000) and network exposure note.
 
 ### Fixed
 - N/A
