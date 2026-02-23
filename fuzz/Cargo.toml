@@ -1,0 +1,51 @@
+[package]
+name = "spex-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+serde_cbor = "0.11"
+spex-core = { path = "../spex-core" }
+spex-bridge = { path = "../crates/spex-bridge" }
+
+[[bin]]
+name = "grant_token_decode"
+path = "fuzz_targets/grant_token_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "contact_card_decode"
+path = "fuzz_targets/contact_card_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "parse_cbor_payload"
+path = "fuzz_targets/parse_cbor_payload.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "storage_request_from_bytes"
+path = "fuzz_targets/storage_request_from_bytes.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "inbox_store_request_from_bytes"
+path = "fuzz_targets/inbox_store_request_from_bytes.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]

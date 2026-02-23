@@ -90,6 +90,14 @@ If a task would weaken security, the agent must **refuse to proceed**.
 
 ---
 
+
+### 2.6 Testing Strategy (Robustness)
+
+* Parsing/decoding boundaries must include fuzz targets whenever feasible.
+* Invariants must include property-based tests for idempotence/determinism and malformed-input handling.
+* External/untrusted input must never rely on panic paths; return explicit errors.
+* New critical parsers should expose stable test entrypoints to enable fuzzing.
+
 ## 3. What AI Agents Are Allowed to Do
 
 AI agents MAY:

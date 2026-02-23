@@ -191,3 +191,20 @@ Reporte.
 **Secure.
 Permissioned.
 Explicit.**
+
+
+## Robustness Testing
+
+Para reduzir risco de DoS por parsing patológico e falhas por entradas maliciosas, SPEX adota:
+
+- fuzzing contínuo dos limites críticos de parsing/decodificação CBOR e payloads bridge;
+- property-based tests para invariantes de canonicalização CTAP2 e tratamento de input inválido;
+- política de erro explícito (`Result`) em vez de `panic` para dados externos.
+
+Execução manual recomendada:
+
+```bash
+cargo test -p spex-core
+cargo test -p spex-bridge
+cargo fuzz run parse_cbor_payload --manifest-path fuzz/Cargo.toml
+```

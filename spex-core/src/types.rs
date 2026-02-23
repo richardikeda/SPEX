@@ -1,6 +1,6 @@
 use crate::{cbor, error::SpexError};
 use serde::de::{self, MapAccess, Visitor};
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_cbor::Value;
 use std::collections::BTreeMap;
 use std::fmt;
@@ -22,7 +22,7 @@ pub trait Ctap2Cbor {
 }
 
 /// Represents a contact card (user metadata + verification material).
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ContactCard {
     pub user_id: Vec<u8>,
     pub verifying_key: Vec<u8>,
@@ -55,8 +55,18 @@ impl Ctap2Cbor for ContactCard {
     }
 }
 
+impl ContactCard {
+    /// Decodes a CTAP2-canonical CBOR payload into a ContactCard.
+    ///
+    /// This function never panics for malformed input and always reports
+    /// decoding failures as explicit `SpexError` values.
+    pub fn decode_ctap2(bytes: &[u8]) -> Result<Self, SpexError> {
+        cbor::from_ctap2_canonical_slice(bytes)
+    }
+}
+
 /// Represents an invite token (often embedded in cards or bridge messages).
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InviteToken {
     pub major: u16,
     pub minor: u16,
@@ -78,7 +88,7 @@ impl Ctap2Cbor for InviteToken {
 }
 
 /// Represents a grant token (membership/permission entry).
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GrantToken {
     pub user_id: Vec<u8>,
     pub role: u64,
@@ -102,6 +112,16 @@ impl Ctap2Cbor for GrantToken {
             map.insert(Value::Integer(*key as i128), value.clone());
         }
         Value::Map(map.into_iter().collect())
+    }
+}
+
+impl GrantToken {
+    /// Decodes a CTAP2-canonical CBOR payload into a GrantToken.
+    ///
+    /// This function preserves validation boundaries by rejecting
+    /// non-canonical and structurally invalid payloads with explicit errors.
+    pub fn decode_ctap2(bytes: &[u8]) -> Result<Self, SpexError> {
+        cbor::from_ctap2_canonical_slice(bytes)
     }
 }
 
