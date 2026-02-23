@@ -35,8 +35,8 @@ Implementação inicial em andamento com os seguintes componentes e nível atual
 
 ## O que falta implementar
 
-- Expansão de testes MLS interop avançados com vetores externos (além dos cenários reais atuais).
-- Endpoint de inbox para escrita/ingestão na bridge (armazenar entregas para scan).
+- Expansão de testes MLS interop avançados com cenários de conformidade (updates, ressincronização, permutação) - **Em andamento**.
+- Outras pendências estão listadas em [TODO.md](TODO.md).
 
 ## Documentação
 
