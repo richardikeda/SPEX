@@ -93,6 +93,40 @@ struct BridgeInboxResponse {
     next_cursor: Option<i64>,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct BridgePublishRequest {
+    pub data: String,
+    pub grant: BridgeGrantPayload,
+    pub puzzle: BridgePuzzlePayload,
+    pub ttl_seconds: Option<u64>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct BridgeGrantPayload {
+    pub user_id: String,
+    pub role: u64,
+    pub flags: Option<u64>,
+    pub expires_at: Option<u64>,
+    pub verifying_key: String,
+    pub signature: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct BridgePuzzlePayload {
+    pub recipient_key: String,
+    pub puzzle_input: String,
+    pub puzzle_output: String,
+    pub params: Option<BridgePowParams>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct BridgePowParams {
+    pub memory_kib: u32,
+    pub iterations: u32,
+    pub parallelism: u32,
+    pub output_len: usize,
+}
+
 impl BridgeClient {
     /// Creates a new bridge client for the provided base URL.
     pub fn new(base_url: impl Into<String>) -> Self {
@@ -143,5 +177,26 @@ impl BridgeClient {
             items,
             source: InboxSource::Bridge,
         })
+    }
+
+    /// Publishes an envelope to the bridge inbox.
+    pub async fn publish_to_inbox(
+        &self,
+        inbox_scan_key: &[u8],
+        request: &BridgePublishRequest,
+    ) -> Result<(), TransportError> {
+        let encoded_key = hex::encode(inbox_scan_key);
+        let url = format!(
+            "{}/inbox/{}",
+            self.base_url.trim_end_matches('/'),
+            encoded_key
+        );
+        self.client
+            .put(&url)
+            .json(request)
+            .send()
+            .await?
+            .error_for_status()?;
+        Ok(())
     }
 }
