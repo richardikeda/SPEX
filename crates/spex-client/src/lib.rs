@@ -140,7 +140,7 @@ const STATE_ENCRYPTION_VERSION: u8 = 1;
 const STATE_ENCRYPTION_AAD: &[u8] = b"spex-local-state";
 const STATE_KEYCHAIN_SERVICE: &str = "spex";
 const STATE_KEYCHAIN_USER: &str = "local-state";
-const STATE_PASSPHRASE_ENV: &str = "SPEX_STATE_PASSPHRASE";
+const STATE_PASSPHRASE_FILE_ENV: &str = "SPEX_STATE_PASSPHRASE_FILE";
 
 /// Identity data stored for the local user.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1214,8 +1214,7 @@ fn decrypt_state_file(state_file: &EncryptedStateFile) -> Result<LocalState, Cli
         .map_err(|err| ClientError::StateEncryption(err.to_string()))?;
     let key = match state_file.kdf.as_str() {
         "argon2id" => {
-            let passphrase = std::env::var(STATE_PASSPHRASE_ENV)
-                .map_err(|_| ClientError::StateEncryption("missing passphrase".to_string()))?;
+            let passphrase = resolve_passphrase_from_file()?;
             let salt = BASE64_STANDARD
                 .decode(state_file.salt_base64.as_bytes())
                 .map_err(|err| ClientError::StateEncryption(err.to_string()))?;
@@ -1241,12 +1240,26 @@ fn decrypt_state_file(state_file: &EncryptedStateFile) -> Result<LocalState, Cli
     Ok(serde_json::from_slice(&plaintext)?)
 }
 
+/// Reads the passphrase from the file path specified in the environment.
+/// This avoids exposing the secret directly in environment variables.
+fn resolve_passphrase_from_file() -> Result<String, ClientError> {
+    let path = std::env::var(STATE_PASSPHRASE_FILE_ENV)
+        .map_err(|_| ClientError::StateEncryption("missing passphrase file variable".to_string()))?;
+    let passphrase = std::fs::read_to_string(path)
+        .map_err(ClientError::Io)?
+        .trim()
+        .to_string();
+    if passphrase.is_empty() {
+        return Err(ClientError::StateEncryption("passphrase file is empty".to_string()));
+    }
+    Ok(passphrase)
+}
+
 /// Resolves the local state encryption key source, preferring passphrases over keychain entries.
 fn resolve_state_key_source() -> Result<StateKeySource, ClientError> {
-    if let Ok(passphrase) = std::env::var(STATE_PASSPHRASE_ENV) {
-        if !passphrase.is_empty() {
-            return Ok(StateKeySource::Passphrase(passphrase));
-        }
+    if std::env::var(STATE_PASSPHRASE_FILE_ENV).is_ok() {
+        let passphrase = resolve_passphrase_from_file()?;
+        return Ok(StateKeySource::Passphrase(passphrase));
     }
     resolve_keychain_key().map(StateKeySource::Keychain)
 }
