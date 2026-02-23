@@ -44,7 +44,7 @@ fn test_member_permutation_consistency() {
     let ratchet_tree = alice_group.export_tree();
 
     let mut bob_group = bob
-        .join_group(&welcome, Some(ratchet_tree))
+        .join_group(welcome, Some(ratchet_tree))
         .expect("bob failed to join");
 
     // Verify state
@@ -67,7 +67,7 @@ fn test_member_permutation_consistency() {
     let welcome = commit.welcome_messages.first().expect("missing welcome");
     let ratchet_tree = bob_group.export_tree(); // Carol gets tree from Bob
     let mut carol_group = carol
-        .join_group(&welcome, Some(ratchet_tree))
+        .join_group(welcome, Some(ratchet_tree))
         .expect("carol failed to join");
 
     // Verify all 3 have same state
