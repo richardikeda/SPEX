@@ -91,6 +91,83 @@ pub enum ClientError {
     StateEncryption(String),
 }
 
+/// High-level failure reasons for client operations, suitable for user display.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClientFailureReason {
+    GrantExpired,
+    PowTooWeak,
+    CfgMismatch,
+    EpochMismatch,
+    KeyChanged,
+    NetworkError,
+    ProtocolError,
+    SecurityViolation,
+    InvalidFormat,
+    InternalError,
+    Unknown,
+}
+
+impl std::fmt::Display for ClientFailureReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::GrantExpired => write!(f, "The access grant has expired."),
+            Self::PowTooWeak => write!(f, "Proof of work puzzle is too weak or invalid."),
+            Self::CfgMismatch => write!(f, "Thread configuration mismatch detected."),
+            Self::EpochMismatch => write!(f, "Encryption epoch mismatch detected."),
+            Self::KeyChanged => write!(f, "Identity key has changed since last contact."),
+            Self::NetworkError => write!(f, "Network transport or I/O error occurred."),
+            Self::ProtocolError => write!(f, "Protocol violation or state inconsistency."),
+            Self::SecurityViolation => write!(f, "Security check failed (signature/auth)."),
+            Self::InvalidFormat => write!(f, "Data format is invalid or corrupted."),
+            Self::InternalError => write!(f, "Internal client error."),
+            Self::Unknown => write!(f, "Unknown error occurred."),
+        }
+    }
+}
+
+impl From<&ClientError> for ClientFailureReason {
+    fn from(err: &ClientError) -> Self {
+        match err {
+            ClientError::Io(_) | ClientError::Transport(_) => Self::NetworkError,
+            ClientError::Json(_)
+            | ClientError::Cbor(_)
+            | ClientError::Hex(_)
+            | ClientError::InvalidCard
+            | ClientError::InvalidMessageEncoding => Self::InvalidFormat,
+            ClientError::SignatureInvalid
+            | ClientError::MissingSignature
+            | ClientError::UnauthorizedSender
+            | ClientError::RequestTargetMismatch
+            | ClientError::GrantInvalid => Self::SecurityViolation,
+            ClientError::GrantExpired => Self::GrantExpired,
+            ClientError::InvalidPuzzle => Self::PowTooWeak,
+            ClientError::Mls(msg) => {
+                if msg.contains("epoch") {
+                    Self::EpochMismatch
+                } else if msg.contains("config") || msg.contains("cfg") {
+                    Self::CfgMismatch
+                } else {
+                    Self::ProtocolError
+                }
+            }
+            ClientError::Core(_)
+            | ClientError::Crypto(_)
+            | ClientError::StateEncryption(_)
+            | ClientError::InvalidAeadPayload => Self::ProtocolError,
+            ClientError::MissingIdentity
+            | ClientError::ThreadNotFound
+            | ClientError::UnknownSender(_)
+            | ClientError::Log(_) => Self::InternalError,
+        }
+    }
+}
+
+impl From<ClientError> for ClientFailureReason {
+    fn from(err: ClientError) -> Self {
+        Self::from(&err)
+    }
+}
+
 /// Converts core errors into client errors for unified handling.
 impl From<SpexError> for ClientError {
     /// Maps core errors into a string-based client error.
@@ -341,6 +418,16 @@ pub struct ContactRedeemOutcome {
     pub contact: ContactState,
     pub previous_fingerprint: Option<String>,
     pub key_changed: bool,
+}
+
+impl ContactRedeemOutcome {
+    pub fn failure_reason(&self) -> Option<ClientFailureReason> {
+        if self.key_changed {
+            Some(ClientFailureReason::KeyChanged)
+        } else {
+            None
+        }
+    }
 }
 
 /// Response returned after creating a request token and storing it locally.
@@ -1873,6 +1960,67 @@ pub fn decrypt_payload_with_aead(
         .map_err(|err| ClientError::Crypto(err.to_string()))
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_failure_reason_mapping() {
+        let err = ClientError::GrantExpired;
+        let reason = ClientFailureReason::from(&err);
+        assert_eq!(reason, ClientFailureReason::GrantExpired);
+
+        let err = ClientError::InvalidPuzzle;
+        let reason = ClientFailureReason::from(&err);
+        assert_eq!(reason, ClientFailureReason::PowTooWeak);
+
+        let err = ClientError::Transport("timeout".to_string());
+        let reason = ClientFailureReason::from(&err);
+        assert_eq!(reason, ClientFailureReason::NetworkError);
+
+        let err = ClientError::Mls("epoch mismatch".to_string());
+        let reason = ClientFailureReason::from(&err);
+        assert_eq!(reason, ClientFailureReason::EpochMismatch);
+
+        let err = ClientError::Mls("config hash mismatch".to_string());
+        let reason = ClientFailureReason::from(&err);
+        assert_eq!(reason, ClientFailureReason::CfgMismatch);
+    }
+
+    #[test]
+    fn test_failure_reason_display() {
+        assert_eq!(
+            ClientFailureReason::GrantExpired.to_string(),
+            "The access grant has expired."
+        );
+        assert_eq!(
+            ClientFailureReason::KeyChanged.to_string(),
+            "Identity key has changed since last contact."
+        );
+    }
+
+    #[test]
+    fn test_contact_redeem_outcome_reason() {
+        let outcome = ContactRedeemOutcome {
+            contact: ContactState {
+                user_id_hex: "user".to_string(),
+                verifying_key_hex: "key".to_string(),
+                fingerprint: "fp".to_string(),
+                device_id_hex: "dev".to_string(),
+                last_seen_at: 0,
+            },
+            previous_fingerprint: Some("old_fp".to_string()),
+            key_changed: true,
+        };
+        assert_eq!(outcome.failure_reason(), Some(ClientFailureReason::KeyChanged));
+
+        let outcome_ok = ContactRedeemOutcome {
+            contact: outcome.contact.clone(),
+            previous_fingerprint: None,
+            key_changed: false,
+        };
+        assert_eq!(outcome_ok.failure_reason(), None);
+    }
 /// Publishes an envelope to the bridge inbox, handling PoW and Grant generation.
 pub async fn publish_via_bridge(
     identity: &IdentityState,
