@@ -11,18 +11,26 @@ Em Rust, use o `spex-core` para montar e serializar o card em CBOR canonical e d
 em base64. O card pode ser assinado com Ed25519 para permitir validação de integridade.
 
 ```rust
-// Pseudocódigo ilustrativo.
-use spex_core::cards::ContactCard;
+use spex_core::types::{ContactCard, Ctap2Cbor, InviteToken};
+use std::collections::BTreeMap;
 
-// Build de card a partir da identidade local.
-let card = ContactCard::builder()
-    .user_id(user_id)
-    .verifying_key(public_key)
-    .device_id(device_id)
-    .issued_at(now)
-    .build();
+let card = ContactCard {
+    user_id: b"alice".to_vec(),
+    verifying_key: vec![0x11; 32],
+    device_id: b"alice-phone".to_vec(),
+    device_nonce: vec![0x22; 16],
+    issued_at: 1_735_000_000,
+    invite: Some(InviteToken {
+        major: 0,
+        minor: 1,
+        requires_puzzle: true,
+        extensions: BTreeMap::new(),
+    }),
+    signature: None,
+    extensions: BTreeMap::new(),
+};
 
-let cbor = card.to_cbor()?; // CBOR canonical
+let cbor = card.to_ctap2_canonical_bytes()?;
 let card_b64 = base64::encode(cbor);
 ```
 
@@ -53,25 +61,20 @@ O `spex-transport` também expõe validadores de ingestão P2P (`validate_p2p_gr
 ### Exemplo em Rust (request/grant)
 
 ```rust
-// Pseudocódigo ilustrativo.
-use spex_core::tokens::{RequestToken, GrantToken};
+// Pseudocódigo (RequestToken não está em `spex_core::types` atualmente).
+// O fluxo abaixo mostra apenas a etapa compilável de GrantToken.
+use spex_core::types::{Ctap2Cbor, GrantToken};
+use std::collections::BTreeMap;
 
-let request = RequestToken::builder()
-    .user_id(requester_id)
-    .role(role)
-    .puzzle_solution(puzzle_solution)
-    .build();
+let grant = GrantToken {
+    user_id: b"alice".to_vec(),
+    role: 1,
+    flags: Some(0),
+    expires_at: Some(1_735_086_400),
+    extensions: BTreeMap::new(),
+};
 
-let request_b64 = base64::encode(request.to_json_bytes()?);
-
-// Do lado do destinatário:
-let grant = GrantToken::builder()
-    .user_id(requester_id)
-    .role(role)
-    .expires_at(expires_at)
-    .build();
-
-let grant_cbor = grant.to_cbor()?; // CBOR canonical
+let grant_cbor = grant.to_ctap2_canonical_bytes()?;
 let grant_b64 = base64::encode(grant_cbor);
 ```
 
@@ -82,13 +85,26 @@ let grant_b64 = base64::encode(grant_cbor);
 O `GrantToken` alimenta o `ThreadConfig`. Em Rust:
 
 ```rust
-// Pseudocódigo ilustrativo.
-use spex_core::thread::ThreadConfig;
+use spex_core::types::{GrantToken, ThreadConfig};
+use std::collections::BTreeMap;
 
-let config = ThreadConfig::builder()
-    .thread_id(thread_id)
-    .grants(vec![grant_token])
-    .build();
+let grant = GrantToken {
+    user_id: b"alice".to_vec(),
+    role: 1,
+    flags: None,
+    expires_at: None,
+    extensions: BTreeMap::new(),
+};
+
+let config = ThreadConfig {
+    proto_major: 0,
+    proto_minor: 1,
+    ciphersuite_id: 1,
+    flags: 0,
+    thread_id: b"thread-01".to_vec(),
+    grants: vec![grant],
+    extensions: BTreeMap::new(),
+};
 ```
 
 ### Envio de mensagens
@@ -96,14 +112,20 @@ let config = ThreadConfig::builder()
 Para envio, serialize `Envelope` e entregue via camada de transporte (P2P, bridge HTTP, etc.).
 
 ```rust
-// Pseudocódigo ilustrativo.
-use spex_core::envelope::Envelope;
+use spex_core::types::{Ctap2Cbor, Envelope};
+use std::collections::BTreeMap;
 
-let envelope = Envelope::builder()
-    .thread_id(thread_id)
-    .sender_user_id(sender_id)
-    .ciphertext(ciphertext)
-    .build();
+let envelope = Envelope {
+    thread_id: b"thread-01".to_vec(),
+    epoch: 1,
+    seq: 42,
+    sender_user_id: b"alice".to_vec(),
+    ciphertext: vec![0xAA, 0xBB, 0xCC],
+    signature: None,
+    extensions: BTreeMap::new(),
+};
+
+let envelope_cbor = envelope.to_ctap2_canonical_bytes()?;
 ```
 
 ## Integração em outras linguagens
