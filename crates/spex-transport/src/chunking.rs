@@ -72,7 +72,9 @@ mod tests {
     #[test]
     fn test_chunking_and_reassembly() {
         let config = ChunkingConfig::default();
-        let original_data = b"Hello, SPEX reassembly test! This should work correctly with optimized sorting.".to_vec();
+        let original_data =
+            b"Hello, SPEX reassembly test! This should work correctly with optimized sorting."
+                .to_vec();
 
         let mut chunks = chunk_data(&config, &original_data);
         // Shuffle chunks to ensure reassemble_chunks correctly sorts them by index.

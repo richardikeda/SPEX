@@ -48,7 +48,8 @@ mod tests {
         assert_eq!(got, expected, "SHA256 hash mismatch for TV1");
 
         let data2 = hex::decode(test_vectors::TV2_CARD_WO_SIG_CBOR_HEX).expect("invalid TV hex");
-        let expected2 = hex::decode(test_vectors::TV2_CARD_HASH_SHA256_HEX).expect("invalid TV hex");
+        let expected2 =
+            hex::decode(test_vectors::TV2_CARD_HASH_SHA256_HEX).expect("invalid TV hex");
         let got2 = hash_bytes(HashId::Sha256, &data2);
         assert_eq!(got2, expected2, "SHA256 hash mismatch for TV2");
     }

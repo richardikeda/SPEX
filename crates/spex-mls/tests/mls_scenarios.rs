@@ -43,23 +43,32 @@ fn test_member_permutation_consistency() {
     let welcome = commit.welcome_messages.first().expect("missing welcome");
     let ratchet_tree = alice_group.export_tree();
 
-    let mut bob_group = bob.join_group(&welcome, Some(ratchet_tree)).expect("bob failed to join");
+    let mut bob_group = bob
+        .join_group(&welcome, Some(ratchet_tree))
+        .expect("bob failed to join");
 
     // Verify state
     assert_eq!(alice_group.epoch(), 1);
     assert_eq!(bob_group.epoch(), 1);
-    assert_eq!(alice_group.member_identities(), bob_group.member_identities());
+    assert_eq!(
+        alice_group.member_identities(),
+        bob_group.member_identities()
+    );
 
     // 3. Bob adds Carol
     let commit = bob_group.add_member(&carol).expect("failed to add carol");
 
     // Alice processes commit
-    alice_group.process_commit_message(commit.commit_message.clone()).expect("alice process commit");
+    alice_group
+        .process_commit_message(commit.commit_message.clone())
+        .expect("alice process commit");
 
     // Carol joins
     let welcome = commit.welcome_messages.first().expect("missing welcome");
     let ratchet_tree = bob_group.export_tree(); // Carol gets tree from Bob
-    let mut carol_group = carol.join_group(&welcome, Some(ratchet_tree)).expect("carol failed to join");
+    let mut carol_group = carol
+        .join_group(&welcome, Some(ratchet_tree))
+        .expect("carol failed to join");
 
     // Verify all 3 have same state
     assert_eq!(alice_group.epoch(), 2);
@@ -72,10 +81,14 @@ fn test_member_permutation_consistency() {
     assert_eq!(carol_group.member_identities(), members);
 
     // 4. Carol removes Alice
-    let commit = carol_group.remove_member_by_identity(&create_identity("alice")).expect("failed to remove alice");
+    let commit = carol_group
+        .remove_member_by_identity(&create_identity("alice"))
+        .expect("failed to remove alice");
 
     // Bob processes commit
-    bob_group.process_commit_message(commit.commit_message).expect("bob process commit");
+    bob_group
+        .process_commit_message(commit.commit_message)
+        .expect("bob process commit");
 
     // Alice processes commit (she will realize she is removed)
     // Note: mls-rs might return an error or special status when self is removed, or just process it.
@@ -103,7 +116,9 @@ fn test_updates_key_rotation() {
     let mut alice_group = create_group(&alice);
     let commit = alice_group.add_member(&bob).expect("add bob");
     let welcome = commit.welcome_messages.first().unwrap();
-    let mut bob_group = bob.join_group(welcome, Some(alice_group.export_tree())).expect("join bob");
+    let mut bob_group = bob
+        .join_group(welcome, Some(alice_group.export_tree()))
+        .expect("join bob");
 
     assert_eq!(alice_group.epoch(), 1);
 
@@ -111,13 +126,18 @@ fn test_updates_key_rotation() {
     let update_commit = bob_group.self_update().expect("bob update");
 
     // Alice processes
-    alice_group.process_commit_message(update_commit.commit_message).expect("alice process update");
+    alice_group
+        .process_commit_message(update_commit.commit_message)
+        .expect("alice process update");
 
     assert_eq!(alice_group.epoch(), 2);
     assert_eq!(bob_group.epoch(), 2);
 
     // Verify they are still compatible (roster is same)
-    assert_eq!(alice_group.member_identities(), bob_group.member_identities());
+    assert_eq!(
+        alice_group.member_identities(),
+        bob_group.member_identities()
+    );
 }
 
 #[test]
@@ -134,7 +154,9 @@ fn test_resynchronization_flow() {
     let mut alice_group = create_group(&alice);
     let commit = alice_group.add_member(&bob).expect("add bob");
     let welcome = commit.welcome_messages.first().unwrap();
-    let mut bob_group = bob.join_group(welcome, Some(alice_group.export_tree())).expect("join bob");
+    let bob_group = bob
+        .join_group(welcome, Some(alice_group.export_tree()))
+        .expect("join bob");
 
     assert_eq!(bob_group.epoch(), 1);
 
@@ -144,7 +166,9 @@ fn test_resynchronization_flow() {
 
     // Carol joins (she talks to Alice)
     let welcome_carol = commit_carol.welcome_messages.first().unwrap();
-    let _carol_group = carol.join_group(welcome_carol, Some(alice_group.export_tree())).expect("join carol");
+    let _carol_group = carol
+        .join_group(welcome_carol, Some(alice_group.export_tree()))
+        .expect("join carol");
 
     assert_eq!(alice_group.epoch(), 2);
     assert_eq!(bob_group.epoch(), 1); // Bob is behind
@@ -154,7 +178,9 @@ fn test_resynchronization_flow() {
     // Here we simulate getting it from Alice.
 
     // Note: GroupInfo must be signed by a current member.
-    let group_info = alice_group.group_info_message_allowing_external_commit(true).expect("group info");
+    let _group_info = alice_group
+        .group_info_message_allowing_external_commit(true)
+        .expect("group info");
 
     // Bob realizes he is out of sync.
     // To perform an external commit when he is already in the group, he must be "removed" first or treated as a new member.
@@ -166,21 +192,32 @@ fn test_resynchronization_flow() {
     // But `mls-rs` external_commit_builder defaults to adding a new member.
 
     // Let's try to remove Bob from Alice's view first, so the external commit is valid (re-join).
-    let commit_remove = alice_group.remove_member_by_identity(&create_identity("bob")).expect("remove bob");
+    let _commit_remove = alice_group
+        .remove_member_by_identity(&create_identity("bob"))
+        .expect("remove bob");
     // Alice is now at epoch 3. Bob is still at epoch 1.
 
     // Now Alice issues a group info for epoch 3.
-    let group_info = alice_group.group_info_message_allowing_external_commit(true).expect("group info");
+    let group_info = alice_group
+        .group_info_message_allowing_external_commit(true)
+        .expect("group info");
 
     // Bob uses this to re-join.
-    let (bob_group_resynced, commit_msg) = bob.resync_from_group_info(group_info, None).expect("resync");
+    let (bob_group_resynced, commit_msg) = bob
+        .resync_from_group_info(group_info, None)
+        .expect("resync");
 
     // Alice processes Bob's return.
-    alice_group.process_commit_message(commit_msg).expect("alice process bob resync");
+    alice_group
+        .process_commit_message(commit_msg)
+        .expect("alice process bob resync");
 
     // Alice is at epoch 4. Bob starts at epoch 4.
     assert_eq!(alice_group.epoch(), 4);
     assert_eq!(bob_group_resynced.epoch(), 4);
 
-    assert_eq!(alice_group.member_identities(), bob_group_resynced.member_identities());
+    assert_eq!(
+        alice_group.member_identities(),
+        bob_group_resynced.member_identities()
+    );
 }
