@@ -1333,14 +1333,17 @@ fn decrypt_state_file(state_file: &EncryptedStateFile) -> Result<LocalState, Cli
 /// Reads the passphrase from the file path specified in the environment.
 /// This avoids exposing the secret directly in environment variables.
 fn resolve_passphrase_from_file() -> Result<String, ClientError> {
-    let path = std::env::var(STATE_PASSPHRASE_FILE_ENV)
-        .map_err(|_| ClientError::StateEncryption("missing passphrase file variable".to_string()))?;
+    let path = std::env::var(STATE_PASSPHRASE_FILE_ENV).map_err(|_| {
+        ClientError::StateEncryption("missing passphrase file variable".to_string())
+    })?;
     let passphrase = std::fs::read_to_string(path)
         .map_err(ClientError::Io)?
         .trim()
         .to_string();
     if passphrase.is_empty() {
-        return Err(ClientError::StateEncryption("passphrase file is empty".to_string()));
+        return Err(ClientError::StateEncryption(
+            "passphrase file is empty".to_string(),
+        ));
     }
     Ok(passphrase)
 }
@@ -2012,7 +2015,10 @@ mod tests {
             previous_fingerprint: Some("old_fp".to_string()),
             key_changed: true,
         };
-        assert_eq!(outcome.failure_reason(), Some(ClientFailureReason::KeyChanged));
+        assert_eq!(
+            outcome.failure_reason(),
+            Some(ClientFailureReason::KeyChanged)
+        );
 
         let outcome_ok = ContactRedeemOutcome {
             contact: outcome.contact.clone(),
@@ -2021,6 +2027,8 @@ mod tests {
         };
         assert_eq!(outcome_ok.failure_reason(), None);
     }
+}
+
 /// Publishes an envelope to the bridge inbox, handling PoW and Grant generation.
 pub async fn publish_via_bridge(
     identity: &IdentityState,
