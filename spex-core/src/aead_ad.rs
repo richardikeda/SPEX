@@ -1,15 +1,5 @@
 use crate::types::ProtoSuite;
-
-/// Big-endian helpers (explicit = deterministic)
-fn u16be(v: u16) -> [u8; 2] {
-    v.to_be_bytes()
-}
-fn u32be(v: u32) -> [u8; 4] {
-    v.to_be_bytes()
-}
-fn u64be(v: u64) -> [u8; 8] {
-    v.to_be_bytes()
-}
+use crate::utils::{u16be, u32be, u64be};
 
 /// AD = thread_id(32) || epoch(u32be) || cfg_hash(32) ||
 ///      proto_suite(major u16be || minor u16be || ciphersuite u16be) ||
