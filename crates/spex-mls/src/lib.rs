@@ -515,10 +515,10 @@ fn derive_aead_key(
     group_secret: &[u8],
     sender_id: &str,
     message_id: u64,
-) -> Result<Key<ChaCha20Poly1305>, MlsError> {
+) -> Result<Key, MlsError> {
     let hash = derive_message_metadata_hash(hash_id, group_secret, sender_id, message_id, b"key");
     hash.get(..32)
-        .map(|bytes| *Key::<ChaCha20Poly1305>::from_slice(bytes))
+        .map(|bytes| *Key::from_slice(bytes))
         .ok_or(MlsError::Encryption)
 }
 
