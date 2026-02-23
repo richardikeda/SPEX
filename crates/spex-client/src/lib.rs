@@ -23,7 +23,10 @@ use spex_core::{
 use spex_mls::{cfg_hash_for_thread_config, Group, GroupConfig};
 use spex_transport::{
     chunking::{chunk_data, Chunk, ChunkingConfig},
-    inbox::{derive_inbox_scan_key, BridgeClient, InboxScanResponse, InboxSource},
+    inbox::{
+        derive_inbox_scan_key, BridgeClient, BridgeGrantPayload, BridgePowParams,
+        BridgePublishRequest, BridgePuzzlePayload, InboxScanResponse, InboxSource,
+    },
     transport::{
         manifest_payload, reassemble_chunks_with_manifest, recover_chunks_from_store,
         recover_manifest_from_gossip, ChunkDescriptor, ChunkManifest, TransportConfig,
@@ -1868,4 +1871,76 @@ pub fn decrypt_payload_with_aead(
             },
         )
         .map_err(|err| ClientError::Crypto(err.to_string()))
+}
+
+/// Publishes an envelope to the bridge inbox, handling PoW and Grant generation.
+pub async fn publish_via_bridge(
+    identity: &IdentityState,
+    recipient_inbox_key_seed: &[u8],
+    envelope: &spex_core::types::Envelope,
+    bridge: &BridgeClient,
+    ttl_seconds: Option<u64>,
+) -> Result<(), ClientError> {
+    let payload = envelope.to_ctap2_canonical_bytes()?;
+    let payload_base64 = BASE64_STANDARD.encode(&payload);
+
+    // 1. Generate Grant (Sender grants themselves permission for identity tracking)
+    // In this context, the user_id in the grant is the sender.
+    let user_id = hex::decode(&identity.user_id_hex)?;
+    let grant = GrantToken {
+        user_id: user_id.clone(),
+        role: 1, // Default role
+        flags: None,
+        expires_at: Some(now_unix() + 300), // Short expiry for the request
+        extensions: Default::default(),
+    };
+    let signed_grant = sign_grant(identity, &grant)?;
+    let grant_payload = BridgeGrantPayload {
+        user_id: signed_grant.user_id,
+        role: signed_grant.role,
+        flags: signed_grant.flags,
+        expires_at: signed_grant.expires_at,
+        verifying_key: signed_grant.verifying_key,
+        signature: signed_grant.signature,
+    };
+
+    // 2. Generate PoW
+    // We use the recipient_inbox_key_seed (e.g. Recipient User ID) as the target key for PoW.
+    let params = pow::PowParams::default(); // Start with default params
+    let nonce = pow::generate_pow_nonce(pow::PowNonceParams::default());
+    let puzzle_input = pow::build_puzzle_input(&nonce, recipient_inbox_key_seed);
+    let puzzle_output =
+        pow::generate_puzzle_output(recipient_inbox_key_seed, &puzzle_input, params)
+            .map_err(|err| ClientError::Crypto(err.to_string()))?;
+
+    let puzzle_payload = BridgePuzzlePayload {
+        recipient_key: BASE64_STANDARD.encode(recipient_inbox_key_seed),
+        puzzle_input: BASE64_STANDARD.encode(&puzzle_input),
+        puzzle_output: BASE64_STANDARD.encode(&puzzle_output),
+        params: Some(BridgePowParams {
+            memory_kib: params.memory_kib,
+            iterations: params.iterations,
+            parallelism: params.parallelism,
+            output_len: params.output_len,
+        }),
+    };
+
+    // 3. Construct Request
+    let request = BridgePublishRequest {
+        data: payload_base64,
+        grant: grant_payload,
+        puzzle: puzzle_payload,
+        ttl_seconds,
+    };
+
+    // 4. Derive Inbox Scan Key (Hash of Seed)
+    let scan_req = derive_inbox_scan_key(HashId::Sha256, recipient_inbox_key_seed);
+
+    // 5. Send
+    bridge
+        .publish_to_inbox(&scan_req.hashed_key, &request)
+        .await
+        .map_err(|err| ClientError::Transport(err.to_string()))?;
+
+    Ok(())
 }
