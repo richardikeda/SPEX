@@ -30,11 +30,19 @@ O `spex-transport` possui implementações de chunking, publicação de manifest
 
 ### 5. CLI e cliente integrados ao transporte real
 
-Atualmente, o `spex-cli` utiliza funções que escrevem para o armazenamento local e simulam envio de mensagens. Os comandos de `msg send` aceitam parâmetros de P2P e bridge, mas precisam se conectar ao transporte real. A documentação sugere que a CLI deverá se conectar ao runtime libp2p e bridge HTTP para enviar envelopes e fazer scan de inbox.
+As afirmações de “envio simulado” neste item ficaram desatualizadas. O fluxo principal de transporte já está integrado ao runtime real no caminho CLI + transporte.
 
-**Tarefa:**
-- Implementar no `spex-client` e no CLI o envio de envelopes via P2P (`publish_payload` e `manifest/gossip`) e via HTTP (`PUT /inbox`).
-- Usar `receive_inbox_payloads`/`reassemble_payload_from_store` para reconstruí-los.
+**Funcionalidades já entregues (confirmadas em código e testes):**
+- `msg send` já constrói envelope/manifest/chunks e publica via P2P com `publish_to_inboxes` quando há configuração de rede (`--p2p`, peers/bootstrap/listen).
+- `inbox poll --p2p` já faz recuperação de payloads por manifest/gossip e busca de chunks no DHT (`recover_payloads_for_inbox`).
+- Quando a recuperação P2P falha ou retorna vazio, já existe fallback para bridge HTTP (`BridgeClient::scan_inbox`) no CLI.
+- O transporte já possui testes de integração cobrindo publicação/recuperação por manifest e fluxo com bridge (`p2p_manifest_delivery`, `p2p_manifest_recovery`, `two_identity_flow`).
+
+**Gaps ainda em aberto (pendências reais):**
+- **Otimizações operacionais:** redução de latência/espera fixa (`publish_wait`, `manifest_wait`, `query_timeout`), backoff mais fino e melhor tuning para cenários com churn.
+- **Hardening de produção:** persistência de estado entre execuções, políticas anti-eclipse mais robustas e critérios adicionais de reputação/peer scoring.
+- **Observabilidade:** métricas estruturadas de publish/recovery/fallback, tracing de falhas de reassemble e telemetria de saúde de rede.
+- **Cobertura de integração CLI↔bridge em escrita:** apesar de existir `BridgeClient::publish_to_inbox`, faltam cenários end-to-end automatizados no CLI para envio HTTP com grant/PoW em ambiente de integração.
 
 ### 6. Refinamento de logs, rate limiting e validações
 
