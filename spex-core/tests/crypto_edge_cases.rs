@@ -1,9 +1,9 @@
+use ed25519_dalek::{Signature, SigningKey};
+use rand_core::OsRng;
 use spex_core::{
     hash::{hash_bytes, HashId},
     sign::{ed25519_sign_hash, ed25519_verify_hash, ed25519_verify_key},
 };
-use ed25519_dalek::{SigningKey, Signature};
-use rand_core::OsRng;
 
 #[test]
 fn test_hashing_empty_input() {
@@ -11,7 +11,10 @@ fn test_hashing_empty_input() {
     let hash = hash_bytes(HashId::Sha256, input);
     assert_eq!(hash.len(), 32);
     // Verified against `echo -n "" | sha256sum`
-    assert_eq!(hex::encode(&hash), "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+    assert_eq!(
+        hex::encode(&hash),
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    );
 }
 
 #[test]

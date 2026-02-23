@@ -1,5 +1,5 @@
-use spex_mls::{MlsRsClient, GroupConfig, MlsRsGroup};
 use spex_core::types::ProtoSuite;
+use spex_mls::{GroupConfig, MlsRsClient, MlsRsGroup};
 use std::time::Instant;
 
 #[test]
@@ -24,7 +24,9 @@ fn stress_test_group_creation_and_messaging() {
     // 2. Creator initializes the group
     let creator = &clients[0];
     let config = GroupConfig::new(proto_suite, 0, 1, vec![1, 2, 3, 4]); // 1=SHA256
-    let mut group_alice = creator.create_group(config).expect("failed to create group");
+    let mut group_alice = creator
+        .create_group(config)
+        .expect("failed to create group");
 
     // 3. Add members sequentially (Partial Sync)
     let start_add = Instant::now();
@@ -32,7 +34,9 @@ fn stress_test_group_creation_and_messaging() {
     // We only update Alice's state here for the stress test
     for i in 1..member_count {
         let member = &clients[i];
-        let _commit = group_alice.add_member(member).expect("failed to add member");
+        let _commit = group_alice
+            .add_member(member)
+            .expect("failed to add member");
     }
     let duration_add = start_add.elapsed();
     println!("Added {} members in {:?}", member_count - 1, duration_add);
@@ -66,17 +70,26 @@ fn stress_test_full_mesh_sync_small_group() {
         let new_member_client = &clients[i];
 
         // Alice (index 0) adds member
-        let commit_output = active_groups[0].add_member(new_member_client).expect("Alice adds member");
-        let welcome = commit_output.welcome_messages.first().expect("Should have welcome message");
+        let commit_output = active_groups[0]
+            .add_member(new_member_client)
+            .expect("Alice adds member");
+        let welcome = commit_output
+            .welcome_messages
+            .first()
+            .expect("Should have welcome message");
 
         // New member joins
         let tree = active_groups[0].export_tree();
-        let new_group_state = new_member_client.join_group(&welcome, Some(tree)).expect("Member joins");
+        let new_group_state = new_member_client
+            .join_group(&welcome, Some(tree))
+            .expect("Member joins");
 
         // Existing members 1..i-1 must process commit
         for j in 1..i {
-             let msg = commit_output.commit_message.clone();
-             active_groups[j].process_commit_message(msg).expect("Existing member processes commit");
+            let msg = commit_output.commit_message.clone();
+            active_groups[j]
+                .process_commit_message(msg)
+                .expect("Existing member processes commit");
         }
 
         active_groups.push(new_group_state);
@@ -89,7 +102,7 @@ use spex_mls::{Group, GroupConfig as SimpleGroupConfig};
 
 #[test]
 fn stress_test_simplified_group() {
-     let proto_suite = ProtoSuite {
+    let proto_suite = ProtoSuite {
         major: 1,
         minor: 1,
         ciphersuite_id: 1,

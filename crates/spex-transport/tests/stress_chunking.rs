@@ -1,6 +1,6 @@
-use spex_transport::chunking::{chunk_data, reassemble_chunks, ChunkingConfig};
-use spex_core::hash::HashId;
 use rand::RngCore;
+use spex_core::hash::HashId;
+use spex_transport::chunking::{chunk_data, reassemble_chunks, ChunkingConfig};
 
 #[test]
 fn stress_test_large_payload_chunking() {
@@ -16,7 +16,10 @@ fn stress_test_large_payload_chunking() {
     // Split
     let chunks = chunk_data(&config, &payload);
     // Correct calculation: (10*1024*1024 + 64*1024 - 1) / (64*1024) = 160
-    assert_eq!(chunks.len(), (payload_size + config.chunk_size - 1) / config.chunk_size);
+    assert_eq!(
+        chunks.len(),
+        (payload_size + config.chunk_size - 1) / config.chunk_size
+    );
 
     // Reassemble
     let reassembled = reassemble_chunks(&chunks);
