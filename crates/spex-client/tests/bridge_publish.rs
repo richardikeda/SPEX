@@ -4,10 +4,8 @@ use axum::{
     Json, Router,
 };
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
-use spex_client::{
-    create_identity, publish_via_bridge,
-};
-use spex_core::types::{Envelope, Ctap2Cbor};
+use spex_client::{create_identity, publish_via_bridge};
+use spex_core::types::{Ctap2Cbor, Envelope};
 use spex_transport::inbox::{BridgeClient, BridgePublishRequest};
 use std::sync::{Arc, Mutex};
 use tokio::net::TcpListener;
@@ -81,7 +79,8 @@ async fn test_publish_via_bridge_success() {
     let (key, payload) = &requests[0];
 
     // Verify key derived correctly (SHA256 of recipient ID)
-    let expected_key_bytes = spex_core::hash::hash_bytes(spex_core::hash::HashId::Sha256, &recipient_user_id);
+    let expected_key_bytes =
+        spex_core::hash::hash_bytes(spex_core::hash::HashId::Sha256, &recipient_user_id);
     assert_eq!(*key, hex::encode(expected_key_bytes));
 
     // Verify payload fields
