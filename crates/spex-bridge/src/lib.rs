@@ -331,6 +331,9 @@ fn inbox_items_has_expires_column(conn: &Connection) -> rusqlite::Result<bool> {
 }
 
 /// Stores a card payload after validating its grant, puzzle, and hash.
+///
+/// Validation and heavy computations are offloaded to a blocking thread to preserve
+/// async executor responsiveness.
 async fn put_card(
     State(state): State<AppState>,
     Path(card_hash): Path<String>,
@@ -344,12 +347,25 @@ async fn put_card(
     let ip = extract_ip(connect_info);
     let snapshot = load_rate_limit_snapshot(&state.db_path, &identity, now, state.limits).await?;
     let minimum_pow = required_pow_params(&snapshot, &state.limits);
-    let result = (|| -> Result<(), BridgeError> {
-        enforce_rate_limits(&snapshot, &state.limits, data_len)?;
-        validate_grant_and_puzzle(&state, &payload.grant, &payload.puzzle, &minimum_pow, true)?;
-        validate_hash(&card_hash, &data)?;
-        Ok(())
-    })();
+    let state_clone = state.clone();
+    let card_hash_clone = card_hash.clone();
+    let (result, data) = task::spawn_blocking(move || {
+        let res = (|| -> Result<(), BridgeError> {
+            enforce_rate_limits(&snapshot, &state_clone.limits, data_len)?;
+            validate_grant_and_puzzle(
+                &state_clone,
+                &payload.grant,
+                &payload.puzzle,
+                &minimum_pow,
+                true,
+            )?;
+            validate_hash(&card_hash_clone, &data)?;
+            Ok(())
+        })();
+        (res, data)
+    })
+    .await
+    .map_err(|err| BridgeError::Storage(err.to_string()))?;
 
     match result {
         Ok(()) => {
@@ -400,6 +416,9 @@ async fn get_card(
 }
 
 /// Stores a slot payload after validating its grant and puzzle.
+///
+/// Validation and heavy computations are offloaded to a blocking thread to preserve
+/// async executor responsiveness.
 async fn put_slot(
     State(state): State<AppState>,
     Path(slot_id): Path<String>,
@@ -434,12 +453,25 @@ async fn put_slot(
     }
     let snapshot = load_rate_limit_snapshot(&state.db_path, &identity, now, state.limits).await?;
     let minimum_pow = required_pow_params(&snapshot, &state.limits);
-    let result = (|| -> Result<(), BridgeError> {
-        enforce_rate_limits(&snapshot, &state.limits, data_len)?;
-        validate_grant_and_puzzle(&state, &payload.grant, &payload.puzzle, &minimum_pow, false)?;
-        validate_hash(&slot_id, &data)?;
-        Ok(())
-    })();
+    let state_clone = state.clone();
+    let slot_id_clone = slot_id.clone();
+    let (result, data) = task::spawn_blocking(move || {
+        let res = (|| -> Result<(), BridgeError> {
+            enforce_rate_limits(&snapshot, &state_clone.limits, data_len)?;
+            validate_grant_and_puzzle(
+                &state_clone,
+                &payload.grant,
+                &payload.puzzle,
+                &minimum_pow,
+                false,
+            )?;
+            validate_hash(&slot_id_clone, &data)?;
+            Ok(())
+        })();
+        (res, data)
+    })
+    .await
+    .map_err(|err| BridgeError::Storage(err.to_string()))?;
 
     match result {
         Ok(()) => {
@@ -490,6 +522,9 @@ async fn get_slot(
 }
 
 /// Stores an inbox envelope for a given inbox key with a bounded time-to-live.
+///
+/// Validation and heavy computations are offloaded to a blocking thread to preserve
+/// async executor responsiveness.
 async fn put_inbox(
     State(state): State<AppState>,
     Path(inbox_key): Path<String>,
@@ -503,12 +538,24 @@ async fn put_inbox(
     let ip = extract_ip(connect_info);
     let snapshot = load_rate_limit_snapshot(&state.db_path, &identity, now, state.limits).await?;
     let minimum_pow = required_pow_params(&snapshot, &state.limits);
-    let result = (|| -> Result<u64, BridgeError> {
-        validate_inbox_item_size(data_len)?;
-        enforce_rate_limits(&snapshot, &state.limits, data_len)?;
-        validate_grant_and_puzzle(&state, &payload.grant, &payload.puzzle, &minimum_pow, true)?;
-        compute_inbox_expiration(now, payload.ttl_seconds)
-    })();
+    let state_clone = state.clone();
+    let (result, data) = task::spawn_blocking(move || {
+        let res = (|| -> Result<u64, BridgeError> {
+            validate_inbox_item_size(data_len)?;
+            enforce_rate_limits(&snapshot, &state_clone.limits, data_len)?;
+            validate_grant_and_puzzle(
+                &state_clone,
+                &payload.grant,
+                &payload.puzzle,
+                &minimum_pow,
+                true,
+            )?;
+            compute_inbox_expiration(now, payload.ttl_seconds)
+        })();
+        (res, data)
+    })
+    .await
+    .map_err(|err| BridgeError::Storage(err.to_string()))?;
 
     match result {
         Ok(expires_at) => {
