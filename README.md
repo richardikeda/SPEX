@@ -142,9 +142,12 @@ cargo run -p spex-cli -- log gossip-verify --path <LOG_FILE>
 ### Executando a bridge HTTP
 
 ```bash
-# inicia a bridge em 127.0.0.1:3000
+# inicia a bridge em 0.0.0.0:3000
 cargo run -p spex-bridge
 ```
+
+Obs.: o bind padrão `0.0.0.0` expõe a bridge em todas as interfaces de rede. Para uso local restrito,
+use proxy reverso e/ou firewall; no futuro, uma flag/env de bind explícito pode oferecer controle direto.
 
 Para integração via biblioteca, `spex_bridge::init_state` e `spex_bridge::init_state_with_clock`
 retornam `BridgeError` em falhas de inicialização.
