@@ -5,7 +5,7 @@ use spex_client::{
     accept_request_for_state, create_checkpoint_entry, create_contact_card_payload,
     create_identity_in_state, create_recovery_entry, create_request_for_state,
     create_revocation_entry, create_thread_for_state, fingerprint_hex, ingest_inbox_payloads,
-    load_checkpoint_log, load_state, log_consistency, receive_inbox_messages,
+    load_checkpoint_log, load_state, log_consistency, publish_via_bridge, receive_inbox_messages,
     receive_transport_messages, record_inbox_messages, redeem_contact_card_to_state,
     rotate_identity_in_state, save_checkpoint_log, save_state, send_thread_message_for_state,
     transport_inbox_has_items, ClientError, ClientFailureReason,
@@ -113,6 +113,10 @@ enum MsgCommand {
         thread: String,
         #[arg(long)]
         text: String,
+        #[arg(long)]
+        bridge_url: Option<String>,
+        #[arg(long)]
+        ttl_seconds: Option<u64>,
         #[arg(long)]
         p2p: bool,
         #[arg(long, value_delimiter = ',')]
@@ -368,13 +372,33 @@ async fn run_cli() -> Result<(), ClientError> {
             MsgCommand::Send {
                 thread,
                 text,
+                bridge_url,
+                ttl_seconds,
                 p2p,
                 peer,
                 bootstrap,
                 listen_addr,
                 p2p_wait_secs,
             } => {
+                let sender_identity = state.identity.clone().ok_or(ClientError::MissingIdentity)?;
                 let dispatch = send_thread_message_for_state(&mut state, &thread, &text)?;
+                if let Some(url) = bridge_url {
+                    let bridge = BridgeClient::new(url);
+                    for recipient_inbox_key in &dispatch.recipient_inbox_keys {
+                        publish_via_bridge(
+                            &sender_identity,
+                            recipient_inbox_key,
+                            &dispatch.envelope,
+                            &bridge,
+                            ttl_seconds,
+                        )
+                        .await?;
+                    }
+                    println!(
+                        "bridge: published envelope to {} inboxes",
+                        dispatch.recipient_inbox_keys.len()
+                    );
+                }
                 if should_use_p2p(p2p, &peer, &bootstrap, &listen_addr) {
                     let mut transport =
                         build_p2p_transport(&listen_addr, &peer, &bootstrap, p2p_wait_secs).await?;

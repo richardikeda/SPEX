@@ -49,6 +49,9 @@ compartilhadas (assinaturas, PoW e autorização por thread).
 - `msg send --thread <THREAD_ID_HEX> --text "..."`: envia mensagem para uma thread existente usando
   MLS + AEAD, fragmentando o envelope, publicando manifestos/chunks via spex-transport e registrando
   o envio no outbox local (fluxo consolidado no `spex-client`).
+- Flags de bridge opcionais:
+  - `--bridge-url <URL>`: publica o envelope serializado em `PUT /inbox/:key` com grant assinado e PoW.
+  - `--ttl-seconds <N>`: define TTL explícito no payload de bridge (quando omitido, a bridge aplica padrão).
 - Flags P2P opcionais:
   - `--p2p`: habilita publicação via rede libp2p.
   - `--peer <MULTIADDR>`: conecta a peers conhecidos (`/ip4/.../tcp/.../p2p/<PEER_ID>`).

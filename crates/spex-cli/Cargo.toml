@@ -18,3 +18,12 @@ tokio = { version = "1.37", features = ["rt-multi-thread", "macros"] }
 spex-client = { path = "../spex-client" }
 spex-core = { path = "../../spex-core" }
 spex-transport = { path = "../spex-transport" }
+
+[dev-dependencies]
+axum = "0.7"
+reqwest = { version = "0.11", features = ["json", "rustls-tls"] }
+serde_json = "1.0"
+tempfile = "3"
+tokio = { version = "1.37", features = ["rt-multi-thread", "macros", "net"] }
+spex-bridge = { path = "../spex-bridge" }
+spex-core = { path = "../../spex-core" }
