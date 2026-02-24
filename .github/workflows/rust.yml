@@ -8,32 +8,40 @@ on:
 
 jobs:
   build-test:
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        toolchain: [stable, beta]
+    runs-on: ${{ matrix.os }}
     env:
       RUSTC_WRAPPER: sccache
       SCCACHE_GHA_ENABLED: "false"
-      SCCACHE_DIR: /home/runner/.cache/sccache
+      SCCACHE_DIR: ${{ github.workspace }}/.sccache
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.toolchain }}
 
       - name: Install sccache
         uses: mozilla-actions/sccache-action@8417cffc2ec64127ad83077aceaa8631f7cdc83e
 
       - name: Validate native dependencies (pkg-config)
+        if: runner.os == 'Linux'
         run: pkg-config --version
 
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: "rust-ci-${{ github.job }}"
+          shared-key: "rust-ci-${{ github.job }}-${{ runner.os }}-${{ matrix.toolchain }}"
           cache-on-failure: true
           add-job-id-key: false
           cache-directories: |
-            /home/runner/.cache/sccache
+            ${{ env.SCCACHE_DIR }}
 
       - name: Fetch deps (warm cache)
         run: cargo fetch --locked
@@ -42,46 +50,56 @@ jobs:
         run: cargo build --workspace --locked --verbose
 
       - name: Test (default features)
+        if: matrix.toolchain == 'stable' && runner.os == 'Linux'
         run: cargo test --workspace --locked --verbose
 
       - name: Test (all features)
+        if: matrix.toolchain == 'stable' && runner.os == 'Linux'
         run: cargo test --workspace --locked --all-features --verbose
 
       - name: Test (release profile)
+        if: matrix.toolchain == 'stable' && runner.os == 'Linux'
         run: cargo test --workspace --locked --release --verbose
 
       - name: sccache stats
         run: sccache --show-stats || true
 
   lint:
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        toolchain: [stable, beta]
+    runs-on: ${{ matrix.os }}
     env:
       RUSTC_WRAPPER: sccache
       SCCACHE_GHA_ENABLED: "false"
-      SCCACHE_DIR: /home/runner/.cache/sccache
+      SCCACHE_DIR: ${{ github.workspace }}/.sccache
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Install Rust toolchain (fmt, clippy)
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: ${{ matrix.toolchain }}
           components: rustfmt, clippy
 
       - name: Install sccache
         uses: mozilla-actions/sccache-action@8417cffc2ec64127ad83077aceaa8631f7cdc83e
 
       - name: Validate native dependencies (pkg-config)
+        if: runner.os == 'Linux'
         run: pkg-config --version
 
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: "rust-ci-${{ github.job }}"
+          shared-key: "rust-ci-${{ github.job }}-${{ runner.os }}-${{ matrix.toolchain }}"
           cache-on-failure: true
           add-job-id-key: false
           cache-directories: |
-            /home/runner/.cache/sccache
+            ${{ env.SCCACHE_DIR }}
 
       - name: Fetch deps (warm cache)
         run: cargo fetch --locked

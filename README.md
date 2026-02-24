@@ -128,6 +128,20 @@ cargo build -p spex-transport
 cargo test
 ```
 
+### CI (matrix)
+
+O pipeline em `.github/workflows/rust.yml` executa uma matrix com:
+
+- **Sistemas operacionais**: `ubuntu-latest` e `macos-latest`
+- **Toolchains Rust**: `stable` e `beta`
+
+Escopo por job:
+
+- **build-test**: `cargo build` em toda a matrix; suíte completa de testes (`default`, `all-features`, `release`) somente em `stable` no Linux para controlar custo de CI.
+- **lint**: `cargo fmt --check` e `cargo clippy -D warnings` em toda a matrix.
+
+O cache é segregado por job/SO/toolchain para evitar colisões entre ambientes.
+
 ### MLS external commit handling (deterministic)
 
 O `spex-mls` agora expõe APIs de alto nível para:
