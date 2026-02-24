@@ -76,3 +76,22 @@ O log append-only de checkpoints permite **revogação e recuperação verificá
 
 Clientes devem validar o root da Merkle tree e rejeitar logs com inconsistências, garantindo
 que revogações e recuperações sejam auditáveis.
+
+
+## Robustez adversarial (fuzz + property tests)
+
+A superfície de entrada externa do SPEX deve ser validada com testes adversariais contínuos:
+
+- Execute fuzz targets para decoding/parsing crítico (CTAP2/CBOR, bridge HTTP e payloads P2P).
+- Mantenha property tests para invariantes de determinismo/idempotência em validadores de grant/PoW.
+- Cubra casos negativos obrigatórios: truncamento, tipos inesperados e encodings inválidos (base64/hash/assinatura).
+- Toda entrada não-confiável deve falhar com erro explícito e auditável, nunca via panic path.
+
+Comandos de smoke recomendados antes de release:
+
+```bash
+cargo test -p spex-transport p2p_ingest_property
+cargo test -p spex-bridge adversarial_parsing
+cargo fuzz run p2p_grant_payload_validation --manifest-path fuzz/Cargo.toml -- -runs=1
+cargo fuzz run p2p_puzzle_payload_validation --manifest-path fuzz/Cargo.toml -- -runs=1
+```
