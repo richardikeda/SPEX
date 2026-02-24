@@ -144,3 +144,9 @@ Ao implementar fora de Rust, mantenha os seguintes princípios:
 
 Se você implementar armazenamento local, use um arquivo equivalente ao `~/.spex/state.json` para
 manter chaves e contatos, com permissões restritas e criptografia em repouso quando possível.
+
+## MLS callbacks and out-of-order policy
+
+- `spex-client::apply_thread_commit_with_events` conecta commits MLS a callbacks consumíveis pela aplicação para eventos de `Rekey`, `MembershipUpdated` e `MembershipRemoved`.
+- `spex-mls` fornece `process_external_commit_explicit`, `detect_external_commit_gap` e `process_external_commit_with_resync` para controle determinístico de commits externos.
+- Commits fora de ordem retornam erro estruturado e não alteram estado local sem recuperação explícita.

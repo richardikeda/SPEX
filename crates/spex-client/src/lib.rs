@@ -20,7 +20,7 @@ use spex_core::{
     types::{to_fixed, ContactCard, Ctap2Cbor, GrantToken, ProtoSuite, ThreadConfig},
     validation::{self, GrantPowValidationError},
 };
-use spex_mls::{cfg_hash_for_thread_config, Group, GroupConfig};
+use spex_mls::{cfg_hash_for_thread_config, Commit, Group, GroupConfig};
 use spex_transport::{
     chunking::{chunk_data, Chunk, ChunkingConfig},
     inbox::{
@@ -325,6 +325,23 @@ pub struct GrantState {
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct CheckpointLogState {
     pub log_base64: String,
+}
+
+/// High-level MLS event types emitted while applying commits to thread state.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MlsThreadEventKind {
+    Rekey,
+    MembershipUpdated,
+    MembershipRemoved,
+}
+
+/// High-level MLS event payload consumed by application callbacks.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MlsThreadEvent {
+    pub thread_id_hex: String,
+    pub epoch: u64,
+    pub kind: MlsThreadEventKind,
+    pub member_id: Option<String>,
 }
 
 /// Plain request token data.
@@ -1547,6 +1564,61 @@ pub fn accept_request_for_state(
     })
 }
 
+/// Applies an MLS commit to thread metadata and emits deterministic callback events.
+pub fn apply_thread_commit_with_events<F>(
+    thread_state: &mut ThreadState,
+    commit: &Commit,
+    mut on_event: F,
+) -> Result<(), ClientError>
+where
+    F: FnMut(MlsThreadEvent),
+{
+    if commit.epoch != thread_state.epoch + 1 {
+        return Err(ClientError::Mls(format!(
+            "out-of-order commit: expected epoch {}, received {}",
+            thread_state.epoch + 1,
+            commit.epoch
+        )));
+    }
+
+    for member in &commit.added_members {
+        if !thread_state.members.contains(member) {
+            thread_state.members.push(member.clone());
+            on_event(MlsThreadEvent {
+                thread_id_hex: thread_state.thread_id_hex.clone(),
+                epoch: commit.epoch,
+                kind: MlsThreadEventKind::MembershipUpdated,
+                member_id: Some(member.clone()),
+            });
+        }
+    }
+
+    for member in &commit.removed_members {
+        if let Some(index) = thread_state
+            .members
+            .iter()
+            .position(|current| current == member)
+        {
+            thread_state.members.remove(index);
+            on_event(MlsThreadEvent {
+                thread_id_hex: thread_state.thread_id_hex.clone(),
+                epoch: commit.epoch,
+                kind: MlsThreadEventKind::MembershipRemoved,
+                member_id: Some(member.clone()),
+            });
+        }
+    }
+
+    thread_state.epoch = commit.epoch;
+    on_event(MlsThreadEvent {
+        thread_id_hex: thread_state.thread_id_hex.clone(),
+        epoch: commit.epoch,
+        kind: MlsThreadEventKind::Rekey,
+        member_id: None,
+    });
+    Ok(())
+}
+
 /// Creates a new thread state with MLS metadata for the provided members.
 pub fn create_thread_state(
     identity: &IdentityState,
@@ -2005,6 +2077,65 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_apply_thread_commit_with_events_emits_callbacks() {
+        let mut thread = ThreadState {
+            thread_id_hex: "abcd".to_string(),
+            members: vec!["alice".to_string(), "bob".to_string()],
+            created_at: 0,
+            messages: Vec::new(),
+            proto_major: 0,
+            proto_minor: 1,
+            ciphersuite_id: 1,
+            cfg_hash_id: 1,
+            cfg_hash_hex: "00".repeat(32),
+            flags: 0,
+            initial_secret_hex: "11".repeat(32),
+            next_seq: 0,
+            epoch: 1,
+        };
+        let mut commit = Commit::new(2);
+        commit.added_members.push("carol".to_string());
+        commit.removed_members.push("bob".to_string());
+
+        let mut events = Vec::new();
+        apply_thread_commit_with_events(&mut thread, &commit, |event| events.push(event))
+            .expect("apply commit");
+
+        assert_eq!(thread.epoch, 2);
+        assert_eq!(
+            thread.members,
+            vec!["alice".to_string(), "carol".to_string()]
+        );
+        assert_eq!(events.len(), 3);
+        assert_eq!(events[0].kind, MlsThreadEventKind::MembershipUpdated);
+        assert_eq!(events[1].kind, MlsThreadEventKind::MembershipRemoved);
+        assert_eq!(events[2].kind, MlsThreadEventKind::Rekey);
+    }
+
+    #[test]
+    fn test_apply_thread_commit_with_events_rejects_out_of_order_epoch() {
+        let mut thread = ThreadState {
+            thread_id_hex: "abcd".to_string(),
+            members: vec!["alice".to_string()],
+            created_at: 0,
+            messages: Vec::new(),
+            proto_major: 0,
+            proto_minor: 1,
+            ciphersuite_id: 1,
+            cfg_hash_id: 1,
+            cfg_hash_hex: "00".repeat(32),
+            flags: 0,
+            initial_secret_hex: "11".repeat(32),
+            next_seq: 0,
+            epoch: 1,
+        };
+        let commit = Commit::new(4);
+
+        let err = apply_thread_commit_with_events(&mut thread, &commit, |_| {})
+            .expect_err("epoch gap must fail");
+        assert!(matches!(err, ClientError::Mls(_)));
+    }
     #[test]
     fn test_contact_redeem_outcome_reason() {
         let outcome = ContactRedeemOutcome {
