@@ -11,10 +11,15 @@ https://semver.org/
 
 ### Scope
 - Work in progress after `0.1.65`.
-- Current repository version is tracked in `VERSION.md` (`VERSION=0.1.67`).
+- Current repository version is tracked in `VERSION.md`.
 
 ### Notes
 - Changes since `0.1.65` are not part of a published release section yet.
+
+### Documentation
+- Reorganizado `TODO.md` para conter apenas backlog acionável, removendo blocos de funcionalidades já entregues.
+- Itens concluídos sobre inbox write/scan na bridge, integração MLS existente e runtime P2P operacional foram consolidados no histórico de documentação e referenciados no roadmap do `README.md`.
+- Alinhada a consistência de status entre `README.md`, `TODO.md` e `docs/bridge-api.md`.
 
 ---
 
