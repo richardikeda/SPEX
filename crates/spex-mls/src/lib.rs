@@ -180,6 +180,12 @@ impl Group {
 
     /// Applies a commit to the group, updating the context, secrets, and epoch.
     pub fn apply_commit(&mut self, commit: Commit) -> Result<&GroupContext, MlsError> {
+        if commit.epoch != self.epoch + 1 {
+            return Err(MlsError::OutOfOrderCommit(CommitOrderError {
+                expected_epoch: self.epoch + 1,
+                received_epoch: commit.epoch,
+            }));
+        }
         if let Some(proto_suite) = commit.proto_suite {
             self.context.proto_suite = proto_suite;
         }
@@ -211,6 +217,37 @@ impl Group {
         self.context.rebuild_extensions();
         self.epoch = commit.epoch;
         Ok(&self.context)
+    }
+
+    /// Computes the epoch ordering relationship for a received epoch.
+    pub fn detect_epoch_gap(&self, received_epoch: u64) -> EpochGap {
+        detect_epoch_gap(self.epoch, received_epoch)
+    }
+
+    /// Attempts deterministic recovery by applying contiguous missing commits before the target commit.
+    pub fn apply_commit_with_recovery(
+        &mut self,
+        target: Commit,
+        mut missing_commits: Vec<Commit>,
+    ) -> Result<&GroupContext, MlsError> {
+        match self.detect_epoch_gap(target.epoch) {
+            EpochGap::Current | EpochGap::Stale { .. } => self.apply_commit(target),
+            EpochGap::Next => self.apply_commit(target),
+            EpochGap::Gap { missing, .. } => {
+                missing_commits.sort_by_key(|commit| commit.epoch);
+                let epochs: Vec<u64> = missing_commits.iter().map(|commit| commit.epoch).collect();
+                if epochs != missing {
+                    return Err(MlsError::OutOfOrderCommit(CommitOrderError {
+                        expected_epoch: self.epoch + 1,
+                        received_epoch: target.epoch,
+                    }));
+                }
+                for commit in missing_commits {
+                    self.apply_commit(commit)?;
+                }
+                self.apply_commit(target)
+            }
+        }
     }
 
     /// Adds a member to the group and returns the generated commit.
@@ -366,6 +403,26 @@ impl Group {
     }
 }
 
+/// Determines whether a received epoch is stale, next, or has a gap from local state.
+pub fn detect_epoch_gap(local_epoch: u64, received_epoch: u64) -> EpochGap {
+    if received_epoch == local_epoch {
+        EpochGap::Current
+    } else if received_epoch == local_epoch + 1 {
+        EpochGap::Next
+    } else if received_epoch < local_epoch {
+        EpochGap::Stale {
+            expected: local_epoch + 1,
+            found: received_epoch,
+        }
+    } else {
+        EpochGap::Gap {
+            expected: local_epoch + 1,
+            found: received_epoch,
+            missing: ((local_epoch + 1)..received_epoch).collect(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Commit {
     pub epoch: u64,
@@ -415,6 +472,36 @@ pub enum ValidationError {
     ProtoSuiteMismatch,
 }
 
+/// Describes deterministic ordering failures for incoming commits.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CommitOrderError {
+    pub expected_epoch: u64,
+    pub received_epoch: u64,
+}
+
+/// Captures epoch distance between local state and a received commit.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum EpochGap {
+    Current,
+    Next,
+    Stale {
+        expected: u64,
+        found: u64,
+    },
+    Gap {
+        expected: u64,
+        found: u64,
+        missing: Vec<u64>,
+    },
+}
+
+/// Carries an external commit message with explicit epoch metadata.
+#[derive(Clone, Debug)]
+pub struct ExternalCommit {
+    pub epoch: u64,
+    pub message: MlsMessage,
+}
+
 #[derive(Debug)]
 pub enum MlsError {
     UnsupportedHashId(u16),
@@ -423,6 +510,7 @@ pub enum MlsError {
     Encryption,
     Decryption,
     Spex(SpexError),
+    OutOfOrderCommit(CommitOrderError),
 }
 
 impl fmt::Display for MlsError {
@@ -435,6 +523,11 @@ impl fmt::Display for MlsError {
             Self::Encryption => write!(f, "encryption error"),
             Self::Decryption => write!(f, "decryption error"),
             Self::Spex(err) => write!(f, "spex error: {err}"),
+            Self::OutOfOrderCommit(err) => write!(
+                f,
+                "out-of-order commit: expected epoch {}, received {}",
+                err.expected_epoch, err.received_epoch
+            ),
         }
     }
 }
@@ -454,6 +547,13 @@ pub fn cfg_hash_for_thread_config(
     thread_config: &ThreadConfig,
 ) -> Result<Vec<u8>, MlsError> {
     Ok(hash_ctap2_cbor_value(hash_id, thread_config)?)
+}
+
+/// Parses raw bytes into an external MLS commit message with explicit epoch metadata.
+pub fn parse_external_commit(bytes: &[u8], epoch: u64) -> Result<ExternalCommit, MlsRsError> {
+    let message = MlsMessage::from_bytes(bytes)
+        .map_err(|err| MlsRsError::MalformedExternalCommit(err.to_string()))?;
+    Ok(ExternalCommit { epoch, message })
 }
 
 /// Builds the SPEX MLS extensions for the provided configuration.
@@ -570,6 +670,8 @@ pub enum MlsRsError {
     UnknownMember,
     Validation(ValidationError),
     LibraryError(String),
+    MalformedExternalCommit(String),
+    OutOfOrderCommit(CommitOrderError),
 }
 
 impl fmt::Display for MlsRsError {
@@ -585,6 +687,12 @@ impl fmt::Display for MlsRsError {
             Self::UnknownMember => write!(f, "unknown MLS member"),
             Self::Validation(err) => write!(f, "validation error: {err:?}"),
             Self::LibraryError(err) => write!(f, "mls-rs error: {err}"),
+            Self::MalformedExternalCommit(err) => write!(f, "malformed external commit: {err}"),
+            Self::OutOfOrderCommit(err) => write!(
+                f,
+                "out-of-order external commit: expected epoch {}, received {}",
+                err.expected_epoch, err.received_epoch
+            ),
         }
     }
 }
@@ -740,6 +848,64 @@ impl MlsRsGroup {
             _ => Err(MlsRsError::LibraryError(
                 "unexpected MLS message type".to_string(),
             )),
+        }
+    }
+
+    /// Returns how an incoming explicit external commit epoch relates to the local epoch.
+    pub fn detect_external_commit_gap(&self, incoming_epoch: u64) -> EpochGap {
+        detect_epoch_gap(self.epoch(), incoming_epoch)
+    }
+
+    /// Applies an explicit external commit only when the epoch is the exact next step.
+    pub fn process_external_commit_explicit(
+        &mut self,
+        external_commit: ExternalCommit,
+    ) -> Result<mls_rs::group::CommitMessageDescription, MlsRsError> {
+        match self.detect_external_commit_gap(external_commit.epoch) {
+            EpochGap::Next => self.process_commit_message(external_commit.message),
+            _ => Err(MlsRsError::OutOfOrderCommit(CommitOrderError {
+                expected_epoch: self.epoch() + 1,
+                received_epoch: external_commit.epoch,
+            })),
+        }
+    }
+
+    /// Recovers from epoch gaps by fetching and applying missing commits in deterministic order.
+    pub fn process_external_commit_with_resync<F>(
+        &mut self,
+        external_commit: ExternalCommit,
+        mut fetch_missing: F,
+    ) -> Result<mls_rs::group::CommitMessageDescription, MlsRsError>
+    where
+        F: FnMut(u64, u64) -> Result<Vec<ExternalCommit>, MlsRsError>,
+    {
+        match self.detect_external_commit_gap(external_commit.epoch) {
+            EpochGap::Current | EpochGap::Stale { .. } => {
+                Err(MlsRsError::OutOfOrderCommit(CommitOrderError {
+                    expected_epoch: self.epoch() + 1,
+                    received_epoch: external_commit.epoch,
+                }))
+            }
+            EpochGap::Next => self.process_external_commit_explicit(external_commit),
+            EpochGap::Gap {
+                expected,
+                found,
+                missing,
+            } => {
+                let mut commits = fetch_missing(expected, found)?;
+                commits.sort_by_key(|commit| commit.epoch);
+                let epochs: Vec<u64> = commits.iter().map(|commit| commit.epoch).collect();
+                if epochs != missing {
+                    return Err(MlsRsError::OutOfOrderCommit(CommitOrderError {
+                        expected_epoch: expected,
+                        received_epoch: found,
+                    }));
+                }
+                for commit in commits {
+                    self.process_external_commit_explicit(commit)?;
+                }
+                self.process_external_commit_explicit(external_commit)
+            }
         }
     }
 

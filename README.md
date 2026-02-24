@@ -82,6 +82,16 @@ cargo build -p spex-transport
 cargo test
 ```
 
+### MLS external commit handling (deterministic)
+
+O `spex-mls` agora expõe APIs de alto nível para:
+
+- processamento explícito de commits externos com `epoch` informado pela aplicação;
+- detecção de `epoch gap` (`Current`, `Next`, `Stale`, `Gap`);
+- ressincronização determinística via fetch/aplicação sequencial de commits faltantes.
+
+Commits fora de ordem são rejeitados com erro estruturado e a recuperação só é aceita quando os epochs faltantes são fornecidos exatamente na sequência esperada.
+
 ### Robustness Strategy
 
 Para reforçar parsing/validação contra entradas arbitrárias, o repositório inclui:
