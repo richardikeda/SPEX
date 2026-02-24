@@ -3,6 +3,11 @@
 Esta documentação descreve os endpoints expostos pela bridge HTTP do SPEX e os requisitos de
 validação para payloads, PoW e grants.
 
+## Status de implementação (alinhamento)
+
+- `PUT /inbox/:key` e `GET /inbox/:key` estão implementados na bridge e documentados como endpoints atuais.
+- A integração MLS e o runtime P2P não são responsabilidades diretas da bridge; essas pendências ficam no roadmap do cliente/transporte em `README.md` e `TODO.md`.
+
 ## Convenções
 
 - **Base64**: todos os campos binários são transportados em base64 padrão (RFC 4648).

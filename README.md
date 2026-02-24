@@ -28,17 +28,21 @@ Implementação inicial em andamento com os seguintes componentes e nível atual
   para peers/bootstrap (gravação atômica) e peer scoring anti-eclipse com ban temporário.
   de reassemblagem/verificação e helpers de publicação/recuperação via manifestos, incluindo
   publicação direta de chunks e recuperação de payloads a partir de manifestos compartilhados.
-  - **spex-bridge**: bridge HTTP com SQLite para cards/slots, rate limit e validações de grant/PoW,
-    com endpoint de leitura de inbox (scan) como fallback.
+  - **spex-bridge**: bridge HTTP com SQLite para cards/slots/inbox, rate limit e validações de grant/PoW,
+    com endpoint de escrita (`PUT /inbox/:key`) e leitura (`GET /inbox/:key`) para ingest/scan.
 - **spex-cli**: CLI de referência para identidades, cartões, request/grant, threads, envio de
   mensagens (gera envelope + chunks/manifestos) e polling de inbox via transporte, bridge ou rede P2P.
 - **spex-client**: biblioteca de alto nível que padroniza criação de estado local, cifragem MLS,
   validações de request/grant e helpers de chunking usados pelo CLI.
 
-## O que falta implementar
+## Roadmap (pendências atuais)
 
-- Expansão de testes MLS interop avançados com cenários de conformidade (updates, ressincronização, permutação) - **Em andamento**.
-- Outras pendências estão listadas em [TODO.md](TODO.md).
+- **Escrita de inbox via cliente/transporte**: concluir APIs de alto nível para publicar envelopes na bridge e validar fluxo E2E CLI↔bridge.
+  - Referências: [TODO.md](TODO.md), [docs/bridge-api.md](docs/bridge-api.md), testes de bridge em `crates/spex-bridge/tests/integration.rs`.
+- **Hardening/observabilidade do runtime P2P**: reduzir latências operacionais, ampliar reputação anti-eclipse e métricas/tracing de publish/recovery/fallback.
+  - Referências: [TODO.md](TODO.md), testes de transporte em `crates/spex-transport/tests/p2p_manifest_delivery.rs`.
+- **Cobertura MLS de conformidade avançada**: ampliar cenários de interop/permutação/ressincronização e casos negativos de epoch.
+  - Referências: [TODO.md](TODO.md), testes em `crates/spex-mls/tests/mls_scenarios.rs` e `crates/spex-mls/tests/mls_real_groups.rs`.
 
 ## Documentação
 
@@ -434,10 +438,9 @@ Responses:
 
 ## Próximos passos
 
-1. **Integração MLS completa** (handshake + estados reais).
-2. **Bridge inbox** compatível com o fallback HTTP.
-3. **Runtime libp2p** com anti-eclipse e persistência.
-4. **CLI end-to-end** conectado ao transporte real.
+1. **Completar escrita de inbox no cliente/transporte** com cobertura E2E CLI↔bridge (grant/PoW).
+2. **Ampliar hardening e observabilidade do runtime libp2p** para operação contínua em produção.
+3. **Expandir suíte MLS avançada** com cenários adicionais de conformidade e recuperação.
 
 ## Test vectors v0.1.1
 
