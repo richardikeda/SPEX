@@ -12,6 +12,7 @@ libfuzzer-sys = "0.4"
 serde_cbor = "0.11"
 spex-core = { path = "../spex-core" }
 spex-bridge = { path = "../crates/spex-bridge" }
+spex-mls = { path = "../crates/spex-mls" }
 
 [[bin]]
 name = "grant_token_decode"
@@ -44,6 +45,13 @@ bench = false
 [[bin]]
 name = "inbox_store_request_from_bytes"
 path = "fuzz_targets/inbox_store_request_from_bytes.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "mls_parse_external_commit"
+path = "fuzz_targets/mls_parse_external_commit.rs"
 test = false
 doc = false
 bench = false

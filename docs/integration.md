@@ -160,6 +160,8 @@ manter chaves e contatos, com permissões restritas e criptografia em repouso qu
 | Commit aplicado fora de ordem (N+1 sem N) | `receives_n_plus_one_without_n_then_recovers` | Rejeição inicial + recuperação explícita por `process_external_commit_with_resync`. |
 | Recuperação parcial inconsistente | `rejects_partial_resync_recovery_with_missing_epochs` | Rejeição explícita com `OutOfOrderCommit` e epoch local inalterado. |
 | Sequência de recovery com epochs incompatíveis | `rejects_incompatible_recovery_sequence` | Rejeição determinística com erro estruturado. |
+| Determinismo sob permutação de commits faltantes (property-based) | `recovery_is_deterministic_under_missing_commit_permutations` | Resultado convergente no mesmo epoch final independentemente da ordem de entrada. |
+| Parsing de external commit com entrada arbitrária (fuzz) | `mls_parse_external_commit` | Payload malformado retorna erro explícito sem panic path. |
 
 
 ## Perfis explícitos de tempo no P2P
