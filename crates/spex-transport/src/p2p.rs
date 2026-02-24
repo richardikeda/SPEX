@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use futures::StreamExt;
@@ -17,6 +18,8 @@ use libp2p::kad::{
 use libp2p::multiaddr::Protocol;
 use libp2p::swarm::{NetworkBehaviour, Swarm, SwarmEvent};
 use libp2p::{Multiaddr, PeerId, SwarmBuilder};
+use rand::Rng;
+use tracing::{info, warn};
 
 use spex_core::hash::{hash_bytes, HashId};
 
@@ -43,6 +46,52 @@ pub struct P2pNodeConfig {
     pub peer_ban_duration: Duration,
 }
 
+/// Deployment profile with explicit timeout defaults for publish/query/recovery flows.
+#[derive(Clone, Copy, Debug)]
+pub enum P2pRuntimeProfile {
+    Dev,
+    Test,
+    Prod,
+}
+
+/// Retry policy used by adaptive backoff operations.
+#[derive(Clone, Debug)]
+pub struct AdaptiveRetryConfig {
+    pub base_delay: Duration,
+    pub max_delay: Duration,
+    pub max_retries: u32,
+    pub jitter_ratio: f64,
+}
+
+impl AdaptiveRetryConfig {
+    /// Computes capped exponential delay with multiplicative jitter for one retry attempt.
+    fn delay_for_attempt(&self, attempt: u32) -> Duration {
+        let exponent = 2u32.saturating_pow(attempt.min(20));
+        let capped = self.max_delay.min(self.base_delay.saturating_mul(exponent));
+        let mut rng = rand::thread_rng();
+        let jitter = rng.gen_range((1.0 - self.jitter_ratio)..=(1.0 + self.jitter_ratio));
+        capped.mul_f64(jitter.max(0.1))
+    }
+}
+
+/// Snapshot of counters and latency histograms collected for p2p transport operations.
+#[derive(Clone, Debug, Default)]
+pub struct P2pMetricsSnapshot {
+    pub publish_success: u64,
+    pub publish_timeout: u64,
+    pub publish_retries: u64,
+    pub query_success: u64,
+    pub query_timeout: u64,
+    pub query_retries: u64,
+    pub recovery_success: u64,
+    pub recovery_timeout: u64,
+    pub recovery_retries: u64,
+    pub reassemble_failures: u64,
+    pub publish_latency_ms: Vec<u64>,
+    pub query_latency_ms: Vec<u64>,
+    pub recovery_latency_ms: Vec<u64>,
+}
+
 impl Default for P2pNodeConfig {
     /// Builds a default P2P node configuration with localhost listen and short timeouts.
     fn default() -> Self {
@@ -57,6 +106,50 @@ impl Default for P2pNodeConfig {
             peer_ban_duration: Duration::from_secs(30),
         }
     }
+}
+
+impl P2pNodeConfig {
+    /// Builds node config defaults for explicit runtime profiles used by environments.
+    pub fn for_profile(profile: P2pRuntimeProfile) -> Self {
+        let mut config = Self::default();
+        match profile {
+            P2pRuntimeProfile::Dev => {
+                config.publish_wait = Duration::from_secs(2);
+                config.query_timeout = Duration::from_secs(5);
+                config.manifest_wait = Duration::from_secs(5);
+            }
+            P2pRuntimeProfile::Test => {
+                config.publish_wait = Duration::from_secs(3);
+                config.query_timeout = Duration::from_secs(6);
+                config.manifest_wait = Duration::from_secs(6);
+            }
+            P2pRuntimeProfile::Prod => {
+                config.publish_wait = Duration::from_secs(6);
+                config.query_timeout = Duration::from_secs(12);
+                config.manifest_wait = Duration::from_secs(12);
+            }
+        }
+        config
+    }
+
+    /// Builds retry policy defaults tuned for publish/query/recovery across profiles.
+    fn adaptive_retry(&self) -> AdaptiveRetryConfig {
+        AdaptiveRetryConfig {
+            base_delay: Duration::from_millis(150),
+            max_delay: self
+                .publish_wait
+                .max(self.query_timeout)
+                .min(Duration::from_secs(2)),
+            max_retries: 6,
+            jitter_ratio: 0.25,
+        }
+    }
+}
+
+/// Mutable metrics state protected by a mutex so async flows can update counters safely.
+#[derive(Default)]
+struct P2pMetrics {
+    snapshot: P2pMetricsSnapshot,
 }
 
 /// Captures runtime score data for one remote peer.
@@ -137,6 +230,7 @@ pub struct P2pTransport {
     known_manifests: Vec<ChunkManifest>,
     known_index_keys: HashSet<String>,
     peer_scores: HashMap<PeerId, PeerScore>,
+    metrics: Arc<Mutex<P2pMetrics>>,
 }
 
 impl P2pTransport {
@@ -162,12 +256,21 @@ impl P2pTransport {
             known_manifests: Vec::new(),
             known_index_keys: HashSet::new(),
             peer_scores: HashMap::new(),
+            metrics: Arc::new(Mutex::new(P2pMetrics::default())),
         };
         transport.load_persisted_state()?;
         transport.configure_peers().await?;
         transport.collect_listen_addrs().await?;
         transport.persist_state()?;
         Ok(transport)
+    }
+
+    /// Returns a clone of collected counters and histograms for assertions and diagnostics.
+    pub fn metrics_snapshot(&self) -> P2pMetricsSnapshot {
+        self.metrics
+            .lock()
+            .map(|metrics| metrics.snapshot.clone())
+            .unwrap_or_default()
     }
 
     /// Returns the local peer ID for this transport node.
@@ -222,6 +325,8 @@ impl P2pTransport {
         chunks: &[Chunk],
     ) -> Result<(), TransportError> {
         self.known_manifests.push(manifest.clone());
+        let operation_start = Instant::now();
+        let retry = self.node_config.adaptive_retry();
         for inbox_key in inbox_keys {
             self.known_index_keys.insert(hex::encode(inbox_key));
         }
@@ -279,6 +384,7 @@ impl P2pTransport {
                 self.drive_swarm(Duration::from_millis(200), &mut ignored, |_, _| {})
                     .await;
             }
+            let mut attempts = 0;
             loop {
                 match self
                     .swarm
@@ -286,10 +392,24 @@ impl P2pTransport {
                     .gossipsub
                     .publish(topic.clone(), payload.clone())
                 {
-                    Ok(_) => break,
-                    Err(PublishError::InsufficientPeers) if Instant::now() < deadline => {
-                        self.drive_swarm(Duration::from_millis(200), &mut ignored, |_, _| {})
-                            .await;
+                    Ok(_) => {
+                        info!(target: "spex_transport::p2p", operation="publish_manifest", attempt=attempts, "manifest publish completed");
+                        break;
+                    }
+                    Err(PublishError::InsufficientPeers)
+                        if Instant::now() < deadline && attempts < retry.max_retries =>
+                    {
+                        attempts += 1;
+                        self.record_retry("publish");
+                        let delay = retry.delay_for_attempt(attempts);
+                        warn!(target: "spex_transport::p2p", operation="publish_manifest", attempt=attempts, delay_ms=delay.as_millis() as u64, "publish waiting for peers");
+                        self.drive_swarm(delay, &mut ignored, |_, _| {}).await;
+                    }
+                    Err(PublishError::InsufficientPeers) => {
+                        self.record_timeout("publish");
+                        return Err(TransportError::Libp2p(
+                            "manifest publish timed out waiting for peers".to_string(),
+                        ));
                     }
                     Err(err) => return Err(err.into()),
                 }
@@ -298,6 +418,7 @@ impl P2pTransport {
         self.drive_swarm(self.node_config.publish_wait, &mut ignored, |_, _| {})
             .await;
         self.persist_state()?;
+        self.record_success("publish", operation_start.elapsed());
         Ok(())
     }
 
@@ -343,13 +464,20 @@ impl P2pTransport {
             .subscribe(&topic)
             .map_err(|err| TransportError::Libp2p(err.to_string()))?;
 
+        let operation_start = Instant::now();
+        let retry = self.node_config.adaptive_retry();
         let mut payloads = Vec::new();
         let mut resubscribe_at = Instant::now();
+        let mut resubscribe_attempt = 0;
         let deadline = Instant::now() + wait;
         while Instant::now() < deadline {
             if Instant::now() >= resubscribe_at {
                 let _ = self.swarm.behaviour_mut().gossipsub.subscribe(&topic);
-                resubscribe_at = Instant::now() + Duration::from_secs(1);
+                let delay = retry.delay_for_attempt(resubscribe_attempt.min(retry.max_retries));
+                resubscribe_attempt = resubscribe_attempt.saturating_add(1);
+                self.record_retry("recovery");
+                info!(target: "spex_transport::p2p", operation="recovery_inbox", attempt=resubscribe_attempt, delay_ms=delay.as_millis() as u64, "resubscribing inbox topic");
+                resubscribe_at = Instant::now() + delay;
             }
             let delay = tokio::time::sleep(Duration::from_millis(200));
             tokio::pin!(delay);
@@ -378,9 +506,18 @@ impl P2pTransport {
             };
             let payload = match reassemble_payload_from_store(&manifest, &store, &self.config) {
                 Ok(payload) => payload,
-                Err(_) => continue,
+                Err(_) => {
+                    self.record_reassemble_failure();
+                    warn!(target: "spex_transport::p2p", operation="reassemble", "failed to rebuild payload from chunk store");
+                    continue;
+                }
             };
             recovered.push(payload);
+        }
+        if recovered.is_empty() {
+            self.record_timeout("recovery");
+        } else {
+            self.record_success("recovery", operation_start.elapsed());
         }
         self.persist_state()?;
         Ok(recovered)
@@ -562,8 +699,11 @@ impl P2pTransport {
             pending.insert(query_id, descriptor.hash.clone());
         }
 
+        let started = Instant::now();
+        let retry = self.node_config.adaptive_retry();
         let deadline = Instant::now() + self.node_config.query_timeout;
         let mut store = HashMap::new();
+        let mut retries: HashMap<Vec<u8>, u32> = HashMap::new();
         while !pending.is_empty() && Instant::now() < deadline {
             if let SwarmEvent::Behaviour(SpexBehaviourEvent::Kademlia(
                 KademliaEvent::OutboundQueryProgressed { id, result, .. },
@@ -581,10 +721,20 @@ impl P2pTransport {
                         GetRecordOk::FinishedWithNoAdditionalRecord { .. } => {
                             if Instant::now() < deadline {
                                 if let Some(hash) = pending.get(&id).cloned() {
-                                    let record_key = RecordKey::new(&hash);
-                                    let new_id =
-                                        self.swarm.behaviour_mut().kademlia.get_record(record_key);
-                                    pending.insert(new_id, hash);
+                                    let attempt = retries.entry(hash.clone()).or_insert(0);
+                                    if *attempt < retry.max_retries {
+                                        *attempt += 1;
+                                        self.record_retry("query");
+                                        let delay = retry.delay_for_attempt(*attempt);
+                                        tokio::time::sleep(delay).await;
+                                        let record_key = RecordKey::new(&hash);
+                                        let new_id = self
+                                            .swarm
+                                            .behaviour_mut()
+                                            .kademlia
+                                            .get_record(record_key);
+                                        pending.insert(new_id, hash);
+                                    }
                                 }
                             }
                         }
@@ -595,11 +745,66 @@ impl P2pTransport {
         }
 
         if pending.is_empty() {
+            self.record_success("query", started.elapsed());
             Ok(store)
         } else {
+            self.record_timeout("query");
             Err(TransportError::Libp2p(
                 "timed out waiting for DHT records".to_string(),
             ))
+        }
+    }
+
+    /// Updates retry counters for publish/query/recovery operation classes.
+    fn record_retry(&self, operation: &str) {
+        if let Ok(mut metrics) = self.metrics.lock() {
+            match operation {
+                "publish" => metrics.snapshot.publish_retries += 1,
+                "query" => metrics.snapshot.query_retries += 1,
+                "recovery" => metrics.snapshot.recovery_retries += 1,
+                _ => {}
+            }
+        }
+    }
+
+    /// Updates timeout counters for publish/query/recovery operation classes.
+    fn record_timeout(&self, operation: &str) {
+        if let Ok(mut metrics) = self.metrics.lock() {
+            match operation {
+                "publish" => metrics.snapshot.publish_timeout += 1,
+                "query" => metrics.snapshot.query_timeout += 1,
+                "recovery" => metrics.snapshot.recovery_timeout += 1,
+                _ => {}
+            }
+        }
+    }
+
+    /// Updates success counters and latency histograms for operation classes.
+    fn record_success(&self, operation: &str, latency: Duration) {
+        if let Ok(mut metrics) = self.metrics.lock() {
+            let latency_ms = latency.as_millis() as u64;
+            match operation {
+                "publish" => {
+                    metrics.snapshot.publish_success += 1;
+                    metrics.snapshot.publish_latency_ms.push(latency_ms);
+                }
+                "query" => {
+                    metrics.snapshot.query_success += 1;
+                    metrics.snapshot.query_latency_ms.push(latency_ms);
+                }
+                "recovery" => {
+                    metrics.snapshot.recovery_success += 1;
+                    metrics.snapshot.recovery_latency_ms.push(latency_ms);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// Increments the counter that tracks manifest reassemble failures.
+    fn record_reassemble_failure(&self) {
+        if let Ok(mut metrics) = self.metrics.lock() {
+            metrics.snapshot.reassemble_failures += 1;
         }
     }
 }

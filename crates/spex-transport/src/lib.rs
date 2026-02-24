@@ -19,7 +19,9 @@ pub use ingest::{
     validate_p2p_grant_payload, validate_p2p_puzzle_payload, P2pGrantPayload, P2pPuzzlePayload,
     PowParamsPayload,
 };
-pub use p2p::{inbox_gossip_topic, P2pNodeConfig, P2pTransport};
+pub use p2p::{
+    inbox_gossip_topic, P2pMetricsSnapshot, P2pNodeConfig, P2pRuntimeProfile, P2pTransport,
+};
 pub use transport::manifest_payload;
 pub use transport::{
     collect_manifest_chunks, decode_bootstrap_snapshot, encode_bootstrap_snapshot,

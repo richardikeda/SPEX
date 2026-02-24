@@ -150,3 +150,10 @@ manter chaves e contatos, com permissões restritas e criptografia em repouso qu
 - `spex-client::apply_thread_commit_with_events` conecta commits MLS a callbacks consumíveis pela aplicação para eventos de `Rekey`, `MembershipUpdated` e `MembershipRemoved`.
 - `spex-mls` fornece `process_external_commit_explicit`, `detect_external_commit_gap` e `process_external_commit_with_resync` para controle determinístico de commits externos.
 - Commits fora de ordem retornam erro estruturado e não alteram estado local sem recuperação explícita.
+
+
+## Perfis explícitos de tempo no P2P
+
+O transporte libp2p agora expõe perfis explícitos com `P2pNodeConfig::for_profile(P2pRuntimeProfile::{Dev, Test, Prod})` para definir `publish_wait`, `query_timeout` e `manifest_wait` de forma determinística por ambiente.
+
+Operações de publish/query/recovery usam backoff adaptativo com jitter e instrumentação de métricas (contadores de sucesso/timeout/retries e histogramas de latência).
