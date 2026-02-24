@@ -23,7 +23,8 @@ Implementação inicial em andamento com os seguintes componentes e nível atual
 - **spex-mls**: integração MLS completa via `mls-rs`, com TreeKEM, commits, updates, add/remove e
   fluxos de ressincronização para grupos multi-membros.
 - **spex-transport**: base libp2p com chunking e manifestos, DHT/Kademlia, gossip, rotinas
-  de inbox scanning e validação de ingestão P2P (grant/PoW).
+  de inbox scanning e validação de ingestão P2P (grant/PoW), com snapshot persistente
+  para peers/bootstrap (gravação atômica) e peer scoring anti-eclipse com ban temporário.
   de reassemblagem/verificação e helpers de publicação/recuperação via manifestos, incluindo
   publicação direta de chunks e recuperação de payloads a partir de manifestos compartilhados.
   - **spex-bridge**: bridge HTTP com SQLite para cards/slots, rate limit e validações de grant/PoW,

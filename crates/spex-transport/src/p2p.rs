@@ -1,4 +1,5 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use futures::StreamExt;
@@ -23,7 +24,9 @@ use crate::chunking::Chunk;
 use crate::error::TransportError;
 use crate::inbox::derive_inbox_scan_key;
 use crate::transport::{
-    manifest_payload, parse_manifest_from_gossip, reassemble_payload_from_store, ChunkManifest,
+    manifest_payload, parse_manifest_from_gossip, read_bootstrap_snapshot,
+    reassemble_payload_from_store, robust_random_walk_with_sources,
+    write_bootstrap_snapshot_atomic, ChunkManifest, PersistedBootstrapState, PersistedPeer,
     TransportConfig,
 };
 
@@ -36,6 +39,8 @@ pub struct P2pNodeConfig {
     pub publish_wait: Duration,
     pub query_timeout: Duration,
     pub manifest_wait: Duration,
+    pub persistence_path: Option<PathBuf>,
+    pub peer_ban_duration: Duration,
 }
 
 impl Default for P2pNodeConfig {
@@ -48,6 +53,31 @@ impl Default for P2pNodeConfig {
             publish_wait: Duration::from_secs(2),
             query_timeout: Duration::from_secs(5),
             manifest_wait: Duration::from_secs(5),
+            persistence_path: None,
+            peer_ban_duration: Duration::from_secs(30),
+        }
+    }
+}
+
+/// Captures runtime score data for one remote peer.
+#[derive(Clone, Debug)]
+struct PeerScore {
+    score: i32,
+    timeout_penalties: u32,
+    invalid_payload_penalties: u32,
+    inconsistent_response_penalties: u32,
+    banned_until: Option<Instant>,
+}
+
+impl PeerScore {
+    /// Builds a neutral peer score state used for unseen peers.
+    fn neutral() -> Self {
+        Self {
+            score: 0,
+            timeout_penalties: 0,
+            invalid_payload_penalties: 0,
+            inconsistent_response_penalties: 0,
+            banned_until: None,
         }
     }
 }
@@ -103,6 +133,10 @@ pub struct P2pTransport {
     node_config: P2pNodeConfig,
     swarm: Swarm<SpexBehaviour>,
     listen_addrs: Vec<Multiaddr>,
+    peer_store: HashMap<PeerId, PersistedPeer>,
+    known_manifests: Vec<ChunkManifest>,
+    known_index_keys: HashSet<String>,
+    peer_scores: HashMap<PeerId, PeerScore>,
 }
 
 impl P2pTransport {
@@ -124,9 +158,15 @@ impl P2pTransport {
             node_config,
             swarm,
             listen_addrs,
+            peer_store: HashMap::new(),
+            known_manifests: Vec::new(),
+            known_index_keys: HashSet::new(),
+            peer_scores: HashMap::new(),
         };
+        transport.load_persisted_state()?;
         transport.configure_peers().await?;
         transport.collect_listen_addrs().await?;
+        transport.persist_state()?;
         Ok(transport)
     }
 
@@ -145,9 +185,19 @@ impl P2pTransport {
         self.swarm.connected_peers().count()
     }
 
+    /// Returns the number of persisted known peers tracked by this runtime.
+    pub fn known_peer_count(&self) -> usize {
+        self.peer_store.len()
+    }
+
     /// Dials a peer multiaddr and registers it for Kademlia and gossipsub.
     pub fn dial_peer(&mut self, addr: Multiaddr) -> Result<(), TransportError> {
         let (peer_id, base_addr) = split_peer_addr(&addr)?;
+        if self.is_peer_banned(&peer_id) {
+            return Err(TransportError::Libp2p(
+                "peer is temporarily banned".to_string(),
+            ));
+        }
         self.swarm
             .behaviour_mut()
             .kademlia
@@ -159,6 +209,8 @@ impl P2pTransport {
         self.swarm
             .dial(addr)
             .map_err(|err| TransportError::Libp2p(err.to_string()))?;
+        self.observe_peer(peer_id, vec![], "manual-dial");
+        self.persist_state()?;
         Ok(())
     }
 
@@ -169,6 +221,10 @@ impl P2pTransport {
         manifest: &ChunkManifest,
         chunks: &[Chunk],
     ) -> Result<(), TransportError> {
+        self.known_manifests.push(manifest.clone());
+        for inbox_key in inbox_keys {
+            self.known_index_keys.insert(hex::encode(inbox_key));
+        }
         for chunk in chunks {
             let record_key = RecordKey::new(&chunk.hash);
             let record = Record {
@@ -241,6 +297,7 @@ impl P2pTransport {
         }
         self.drive_swarm(self.node_config.publish_wait, &mut ignored, |_, _| {})
             .await;
+        self.persist_state()?;
         Ok(())
     }
 
@@ -277,6 +334,7 @@ impl P2pTransport {
         inbox_key: &[u8],
         wait: Duration,
     ) -> Result<Vec<Vec<u8>>, TransportError> {
+        self.known_index_keys.insert(hex::encode(inbox_key));
         let scan = derive_inbox_scan_key(HashId::Sha256, inbox_key);
         let topic = inbox_gossip_topic(&scan.hashed_key);
         self.swarm
@@ -324,6 +382,7 @@ impl P2pTransport {
             };
             recovered.push(payload);
         }
+        self.persist_state()?;
         Ok(recovered)
     }
 
@@ -347,6 +406,59 @@ impl P2pTransport {
     pub async fn drive_for(&mut self, duration: Duration) {
         let mut ignored = Vec::new();
         self.drive_swarm(duration, &mut ignored, |_, _| {}).await;
+    }
+
+    /// Applies timeout penalties to a peer and disconnects if ban policy triggers.
+    pub fn report_timeout(&mut self, peer_id: PeerId) {
+        self.apply_penalty(peer_id, 10, |score| score.timeout_penalties += 1);
+    }
+
+    /// Applies invalid-payload penalties to a peer and disconnects if ban policy triggers.
+    pub fn report_invalid_payload(&mut self, peer_id: PeerId) {
+        self.apply_penalty(peer_id, 25, |score| score.invalid_payload_penalties += 1);
+    }
+
+    /// Applies inconsistent-response penalties to a peer and disconnects if ban policy triggers.
+    pub fn report_inconsistent_response(&mut self, peer_id: PeerId) {
+        self.apply_penalty(peer_id, 20, |score| {
+            score.inconsistent_response_penalties += 1
+        });
+    }
+
+    /// Returns the current score of a peer for anti-eclipse assertions.
+    pub fn peer_score(&self, peer_id: PeerId) -> i32 {
+        self.peer_scores
+            .get(&peer_id)
+            .map_or(0, |state| state.score)
+    }
+
+    /// Returns whether a peer is currently under temporary ban.
+    pub fn is_peer_banned(&self, peer_id: &PeerId) -> bool {
+        self.peer_scores
+            .get(peer_id)
+            .and_then(|state| state.banned_until)
+            .is_some_and(|until| Instant::now() < until)
+    }
+
+    /// Returns peers selected for random walk while enforcing source diversity and influence caps.
+    pub fn random_walk_candidates(
+        &self,
+        seed: &[u8],
+        steps: usize,
+        max_per_origin: usize,
+    ) -> Vec<Vec<u8>> {
+        let mut origins = Vec::new();
+        for peer in self.peer_store.values() {
+            if !self.is_peer_banned(
+                &peer
+                    .peer_id
+                    .parse()
+                    .unwrap_or_else(|_| self.local_peer_id()),
+            ) {
+                origins.push(peer.origin_tag.clone());
+            }
+        }
+        robust_random_walk_with_sources(seed, steps, &origins, max_per_origin)
     }
 
     /// Drives the libp2p swarm for a bounded amount of time while handling events.
@@ -390,13 +502,20 @@ impl P2pTransport {
     /// Adds configured peers and bootstrap nodes to Kademlia and dials them.
     async fn configure_peers(&mut self) -> Result<(), TransportError> {
         let mut bootstrap_peers = Vec::new();
-        for addr in self
+        let persisted_bootstrap = self.persisted_bootstrap_addrs();
+        let addresses: Vec<Multiaddr> = self
             .node_config
             .peers
             .iter()
-            .chain(self.node_config.bootstrap_nodes.iter())
-        {
+            .cloned()
+            .chain(self.node_config.bootstrap_nodes.iter().cloned())
+            .chain(persisted_bootstrap)
+            .collect();
+        for addr in &addresses {
             let (peer_id, base_addr) = split_peer_addr(addr)?;
+            if self.is_peer_banned(&peer_id) {
+                continue;
+            }
             self.swarm
                 .behaviour_mut()
                 .kademlia
@@ -408,6 +527,7 @@ impl P2pTransport {
             self.swarm
                 .dial(addr.clone())
                 .map_err(|err| TransportError::Libp2p(err.to_string()))?;
+            self.observe_peer(peer_id, vec![addr.to_string()], infer_origin_tag(addr));
             if self
                 .node_config
                 .bootstrap_nodes
@@ -421,6 +541,7 @@ impl P2pTransport {
         if !bootstrap_peers.is_empty() {
             let _ = self.swarm.behaviour_mut().kademlia.bootstrap();
         }
+        self.persist_state()?;
         Ok(())
     }
 
@@ -480,6 +601,115 @@ impl P2pTransport {
                 "timed out waiting for DHT records".to_string(),
             ))
         }
+    }
+}
+
+/// Infers an origin tag from the first protocol component of a multiaddr.
+fn infer_origin_tag(addr: &Multiaddr) -> &str {
+    match addr.iter().next() {
+        Some(Protocol::Ip4(_)) => "ip4",
+        Some(Protocol::Ip6(_)) => "ip6",
+        Some(Protocol::Dns(_)) | Some(Protocol::Dns4(_)) | Some(Protocol::Dns6(_)) => "dns",
+        _ => "unknown",
+    }
+}
+
+impl P2pTransport {
+    /// Applies a generic penalty function and enforces disconnect/temporary-ban policy.
+    fn apply_penalty<F>(&mut self, peer_id: PeerId, penalty: i32, mutate: F)
+    where
+        F: FnOnce(&mut PeerScore),
+    {
+        let state = self
+            .peer_scores
+            .entry(peer_id)
+            .or_insert_with(PeerScore::neutral);
+        state.score -= penalty;
+        mutate(state);
+        if state.score <= -60 {
+            state.banned_until = Some(Instant::now() + self.node_config.peer_ban_duration);
+            let _ = self.swarm.disconnect_peer_id(peer_id);
+            self.swarm
+                .behaviour_mut()
+                .gossipsub
+                .remove_explicit_peer(&peer_id);
+        }
+        let _ = self.persist_state();
+    }
+
+    /// Registers peer observation metadata so restart bootstrap can be deterministic.
+    fn observe_peer(&mut self, peer_id: PeerId, addresses: Vec<String>, origin_tag: &str) {
+        let entry = self.peer_store.entry(peer_id).or_insert(PersistedPeer {
+            peer_id: peer_id.to_string(),
+            addresses: Vec::new(),
+            last_seen_unix_seconds: 0,
+            origin_tag: origin_tag.to_string(),
+        });
+        for address in addresses {
+            if !entry.addresses.contains(&address) {
+                entry.addresses.push(address);
+            }
+        }
+        entry.last_seen_unix_seconds = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |duration| duration.as_secs());
+        entry.origin_tag = origin_tag.to_string();
+    }
+
+    /// Loads persisted state from disk and tolerates corrupted snapshots with safe fallback.
+    fn load_persisted_state(&mut self) -> Result<(), TransportError> {
+        let Some(path) = &self.node_config.persistence_path else {
+            return Ok(());
+        };
+        if !path.exists() {
+            return Ok(());
+        }
+        let snapshot =
+            read_bootstrap_snapshot(path).unwrap_or_else(|_| PersistedBootstrapState::empty());
+        self.known_manifests = snapshot.manifests;
+        self.known_index_keys = snapshot.index_keys.into_iter().collect();
+        for peer in snapshot.known_peers {
+            if let Ok(peer_id) = peer.peer_id.parse() {
+                self.peer_store.insert(peer_id, peer);
+            }
+        }
+        Ok(())
+    }
+
+    /// Persists current known peers and bootstrap metadata using atomic snapshot writes.
+    fn persist_state(&self) -> Result<(), TransportError> {
+        let Some(path) = &self.node_config.persistence_path else {
+            return Ok(());
+        };
+        let mut bootstrap_addrs: Vec<String> = self
+            .node_config
+            .bootstrap_nodes
+            .iter()
+            .map(ToString::to_string)
+            .collect();
+        for peer in self.peer_store.values() {
+            bootstrap_addrs.extend(peer.addresses.iter().cloned());
+        }
+        let snapshot = PersistedBootstrapState {
+            known_peers: self.peer_store.values().cloned().collect(),
+            bootstrap_addrs,
+            manifests: self.known_manifests.clone(),
+            index_keys: self.known_index_keys.iter().cloned().collect(),
+        };
+        write_bootstrap_snapshot_atomic(path, &snapshot)
+    }
+
+    /// Returns bootstrap addresses loaded from persistent snapshots for rehydration.
+    fn persisted_bootstrap_addrs(&self) -> Vec<Multiaddr> {
+        let mut addrs = Vec::new();
+        for peer in self.peer_store.values() {
+            for addr in &peer.addresses {
+                if let Ok(parsed) = addr.parse() {
+                    addrs.push(parsed);
+                }
+            }
+        }
+        addrs
     }
 }
 

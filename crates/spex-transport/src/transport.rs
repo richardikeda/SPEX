@@ -1,4 +1,6 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::fs;
+use std::path::Path;
 use std::time::Duration;
 
 use libp2p::gossipsub::{
@@ -46,19 +48,108 @@ pub struct TransportComponents {
     pub gossip: Gossipsub,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ChunkManifest {
     pub chunks: Vec<ChunkDescriptor>,
     pub total_len: usize,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ChunkDescriptor {
     pub index: usize,
     pub hash: Vec<u8>,
 }
 
+/// Stores persisted observation details for a known peer.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PersistedPeer {
+    pub peer_id: String,
+    pub addresses: Vec<String>,
+    pub last_seen_unix_seconds: u64,
+    pub origin_tag: String,
+}
+
+/// Stores persisted bootstrap state required to recover after a restart.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PersistedBootstrapState {
+    pub known_peers: Vec<PersistedPeer>,
+    pub bootstrap_addrs: Vec<String>,
+    pub manifests: Vec<ChunkManifest>,
+    pub index_keys: Vec<String>,
+}
+
+impl PersistedBootstrapState {
+    /// Builds an empty bootstrap snapshot with deterministic defaults.
+    pub fn empty() -> Self {
+        Self {
+            known_peers: Vec::new(),
+            bootstrap_addrs: Vec::new(),
+            manifests: Vec::new(),
+            index_keys: Vec::new(),
+        }
+    }
+}
+
 pub struct BuildTransport;
+
+/// Serializes bootstrap state in a deterministic JSON representation.
+pub fn encode_bootstrap_snapshot(
+    snapshot: &PersistedBootstrapState,
+) -> Result<Vec<u8>, TransportError> {
+    let mut canonical = snapshot.clone();
+    canonical
+        .known_peers
+        .sort_by(|left, right| left.peer_id.cmp(&right.peer_id));
+    for peer in &mut canonical.known_peers {
+        peer.addresses.sort();
+        peer.addresses.dedup();
+    }
+    canonical.bootstrap_addrs.sort();
+    canonical.bootstrap_addrs.dedup();
+    canonical.index_keys.sort();
+    canonical.index_keys.dedup();
+    canonical.manifests.sort_by(|left, right| {
+        left.total_len
+            .cmp(&right.total_len)
+            .then(left.chunks.len().cmp(&right.chunks.len()))
+    });
+    serde_json::to_vec(&canonical).map_err(TransportError::from)
+}
+
+/// Parses a persisted bootstrap snapshot from JSON bytes.
+pub fn decode_bootstrap_snapshot(
+    payload: &[u8],
+) -> Result<PersistedBootstrapState, TransportError> {
+    serde_json::from_slice(payload).map_err(TransportError::from)
+}
+
+/// Writes a deterministic bootstrap snapshot to disk atomically using temp+rename.
+pub fn write_bootstrap_snapshot_atomic(
+    path: &Path,
+    snapshot: &PersistedBootstrapState,
+) -> Result<(), TransportError> {
+    let payload = encode_bootstrap_snapshot(snapshot)?;
+    let parent = path.parent().ok_or_else(|| {
+        TransportError::InvalidPayload("snapshot path missing parent".to_string())
+    })?;
+    fs::create_dir_all(parent).map_err(|err| TransportError::Libp2p(err.to_string()))?;
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| {
+            TransportError::InvalidPayload("snapshot path missing file name".to_string())
+        })?;
+    let temp_path = parent.join(format!("{file_name}.tmp"));
+    fs::write(&temp_path, payload).map_err(|err| TransportError::Libp2p(err.to_string()))?;
+    fs::rename(temp_path, path).map_err(|err| TransportError::Libp2p(err.to_string()))?;
+    Ok(())
+}
+
+/// Reads a persisted bootstrap snapshot from disk and validates decode boundaries.
+pub fn read_bootstrap_snapshot(path: &Path) -> Result<PersistedBootstrapState, TransportError> {
+    let payload = fs::read(path).map_err(|err| TransportError::Libp2p(err.to_string()))?;
+    decode_bootstrap_snapshot(&payload)
+}
 
 impl BuildTransport {
     /// Builds libp2p transport components for Kademlia and gossipsub.
@@ -412,6 +503,39 @@ pub fn robust_random_walk_with_seed(
         record_keys.push(record_key);
     }
     record_keys
+}
+
+/// Builds random-walk keys while enforcing source diversity and bounded influence.
+pub fn robust_random_walk_with_sources(
+    seed: &[u8],
+    steps: usize,
+    sources: &[String],
+    max_per_source: usize,
+) -> Vec<Vec<u8>> {
+    let mut source_counts: HashMap<String, usize> = HashMap::new();
+    let mut used_material: HashSet<Vec<u8>> = HashSet::new();
+    let mut keys = Vec::new();
+    let normalized_limit = max_per_source.max(1);
+    for step in 0..steps.max(1) {
+        let origin = sources
+            .get(step % sources.len().max(1))
+            .cloned()
+            .unwrap_or_else(|| "unknown".to_string());
+        let count = source_counts.entry(origin.clone()).or_insert(0);
+        if *count >= normalized_limit {
+            continue;
+        }
+        let mut material = Vec::with_capacity(seed.len() + origin.len() + 8);
+        material.extend_from_slice(seed);
+        material.extend_from_slice(origin.as_bytes());
+        material.extend_from_slice(&(step as u64).to_be_bytes());
+        let derived = hash_bytes(HashId::Sha256, &material);
+        if used_material.insert(derived.clone()) {
+            keys.push(derived);
+            *count += 1;
+        }
+    }
+    keys
 }
 
 /// Validates manifest structure by checking uniqueness of indices and hashes.
