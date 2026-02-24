@@ -169,6 +169,23 @@ Documentação não é opcional.
 
 ---
 
+## Release Readiness (v1.0)
+
+Toda contribuição que afete fechamento de release deve preservar os gates reproduzíveis abaixo:
+
+```bash
+cargo test --workspace --locked --verbose
+cargo test --workspace --locked --all-features --verbose
+cargo fmt --all -- --check
+cargo clippy --workspace --locked --all-targets --all-features -- -D warnings
+./scripts/release_gate_docs.sh
+./scripts/release_gate_negative_test.sh
+```
+
+Esses gates são mandatórios para decisão de go/no-go e devem permanecer estáveis no CI.
+
+---
+
 ## Licensing
 
 Ao contribuir, você concorda que:

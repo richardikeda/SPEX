@@ -53,6 +53,8 @@ Implementação inicial em andamento com os seguintes componentes e nível atual
 - [Bridge HTTP API](docs/bridge-api.md)
 - [Segurança](docs/security.md)
 - [Observabilidade de transporte/ingestão](docs/observability.md)
+- [Checklist de release v1.0 (go/no-go)](docs/release-v1-checklist.md)
+- [Runbook operacional de release/incidentes](docs/runbook-release-operations.md)
 
 Os documentos acima detalham arquitetura, wire format com tabelas de IDs/tipos CBOR, bridge HTTP
 com exemplos de payloads e status codes, fluxo request/grant, armazenamento local (`~/.spex/state.json`),
@@ -67,6 +69,27 @@ Referências operacionais:
 - catálogo de métricas/traces: [docs/observability.md](docs/observability.md)
 - snapshot de métricas: `P2pMetricsSnapshot`
 - saúde de rede: `network_health_indicators(NetworkHealthThresholds)`
+
+## Fluxo de release candidate (v1.0)
+
+Para fechamento de versão, execute os gates objetivos abaixo:
+
+```bash
+cargo test --workspace --locked --verbose
+cargo test --workspace --locked --all-features --verbose
+cargo fmt --all -- --check
+cargo clippy --workspace --locked --all-targets --all-features -- -D warnings
+./scripts/release_gate_docs.sh
+./scripts/release_gate_negative_test.sh
+```
+
+Critério de aprovação:
+- **GO**: todos os gates passaram.
+- **NO-GO**: qualquer falha em teste crítico, robustez, lint/format ou documentação.
+
+Referências detalhadas:
+- [Checklist de release v1.0](docs/release-v1-checklist.md)
+- [Runbook operacional de release](docs/runbook-release-operations.md)
 
 ## Avisos de segurança
 

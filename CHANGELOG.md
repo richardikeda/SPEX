@@ -12,14 +12,21 @@ https://semver.org/
 ### Scope
 - Work in progress after `0.1.65`.
 - Current repository version is tracked in `VERSION.md`.
+- Release-readiness baseline for the definitive v1.0 closure process.
 
 ### Notes
 - Changes since `0.1.65` are not part of a published release section yet.
+- Added explicit go/no-go checklist and operational runbook to consolidate release candidate decisions.
 
 ### Documentation
-- Reorganizado `TODO.md` para conter apenas backlog acionável, removendo blocos de funcionalidades já entregues.
-- Itens concluídos sobre inbox write/scan na bridge, integração MLS existente e runtime P2P operacional foram consolidados no histórico de documentação e referenciados no roadmap do `README.md`.
-- Alinhada a consistência de status entre `README.md`, `TODO.md` e `docs/bridge-api.md`.
+- Added `docs/release-v1-checklist.md` with objective release gates (critical tests, robustness, docs quality, and rollback criteria).
+- Added `docs/runbook-release-operations.md` with go-live, incident, recovery, and rollback procedures.
+- Updated `README.md` and `CONTRIBUTING.md` with mandatory release gate commands.
+- Updated `TODO.md` with v1.0 closure status and remaining blockers (`TASK 1-3`).
+
+### CI / Tooling
+- Added `.github/workflows/release-readiness.yml` to enforce release-required jobs in CI.
+- Added `scripts/release_gate_docs.sh` and `scripts/release_gate_negative_test.sh` for reproducible doc gate and explicit block-on-failure validation.
 
 ---
 
