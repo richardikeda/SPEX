@@ -142,6 +142,9 @@ cargo run -p spex-cli -- thread new --members <USER_ID_HEX>,<USER_ID_HEX>
 
 # enviar mensagem para uma thread via MLS + transporte
 cargo run -p spex-cli -- msg send --thread <THREAD_ID_HEX> --text "Olá"
+# enviar também para bridge HTTP com TTL opcional
+cargo run -p spex-cli -- msg send --thread <THREAD_ID_HEX> --text "Olá" \
+  --bridge-url <URL> --ttl-seconds 120
 
 # enviar mensagem via rede P2P libp2p (bootstrap/peers)
 cargo run -p spex-cli -- msg send --thread <THREAD_ID_HEX> --text "Olá" --p2p \

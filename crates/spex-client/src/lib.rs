@@ -449,6 +449,7 @@ pub struct GrantAcceptanceOutcome {
 pub struct ThreadMessageDispatch {
     pub thread_id_hex: String,
     pub sender_user_id_hex: String,
+    pub envelope: spex_core::types::Envelope,
     pub manifest: ChunkManifest,
     pub chunks: Vec<Chunk>,
     pub chunk_count: usize,
@@ -1621,12 +1622,12 @@ pub fn send_thread_message_for_state(
     text: &str,
 ) -> Result<ThreadMessageDispatch, ClientError> {
     let identity = clone_identity_from_state(state)?;
-    let (thread_id_hex, members, manifest, chunks, outbox_item, recipient_inbox_keys) = {
+    let (thread_id_hex, members, envelope, manifest, chunks, outbox_item, recipient_inbox_keys) = {
         let thread_state = state
             .threads
             .get_mut(thread_id_hex)
             .ok_or(ClientError::ThreadNotFound)?;
-        let (_envelope, manifest, chunks, outbox_item) =
+        let (envelope, manifest, chunks, outbox_item) =
             publish_thread_message_transport(&identity, thread_state, text.as_bytes())?;
         let recipient_inbox_keys = inbox_keys_for_thread(thread_state, &identity.user_id_hex)?;
         let message = MessageState {
@@ -1638,6 +1639,7 @@ pub fn send_thread_message_for_state(
         (
             thread_state.thread_id_hex.clone(),
             thread_state.members.clone(),
+            envelope,
             manifest,
             chunks,
             outbox_item,
@@ -1655,6 +1657,7 @@ pub fn send_thread_message_for_state(
     Ok(ThreadMessageDispatch {
         thread_id_hex,
         sender_user_id_hex: identity.user_id_hex,
+        envelope,
         chunk_count: chunks.len(),
         manifest,
         chunks,
