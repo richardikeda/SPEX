@@ -92,6 +92,14 @@ Comandos de smoke recomendados antes de release:
 ```bash
 cargo test -p spex-transport p2p_ingest_property
 cargo test -p spex-bridge adversarial_parsing
-cargo fuzz run p2p_grant_payload_validation --manifest-path fuzz/Cargo.toml -- -runs=1
-cargo fuzz run p2p_puzzle_payload_validation --manifest-path fuzz/Cargo.toml -- -runs=1
+for target_file in fuzz/fuzz_targets/*.rs; do
+  target_name="$(basename "${target_file}" .rs)"
+  cargo +nightly fuzz run "${target_name}" --fuzz-dir fuzz -- -max_total_time=30 -seed=1
+done
 ```
+
+Política de fuzz smoke para release readiness:
+
+- O pipeline deve instalar `cargo-fuzz` explicitamente no job de robustez.
+- Todos os alvos em `fuzz/fuzz_targets/*.rs` devem rodar com limite determinístico (`-max_total_time=30` e `-seed=1`).
+- Qualquer crash/panic em fuzzing deve falhar o job imediatamente (exit code não-zero).

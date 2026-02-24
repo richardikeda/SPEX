@@ -24,8 +24,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust
+      - name: Install Rust (stable + nightly for fuzz)
         uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable,nightly
+
+      - name: Install cargo-fuzz
+        run: cargo +nightly install cargo-fuzz --locked
 
       - name: Crate-level robustness suites
         run: |
@@ -35,6 +40,15 @@ jobs:
           cargo test -p spex-bridge --locked --verbose
           cargo test -p spex-client --locked --verbose
           cargo test -p spex-cli --locked --verbose
+
+      - name: Fuzz smoke (deterministic short run)
+        run: |
+          set -euo pipefail
+          for target_file in fuzz/fuzz_targets/*.rs; do
+            target_name="$(basename "${target_file}" .rs)"
+            echo "Running fuzz smoke for ${target_name}"
+            cargo +nightly fuzz run "${target_name}" --fuzz-dir fuzz -- -max_total_time=30 -seed=1
+          done
 
   release-docs-and-quality:
     runs-on: ubuntu-24.04

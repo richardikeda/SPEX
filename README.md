@@ -72,6 +72,13 @@ Referências operacionais:
 
 ## Fluxo de release candidate (v1.0)
 
+### Gates de CI/release (fonte de verdade)
+
+- **`Rust CI`** (`.github/workflows/rust.yml`): workflow único para gates gerais do workspace em PR/push para `main`.
+  - `build-test`: valida `cargo build --workspace --locked`, `cargo test --workspace --locked`, `cargo test --workspace --locked --all-features` e `cargo test --workspace --locked --release`.
+  - `lint`: valida `cargo fmt --all -- --check` e `cargo clippy --workspace --locked --all-targets -- -D warnings`.
+- Não há workflow separado de `test.yml` para evitar duplicidade de responsabilidade. Qualquer expansão futura deve ter objetivo explícito (ex.: matriz por SO ou conjunto de features específico).
+
 Para fechamento de versão, execute os gates objetivos abaixo:
 
 ```bash
@@ -157,14 +164,15 @@ Comandos úteis:
 ```bash
 cargo test -p spex-core
 cargo test -p spex-bridge
-cargo fuzz run grant_token_decode --manifest-path fuzz/Cargo.toml
-cargo fuzz run contact_card_decode --manifest-path fuzz/Cargo.toml
-cargo fuzz run parse_cbor_payload --manifest-path fuzz/Cargo.toml
-cargo fuzz run storage_request_from_bytes --manifest-path fuzz/Cargo.toml
-cargo fuzz run inbox_store_request_from_bytes --manifest-path fuzz/Cargo.toml
-cargo fuzz run mls_parse_external_commit --manifest-path fuzz/Cargo.toml
-cargo fuzz run p2p_grant_payload_validation --manifest-path fuzz/Cargo.toml
-cargo fuzz run p2p_puzzle_payload_validation --manifest-path fuzz/Cargo.toml
+```
+
+Comando oficial de fuzz smoke (curto e determinístico):
+
+```bash
+for target_file in fuzz/fuzz_targets/*.rs; do
+  target_name="$(basename "${target_file}" .rs)"
+  cargo +nightly fuzz run "${target_name}" --fuzz-dir fuzz -- -max_total_time=30 -seed=1
+done
 ```
 
 

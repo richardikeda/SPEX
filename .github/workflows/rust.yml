@@ -47,6 +47,9 @@ jobs:
       - name: Test (all features)
         run: cargo test --workspace --locked --all-features --verbose
 
+      - name: Test (release profile)
+        run: cargo test --workspace --locked --release --verbose
+
       - name: sccache stats
         run: sccache --show-stats || true
 
