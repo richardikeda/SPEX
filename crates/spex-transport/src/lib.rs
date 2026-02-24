@@ -31,5 +31,5 @@ pub use transport::{
     recover_manifest_from_gossip, renew_chunk_ttl, replicate_manifest,
     robust_random_walk_with_seed, robust_random_walk_with_sources, start_manifest_chunk_queries,
     write_bootstrap_snapshot_atomic, BuildTransport, ChunkManifest, PersistedBootstrapState,
-    PersistedPeer, TransportComponents, TransportConfig,
+    PersistedPeer, PersistedPeerReputation, TransportComponents, TransportConfig,
 };

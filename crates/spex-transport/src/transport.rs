@@ -76,6 +76,20 @@ pub struct PersistedBootstrapState {
     pub bootstrap_addrs: Vec<String>,
     pub manifests: Vec<ChunkManifest>,
     pub index_keys: Vec<String>,
+    #[serde(default)]
+    pub peer_reputation: Vec<PersistedPeerReputation>,
+}
+
+/// Stores persisted reputation status so runtime recovery can preserve abuse decisions.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PersistedPeerReputation {
+    pub peer_id: String,
+    pub score: i32,
+    pub timeout_penalties: u32,
+    pub invalid_payload_penalties: u32,
+    pub inconsistent_response_penalties: u32,
+    pub probation_until_unix_seconds: Option<u64>,
+    pub banned_until_unix_seconds: Option<u64>,
 }
 
 impl PersistedBootstrapState {
@@ -86,6 +100,7 @@ impl PersistedBootstrapState {
             bootstrap_addrs: Vec::new(),
             manifests: Vec::new(),
             index_keys: Vec::new(),
+            peer_reputation: Vec::new(),
         }
     }
 }
@@ -108,6 +123,9 @@ pub fn encode_bootstrap_snapshot(
     canonical.bootstrap_addrs.dedup();
     canonical.index_keys.sort();
     canonical.index_keys.dedup();
+    canonical
+        .peer_reputation
+        .sort_by(|left, right| left.peer_id.cmp(&right.peer_id));
     canonical.manifests.sort_by(|left, right| {
         left.total_len
             .cmp(&right.total_len)

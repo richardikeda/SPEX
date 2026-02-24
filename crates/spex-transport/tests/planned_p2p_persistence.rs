@@ -124,6 +124,7 @@ async fn test_anti_eclipse_peer_scoring() {
         bootstrap_addrs: vec![],
         manifests: vec![],
         index_keys: vec![],
+        peer_reputation: vec![],
     };
     let bytes = encode_bootstrap_snapshot(&snapshot).expect("encode snapshot");
     std::fs::write(&snapshot_path, bytes).expect("write snapshot");
@@ -141,13 +142,21 @@ async fn test_anti_eclipse_peer_scoring() {
     .await
     .expect("node");
 
-    node.report_invalid_payload(malicious_peer);
+    node.report_timeout(malicious_peer);
+    node.report_timeout(malicious_peer);
     node.report_timeout(malicious_peer);
     node.report_inconsistent_response(malicious_peer);
+    assert!(node.is_peer_probationary(&malicious_peer));
+    assert!(!node.is_peer_banned(&malicious_peer));
+
+    node.report_invalid_payload(malicious_peer);
     node.report_invalid_payload(malicious_peer);
 
-    assert!(node.peer_score(malicious_peer) <= -60);
+    assert!(node.peer_score(malicious_peer) <= -70);
     assert!(node.is_peer_banned(&malicious_peer));
+
+    node.report_successful_interaction(honest_peer);
+    assert!(node.peer_score(honest_peer) >= 0);
 
     let candidates = node.random_walk_candidates(b"anti-eclipse", 16, 1);
     assert!(!candidates.is_empty());
@@ -164,4 +173,31 @@ fn test_negative_snapshot_corrupted_and_empty_store() {
     let decoded = decode_bootstrap_snapshot(&encoded).expect("decode empty");
     assert!(decoded.known_peers.is_empty());
     assert!(decoded.manifests.is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_corrupted_snapshot_is_quarantined_with_explicit_warning() {
+    // Ensures corrupted persisted state raises an explicit warning and runtime recovers safely.
+    let snapshot_path = unique_snapshot_path("corrupted-recovery");
+    std::fs::write(&snapshot_path, b"{invalid-json").expect("write corrupted snapshot");
+
+    let node = P2pTransport::new(
+        Keypair::generate_ed25519(),
+        TransportConfig::default(),
+        P2pNodeConfig {
+            listen_addrs: vec!["/ip4/127.0.0.1/tcp/0".parse().expect("listen")],
+            persistence_path: Some(snapshot_path.clone()),
+            ..P2pNodeConfig::default()
+        },
+    )
+    .await
+    .expect("node should start with safe fallback");
+
+    assert!(!node.persistence_warnings().is_empty());
+    let parent = snapshot_path.parent().expect("parent");
+    let has_quarantine = std::fs::read_dir(parent)
+        .expect("read dir")
+        .filter_map(Result::ok)
+        .any(|entry| entry.file_name().to_string_lossy().contains("corrupt-"));
+    assert!(has_quarantine);
 }
