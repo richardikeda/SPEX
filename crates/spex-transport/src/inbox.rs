@@ -3,10 +3,17 @@ use base64::Engine;
 use libp2p::kad::store::MemoryStore;
 use libp2p::kad::{Behaviour as Kademlia, GetRecordOk, QueryId, RecordKey};
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Instant;
+use tracing::{info, warn};
 
 use spex_core::hash::{hash_bytes, HashId};
 
 use crate::error::TransportError;
+
+static BRIDGE_FALLBACK_TOTAL: AtomicU64 = AtomicU64::new(0);
+static BRIDGE_FALLBACK_SUCCESS: AtomicU64 = AtomicU64::new(0);
+static BRIDGE_FALLBACK_FAILURE: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone, Debug)]
 pub struct InboxScanRequest {
@@ -70,7 +77,20 @@ pub async fn resolve_inbox_with_fallback(
     }
 
     if let Some(bridge_client) = bridge {
-        return bridge_client.scan_inbox(inbox_scan_key).await;
+        BRIDGE_FALLBACK_TOTAL.fetch_add(1, Ordering::Relaxed);
+        let start = Instant::now();
+        let response = bridge_client.scan_inbox(inbox_scan_key).await;
+        match &response {
+            Ok(ok) => {
+                BRIDGE_FALLBACK_SUCCESS.fetch_add(1, Ordering::Relaxed);
+                info!(target: "spex_transport::bridge", operation="fallback_bridge", items=ok.items.len(), latency_ms=start.elapsed().as_millis() as u64, "bridge fallback succeeded");
+            }
+            Err(_) => {
+                BRIDGE_FALLBACK_FAILURE.fetch_add(1, Ordering::Relaxed);
+                warn!(target: "spex_transport::bridge", operation="fallback_bridge", latency_ms=start.elapsed().as_millis() as u64, "bridge fallback failed");
+            }
+        }
+        return response;
     }
 
     Ok(InboxScanResponse {
@@ -227,4 +247,13 @@ mod tests {
             "Record key mismatch for derive_inbox_scan_key"
         );
     }
+}
+
+/// Returns global counters for bridge fallback attempts, successes, and failures.
+pub fn bridge_fallback_counters() -> (u64, u64, u64) {
+    (
+        BRIDGE_FALLBACK_TOTAL.load(Ordering::Relaxed),
+        BRIDGE_FALLBACK_SUCCESS.load(Ordering::Relaxed),
+        BRIDGE_FALLBACK_FAILURE.load(Ordering::Relaxed),
+    )
 }
