@@ -117,10 +117,12 @@ Para reforçar parsing/validação contra entradas arbitrárias, o repositório 
   - `ContactCard::decode_ctap2`
   - `parse_cbor_payload`
   - parsing de payload de bridge (`parse_storage_request_bytes`, `parse_inbox_store_request_bytes`)
-- **Property tests (`proptest`)** em `spex-core` e `spex-bridge` para:
+  - validação adversarial de payloads P2P (`validate_p2p_grant_payload`, `validate_p2p_puzzle_payload`)
+- **Property tests (`proptest`)** em `spex-core`, `spex-bridge` e `spex-transport` para:
   - estabilidade/idempotência da canonicalização CTAP2
   - rejeição segura de base64 inválido
   - ausência de `panic` para entradas arbitrárias
+  - determinismo da validação P2P para payload idêntico (mesmo resultado/erro)
 - **Property tests (`proptest`)** em `spex-mls` para:
   - determinismo de ressincronização sob permutações de commits faltantes
   - rejeição explícita de sequências parciais/incompatíveis sem mutação de epoch local
@@ -138,6 +140,8 @@ cargo fuzz run parse_cbor_payload --manifest-path fuzz/Cargo.toml
 cargo fuzz run storage_request_from_bytes --manifest-path fuzz/Cargo.toml
 cargo fuzz run inbox_store_request_from_bytes --manifest-path fuzz/Cargo.toml
 cargo fuzz run mls_parse_external_commit --manifest-path fuzz/Cargo.toml
+cargo fuzz run p2p_grant_payload_validation --manifest-path fuzz/Cargo.toml
+cargo fuzz run p2p_puzzle_payload_validation --manifest-path fuzz/Cargo.toml
 ```
 
 

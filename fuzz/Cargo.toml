@@ -10,8 +10,10 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 serde_cbor = "0.11"
+serde_json = "1"
 spex-core = { path = "../spex-core" }
 spex-bridge = { path = "../crates/spex-bridge" }
+spex-transport = { path = "../crates/spex-transport" }
 spex-mls = { path = "../crates/spex-mls" }
 
 [[bin]]
@@ -52,6 +54,20 @@ bench = false
 [[bin]]
 name = "mls_parse_external_commit"
 path = "fuzz_targets/mls_parse_external_commit.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "p2p_grant_payload_validation"
+path = "fuzz_targets/p2p_grant_payload_validation.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "p2p_puzzle_payload_validation"
+path = "fuzz_targets/p2p_puzzle_payload_validation.rs"
 test = false
 doc = false
 bench = false
