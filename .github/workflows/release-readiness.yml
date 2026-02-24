@@ -1,0 +1,62 @@
+name: Release Readiness
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  release-critical-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Critical workspace tests
+        run: |
+          cargo test --workspace --locked --verbose
+          cargo test --workspace --locked --all-features --verbose
+
+  release-robustness:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Crate-level robustness suites
+        run: |
+          cargo test -p spex-core --locked --verbose
+          cargo test -p spex-mls --locked --verbose
+          cargo test -p spex-transport --locked --verbose
+          cargo test -p spex-bridge --locked --verbose
+          cargo test -p spex-client --locked --verbose
+          cargo test -p spex-cli --locked --verbose
+
+  release-docs-and-quality:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (fmt + clippy)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Docs and quality gates
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy --workspace --locked --all-targets --all-features -- -D warnings
+          ./scripts/release_gate_docs.sh
+
+  release-negative-gate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate block-on-failure behavior
+        run: ./scripts/release_gate_negative_test.sh

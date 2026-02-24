@@ -1,5 +1,15 @@
 # SPEX TODO List
 
+## Status de fechamento v1.0 (revisado)
+
+- ✅ `TASK 4` (readiness de release) foi concluída nesta execução com checklist, runbook e gates de CI/documentação.
+- 🔒 Itens ainda pendentes para fechamento completo da v1.0:
+  - `TASK 1` Hardening final do runtime P2P + observabilidade operacional.
+  - `TASK 2` Conformidade MLS avançada (epochs, commits e ressincronização).
+  - `TASK 3` Expansão de robustez adversarial (fuzz + property tests em superfícies críticas).
+
+A publicação definitiva da v1.0 permanece bloqueada até conclusão validada de `TASK 1-3`.
+
 ## Backlog acionável para fechamento da v1
 
 Esta lista contém apenas pendências **não implementadas** após revisão do estado atual em `README.md`, `docs/*` e suites de testes.
@@ -137,39 +147,3 @@ Versioning:
 - Confirmado: `VERSION.md` deve ser incrementado quando esta task for executada.
 
 ---
-
-## [TASK 4] Readiness de release da primeira versão definitiva
-
-Objective:
-- Consolidar o pacote final para fechamento da primeira versão definitiva (release candidate + checklist de segurança + documentação operacional final).
-
-Context:
-- Funcionalidades principais já existem, mas falta uma trilha única e auditável de “go/no-go” para publicação.
-
-Scope:
-- Arquivos/módulos que podem ser modificados:
-  - `README.md`, `CONTRIBUTING.md`, `CHANGELOG.md`, `docs/*` (checklists, matriz de compatibilidade e operação).
-  - CI/workflows em `.github/workflows/*` para gates finais de teste/segurança.
-- O que NÃO deve ser tocado:
-  - Sem mudanças de protocolo/wire nesta etapa.
-
-Constraints:
-- Todo gate crítico precisa ser explícito e reproduzível.
-- Critérios de segurança/release não podem depender de validação manual implícita.
-
-Acceptance Criteria:
-- Checklist de release v1 definido com critérios objetivos de aprovação/reprovação.
-- Pipeline CI com gates mínimos para testes críticos, robustez adversarial e documentação.
-- Documentação final cobre operação, incidentes e recuperação.
-
-Tests Required:
-- Execução do pipeline de testes definido para release candidate.
-- Casos negativos de gate (ex.: falha em teste crítico bloqueia release).
-
-Documentation:
-- Atualizar `README.md` com fluxo de release final.
-- Atualizar `/docs` com checklist de go-live, runbooks e critérios de rollback.
-- Atualizar `CHANGELOG.md` com agrupamento de escopo para release definitiva.
-
-Versioning:
-- Confirmado: `VERSION.md` deve ser incrementado quando esta task for executada.
