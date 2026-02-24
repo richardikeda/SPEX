@@ -157,14 +157,15 @@ Comandos úteis:
 ```bash
 cargo test -p spex-core
 cargo test -p spex-bridge
-cargo fuzz run grant_token_decode --manifest-path fuzz/Cargo.toml
-cargo fuzz run contact_card_decode --manifest-path fuzz/Cargo.toml
-cargo fuzz run parse_cbor_payload --manifest-path fuzz/Cargo.toml
-cargo fuzz run storage_request_from_bytes --manifest-path fuzz/Cargo.toml
-cargo fuzz run inbox_store_request_from_bytes --manifest-path fuzz/Cargo.toml
-cargo fuzz run mls_parse_external_commit --manifest-path fuzz/Cargo.toml
-cargo fuzz run p2p_grant_payload_validation --manifest-path fuzz/Cargo.toml
-cargo fuzz run p2p_puzzle_payload_validation --manifest-path fuzz/Cargo.toml
+```
+
+Comando oficial de fuzz smoke (curto e determinístico):
+
+```bash
+for target_file in fuzz/fuzz_targets/*.rs; do
+  target_name="$(basename "${target_file}" .rs)"
+  cargo +nightly fuzz run "${target_name}" --fuzz-dir fuzz -- -max_total_time=30 -seed=1
+done
 ```
 
 
