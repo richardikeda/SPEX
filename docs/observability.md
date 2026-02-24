@@ -36,12 +36,13 @@ As métricas são expostas por `P2pMetricsSnapshot`.
 
 - Correlation IDs são derivados deterministicamente por operação com
   `derive_operation_correlation_id(operation, context)`.
-- Em ausência de contexto mínimo, usa-se `derive_minimal_correlation_id(operation)`.
+- Em ausência de contexto mínimo (metadado de tracing ausente), usa-se `derive_minimal_correlation_id(operation)` para manter correlação determinística sem vazar payload.
 - O contexto é hashado e truncado (sem payload bruto, sem chaves privadas), evitando vazamento sensível.
 
 Campos de trace relevantes:
 - `operation`: classe operacional (`publish_manifest`, `recovery_inbox`, `fallback_bridge`, `manifest_parse`, `chunk_verify`, `reassemble`).
 - `correlation_id`: identificador determinístico para correlacionar eventos da mesma operação.
+- Backoff adaptativo possui teto por perfil (incluindo cenários de timeout extremo) para preservar previsibilidade operacional.
 - `latency_ms`, `attempt`, `delay_ms`, `items`.
 
 ## Indicadores de saúde de rede

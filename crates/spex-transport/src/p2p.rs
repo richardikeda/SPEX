@@ -1326,4 +1326,26 @@ mod tests {
         assert_eq!(snapshot.recovery_timeout_rate_bps(), 0);
         assert_eq!(snapshot.fallback_frequency_bps(), 0);
     }
+
+    /// Verifies adaptive retry stays bounded under extreme timeout configurations.
+    #[test]
+    fn test_adaptive_retry_bounds_with_extreme_timeouts() {
+        let low = P2pNodeConfig {
+            publish_wait: Duration::from_millis(50),
+            query_timeout: Duration::from_millis(40),
+            ..P2pNodeConfig::default()
+        };
+        let low_retry = low.adaptive_retry();
+        let low_delay = low_retry.delay_for_attempt(50);
+        assert!(low_delay <= Duration::from_millis(100));
+
+        let high = P2pNodeConfig {
+            publish_wait: Duration::from_secs(30),
+            query_timeout: Duration::from_secs(40),
+            ..P2pNodeConfig::default()
+        };
+        let high_retry = high.adaptive_retry();
+        let high_delay = high_retry.delay_for_attempt(50);
+        assert!(high_delay <= Duration::from_millis(2_500));
+    }
 }

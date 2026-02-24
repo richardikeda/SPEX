@@ -41,8 +41,8 @@ Implementação inicial em andamento com os seguintes componentes e nível atual
   - Referências: [docs/bridge-api.md](docs/bridge-api.md), `crates/spex-client/tests/bridge_publish.rs`, `crates/spex-transport/tests/bridge_publish_http.rs`.
 - **Hardening/observabilidade do runtime P2P**: reduzir latências operacionais, ampliar reputação anti-eclipse e métricas/tracing de publish/recovery/fallback.
   - Referências: [TODO.md](TODO.md), testes de transporte em `crates/spex-transport/tests/p2p_manifest_delivery.rs`.
-- **Cobertura MLS de conformidade avançada**: ampliar cenários de interop/permutação/ressincronização e casos negativos de epoch.
-  - Referências: [TODO.md](TODO.md), testes em `crates/spex-mls/tests/mls_scenarios.rs` e `crates/spex-mls/tests/mls_real_groups.rs`.
+- **Conformidade MLS avançada**: suíte ampliada para reorder/replay/epoch gap, ressincronização determinística e robustez de parsing.
+  - Referências: [docs/integration.md](docs/integration.md), testes em `crates/spex-mls/tests/planned_concurrent_updates.rs` e `crates/spex-mls/tests/epoch_recovery_properties.rs`.
 
 ## Documentação
 
@@ -61,7 +61,7 @@ fingerprints, requisitos de TLS e práticas de segurança recomendadas.
 
 ### Observabilidade de transporte/ingestão
 
-O `spex-transport` expõe métricas estruturadas para publish/recovery/fallback, tracing com `correlation_id` determinístico por operação e indicadores contínuos de saúde de rede.
+O `spex-transport` expõe métricas estruturadas para publish/recovery/fallback, tracing com `correlation_id` determinístico por operação (incluindo fallback estável quando metadados mínimos estão ausentes) e indicadores contínuos de saúde de rede.
 
 Referências operacionais:
 - catálogo de métricas/traces: [docs/observability.md](docs/observability.md)
@@ -121,6 +121,11 @@ Para reforçar parsing/validação contra entradas arbitrárias, o repositório 
   - estabilidade/idempotência da canonicalização CTAP2
   - rejeição segura de base64 inválido
   - ausência de `panic` para entradas arbitrárias
+- **Property tests (`proptest`)** em `spex-mls` para:
+  - determinismo de ressincronização sob permutações de commits faltantes
+  - rejeição explícita de sequências parciais/incompatíveis sem mutação de epoch local
+- **Fuzz target MLS** para:
+  - `parse_external_commit` com payload arbitrário sem panic path
 
 Comandos úteis:
 
@@ -132,6 +137,7 @@ cargo fuzz run contact_card_decode --manifest-path fuzz/Cargo.toml
 cargo fuzz run parse_cbor_payload --manifest-path fuzz/Cargo.toml
 cargo fuzz run storage_request_from_bytes --manifest-path fuzz/Cargo.toml
 cargo fuzz run inbox_store_request_from_bytes --manifest-path fuzz/Cargo.toml
+cargo fuzz run mls_parse_external_commit --manifest-path fuzz/Cargo.toml
 ```
 
 
@@ -459,6 +465,7 @@ O runtime `spex-transport` agora aplica tuning operacional explícito por perfil
 
 - `publish_wait`, `query_timeout` e `manifest_wait` são definidos por `P2pNodeConfig::for_profile`.
 - Em runtime, os timeouts são ajustados por conectividade (`P2pTransport::tuned_timeouts`) para reduzir latência média sem quebrar compatibilidade de rede.
+- Em cenários extremos, o backoff adaptativo permanece limitado por perfil para evitar esperas desproporcionais e manter convergência determinística.
 - Políticas de reputação distinguem falhas transitórias (probation) de abuso recorrente (ban temporário).
 - Snapshots de estado persistem reputação e metadados para recovery seguro após churn prolongado.
 - Estado corrompido é quarentenado automaticamente, com aviso explícito (`persistence_warnings`).
