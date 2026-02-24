@@ -151,6 +151,16 @@ manter chaves e contatos, com permissões restritas e criptografia em repouso qu
 - `spex-mls` fornece `process_external_commit_explicit`, `detect_external_commit_gap` e `process_external_commit_with_resync` para controle determinístico de commits externos.
 - Commits fora de ordem retornam erro estruturado e não alteram estado local sem recuperação explícita.
 
+### Matriz de conformidade MLS (avançada)
+
+| Cenário | Cobertura de teste | Resultado esperado |
+|---|---|---|
+| Permutação add → update → remove → add com entrega fora de ordem | `resync_handles_advanced_add_update_remove_permutations` | Resync aplica commits faltantes em ordem determinística, converge epoch e roster. |
+| Epoch regressivo após remoção de membro | `resync_handles_advanced_add_update_remove_permutations` | `OutOfOrderCommit` explícito, sem transição de estado inválida. |
+| Commit aplicado fora de ordem (N+1 sem N) | `receives_n_plus_one_without_n_then_recovers` | Rejeição inicial + recuperação explícita por `process_external_commit_with_resync`. |
+| Recuperação parcial inconsistente | `rejects_partial_resync_recovery_with_missing_epochs` | Rejeição explícita com `OutOfOrderCommit` e epoch local inalterado. |
+| Sequência de recovery com epochs incompatíveis | `rejects_incompatible_recovery_sequence` | Rejeição determinística com erro estruturado. |
+
 
 ## Perfis explícitos de tempo no P2P
 
