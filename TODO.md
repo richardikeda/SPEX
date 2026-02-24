@@ -1,220 +1,175 @@
 # SPEX TODO List
 
-## Backlog acionável
+## Backlog acionável para fechamento da v1
 
-Esta lista contém apenas pendências atuais de implementação e hardening.
-Itens já concluídos foram movidos para o [CHANGELOG.md](CHANGELOG.md).
+Esta lista contém apenas pendências **não implementadas** após revisão do estado atual em `README.md`, `docs/*` e suites de testes.
+Itens concluídos foram removidos desta lista e mantidos no histórico (`CHANGELOG.md`).
 
 ---
 
-## [TASK 1] Escrita de inbox via cliente/transporte (bridge HTTP)
+## [TASK 1] Hardening final do runtime P2P + observabilidade operacional
 
 Objective:
-- Implementar APIs no `spex-client` e `spex-transport` para publicar envelopes via bridge HTTP (`PUT /inbox/:key`).
-- Garantir serialização do envelope, cálculo de PoW e geração de grant no formato aceito pela bridge.
-- Cobrir cenários end-to-end CLI↔bridge para envio HTTP com grant/PoW em integração automatizada.
+- Fechar o hardening de produção do runtime `spex-transport` com foco em cenários de operação contínua.
+- Completar instrumentação operacional para diagnóstico de degradação em tempo real sem expor dados sensíveis.
 
 Context:
-- O endpoint `PUT /inbox/:key` já está implementado na bridge com validações de grant/PoW, TTL e limites de payload.
-- Ainda não existe fluxo de alto nível completo no caminho cliente/transporte para publicação via bridge.
+- O runtime já possui perfis (`Dev/Test/Prod`), tuning básico, reputação e snapshots de estado.
+- Ainda faltam cenários avançados de operação contínua e cobertura de telemetria para incidentes prolongados.
 
 Scope:
 - Arquivos/módulos que podem ser modificados:
-  - `spex-client` (APIs de publicação via bridge).
-  - `spex-transport` (integração HTTP para envio ao endpoint de inbox).
-  - Testes de integração do fluxo CLI↔bridge.
+  - `crates/spex-transport/src/*` (timers, reputação, recovery, métricas/tracing).
+  - `crates/spex-transport/tests/*` (integração churn/latência/falhas).
+  - `docs/observability.md`, `README.md` (parâmetros, indicadores, troubleshooting).
 - O que NÃO deve ser tocado:
-  - Regras de segurança já existentes da bridge.
-  - Formato de wire protocol e invariantes criptográficos.
+  - Formato wire do protocolo.
+  - Invariantes criptográficos e de autenticação já definidos.
 
 Constraints:
-- Preservar validação explícita de grants e permissões.
-- Enforce de PoW mínimo e políticas de TTL.
-- Manter comportamento determinístico de serialização.
-- Não introduzir fallback implícito sem sinalização explícita.
+- Preservar determinismo e compatibilidade entre nós.
+- Não registrar segredos, payloads brutos ou material criptográfico em logs/traces.
+- Falhas de entrada externa devem retornar erro explícito (sem panic paths).
 
 Acceptance Criteria:
-- Cliente/transport publicam envelopes via bridge com grant e PoW válidos.
-- Requisições com grant inválido, PoW insuficiente ou TTL inválido falham com erro explícito.
-- Integração automatizada CLI↔bridge cobre caminho feliz e falhas esperadas.
+- Perfis operacionais demonstram redução de latência sem regressão de taxa de sucesso.
+- Políticas de reputação distinguem falhas transitórias de abuso recorrente com baixa taxa de falso positivo.
+- Métricas/traces de publish/recovery/fallback permitem correlação operacional ponta a ponta.
+- Recovery após restart em churn prolongado é validado com estado íntegro e quarentena explícita para estado corrompido.
 
 Tests Required:
-- Testes unitários de serialização do envelope para payload HTTP.
-- Testes unitários de geração/validação de grant e cálculo de PoW.
-- Teste E2E CLI↔bridge para envio válido.
-- Casos negativos obrigatórios: grant inválido, PoW abaixo do mínimo e TTL fora da política.
+- Testes unitários para tuning de timeout por perfil e conectividade.
+- Testes de integração de reputação (peer intermitente vs. malicioso recorrente).
+- Testes de persistência/recovery com restart sob churn.
+- Casos negativos: estado parcial/corrompido, timeout extremo, metadado de tracing ausente.
 
 Documentation:
-- Atualizar `README.md` com uso de publicação via bridge no cliente/transporte.
-- Atualizar documentação em `/docs` para contrato HTTP, erros e requisitos de segurança.
+- Atualizar `README.md` com recomendações operacionais finais de produção.
+- Atualizar `docs/observability.md` com catálogo final de métricas/traces e SLOs sugeridos.
 
 Versioning:
 - Confirmado: `VERSION.md` deve ser incrementado quando esta task for executada.
 
 ---
 
-## [TASK 2] Hardening operacional do runtime P2P
+## [TASK 2] Conformidade MLS avançada (epochs, commits e ressincronização)
 
 Objective:
-- Reduzir latências/esperas fixas (`publish_wait`, `manifest_wait`, `query_timeout`) com tuning por perfil.
-- Expandir políticas de reputação para peers maliciosos além do ban temporário atual.
-- Aprofundar persistência/recovery de estado entre execuções em cenários de churn prolongado.
+- Completar a suíte MLS com cenários avançados de ordenação/permutação de commits, epochs fora de ordem e recuperação parcial.
+- Elevar a confiabilidade de interoperabilidade em cenários adversariais.
 
 Context:
-- O runtime P2P já opera com manifestos/chunks, DHT, gossip, perfil de tempos, backoff e fallback para bridge.
-- Ainda há pendências para hardening operacional em produção.
+- A base MLS existente cobre fluxos principais de TreeKEM, updates e add/remove.
+- Ainda faltam cenários extremos de conformidade e recuperação para fechamento de versão.
 
 Scope:
 - Arquivos/módulos que podem ser modificados:
-  - Runtime P2P (timers, perfil, reputação, persistência e recovery).
-  - Configuração de perfis operacionais e testes de churn.
+  - `crates/spex-mls/tests/*` e helpers/fixtures MLS.
+  - (se necessário) pontos de erro explícito em `crates/spex-mls/src/*` sem alterar design criptográfico.
+  - `docs/*` e `README.md` para matriz de conformidade MLS final.
 - O que NÃO deve ser tocado:
-  - Semântica do protocolo e formatos de wire.
-  - Invariantes criptográficos e regras de validação de segurança.
+  - Design criptográfico MLS.
+  - Formato de mensagens sem aprovação humana explícita.
 
 Constraints:
-- Preservar compatibilidade entre nós e comportamento determinístico.
-- Evitar políticas de reputação que causem ban agressivo de peers honestos.
-- Garantir recovery robusto sem depender de panic paths.
+- Preservar invariantes de `epoch`, `cfg_hash` e validação de assinatura.
+- Rejeições de estado inválido devem ser explícitas e determinísticas.
+- Garantir repetibilidade dos testes (sem flakiness).
 
 Acceptance Criteria:
-- Timeouts por perfil reduzem latência média sem degradar taxa de sucesso.
-- Reputação diferencia falhas transitórias de comportamento malicioso recorrente.
-- Estado relevante é recuperado após restart em cenários de churn prolongado.
+- Cobertura de cenários de permutação de commits com ressincronização consistente.
+- Epoch fora de ordem e recuperação parcial inconsistente são rejeitados com erro explícito.
+- Conjunto de testes MLS avançados executa de forma determinística em CI.
 
 Tests Required:
-- Testes unitários para tuning por perfil (`publish_wait`, `manifest_wait`, `query_timeout`).
-- Testes de integração para reputação (peers maliciosos e peers intermitentes).
-- Testes de persistência/recovery com reinício em churn prolongado.
-- Casos negativos: estado corrompido ou incompleto deve retornar erro explícito.
-
-Documentation:
-- Atualizar `README.md` com parâmetros operacionais e recomendações de tuning.
-- Atualizar `/docs` com política de reputação e estratégias de recovery.
-
-Versioning:
-- Confirmado: `VERSION.md` deve ser incrementado quando esta task for executada.
-
----
-
-## [TASK 3] Observabilidade do transporte e ingestão
-
-Objective:
-- Adicionar métricas estruturadas para publish/recovery/fallback.
-- Expor tracing de falhas de reassemble/verificação com correlação por operação.
-- Incluir indicadores de saúde de rede para operação contínua.
-
-Context:
-- Faltam sinais operacionais completos para diagnosticar degradação de transporte e ingestão.
-
-Scope:
-- Arquivos/módulos que podem ser modificados:
-  - Camadas de transporte e ingestão para instrumentação.
-  - Módulos de telemetria/logging e testes relacionados.
-- O que NÃO deve ser tocado:
-  - Lógica funcional/criptográfica além dos pontos de instrumentação.
-
-Constraints:
-- Não vazar dados sensíveis (segredos, payloads brutos) em métricas/traces/logs.
-- Correlation IDs devem ser explícitos e seguros.
-- Overhead de observabilidade deve ser controlado por configuração.
-
-Acceptance Criteria:
-- Métricas de publish/recovery/fallback disponíveis e documentadas.
-- Tracing de falhas de reassemble/verificação com correlação por operação.
-- Indicadores de saúde de rede acessíveis para operação contínua.
-
-Tests Required:
-- Testes unitários para emissão de métricas em caminhos de sucesso e falha.
-- Testes de integração para correlação ponta a ponta em tracing.
-- Casos negativos: falhas sem contexto completo não devem causar panic.
-
-Documentation:
-- Atualizar `README.md` com orientação de observabilidade.
-- Atualizar `/docs` com catálogo de métricas, traces e indicadores de saúde.
-
-Versioning:
-- Confirmado: `VERSION.md` deve ser incrementado quando esta task for executada.
-
----
-
-## [TASK 4] Cobertura MLS de conformidade avançada
-
-Objective:
-- Expandir testes MLS com cenários avançados de permutação de commits e ressincronização.
-- Incluir casos negativos adicionais para ordem de epochs e recuperação parcial.
-
-Context:
-- A integração MLS já suporta TreeKEM, commits, updates, add/remove e fluxos de ressincronização.
-- A pendência é ampliar cobertura de conformidade e interoperabilidade.
-
-Scope:
-- Arquivos/módulos que podem ser modificados:
-  - Suites de teste MLS.
-  - Fixtures/helpers de cenários avançados de commit/epoch/recovery.
-- O que NÃO deve ser tocado:
-  - Design criptográfico MLS e formato de mensagens sem aprovação humana explícita.
-
-Constraints:
-- Preservar invariantes de ordem de epoch e aplicação de commits.
-- Entradas externas malformadas devem retornar erro explícito (sem panic).
-- Garantir determinismo e reprodutibilidade dos testes.
-
-Acceptance Criteria:
-- Cobertura ampliada para permutação de commits com ressincronização.
-- Casos de epoch fora de ordem e recuperação parcial inconsistente são rejeitados explicitamente.
-- Testes de conformidade executam com resultados determinísticos.
-
-Tests Required:
-- Novos testes de integração MLS para cenários avançados de commits/ressincronização.
-- Casos negativos para ordem de epochs e recuperação parcial.
-- Property-based tests para determinismo/idempotência quando viável.
+- Testes de integração MLS para cenários avançados de commit/epoch/recovery.
+- Casos negativos de reorder, replay e estado incompleto.
+- Property-based tests de idempotência/determinismo quando viável.
 - Fuzz targets para parsing/decoding MLS quando viável.
 
 Documentation:
-- Atualizar `/docs` com matriz de conformidade MLS coberta.
-- Atualizar `README.md` se houver impacto no comportamento exposto.
+- Atualizar documentação de conformidade MLS em `/docs`.
+- Atualizar `README.md` se houver impacto em garantias expostas.
 
 Versioning:
 - Confirmado: `VERSION.md` deve ser incrementado quando esta task for executada.
 
 ---
 
-## [TASK 5] Ferramentas de operação (logs/revogação/recovery)
+## [TASK 3] Expansão de robustez adversarial (fuzz + property tests em superfícies críticas)
 
 Objective:
-- Melhorar exportação e análise de logs de abuso.
-- Consolidar fluxos de revogação de chaves e gerenciamento de recovery keys para integrações externas.
+- Fechar lacunas de robustez em parsing/decoding para superfícies externas (HTTP bridge + transporte P2P).
+- Aumentar proteção contra inputs malformados e regressões de panic.
 
 Context:
-- Bridge e CLI já possuem base de rate limiting/logs e comandos de recuperação/revogação.
-- Ainda faltam fluxos operacionais completos para ambientes heterogêneos.
+- Já existem fuzz targets e testes property-based para partes do core/bridge.
+- A pendência é ampliar cobertura para superfícies críticas restantes e garantir continuidade em CI.
 
 Scope:
 - Arquivos/módulos que podem ser modificados:
-  - Bridge/CLI para exportação de logs e comandos operacionais.
-  - Fluxos de revogação/recovery e integrações externas.
+  - `fuzz/fuzz_targets/*` e harnesses relacionados.
+  - Testes em `crates/spex-bridge/tests/*`, `crates/spex-transport/tests/*`, `spex-core/tests/*`.
+  - `docs/security.md` e `README.md` (estratégia de testes adversariais).
 - O que NÃO deve ser tocado:
-  - Políticas de autenticação/autorização de forma a enfraquecer segurança.
+  - Sem alterar regras de validação para “acomodar” inputs inválidos.
 
 Constraints:
-- Revogação deve ser autenticada, auditável e idempotente.
-- Exportação de logs deve minimizar exposição de dados sensíveis.
-- Fluxo de recovery keys deve ser explícito e compatível com integrações externas.
+- Entradas não confiáveis nunca devem depender de panic path.
+- Erros precisam ser explícitos e auditáveis.
+- Fuzz/property tests devem ser determinísticos o suficiente para execução em pipeline.
 
 Acceptance Criteria:
-- Logs de abuso exportáveis com filtros e formato estável.
-- Revogação de chaves com trilha de auditoria verificável.
-- Gestão de recovery keys funcional para integrações externas previstas.
+- Novos fuzz targets cobrem parsing crítico ainda sem cobertura.
+- Property tests validam invariantes de determinismo/idempotência.
+- Casos malformados retornam erro explícito sem queda do processo.
 
 Tests Required:
-- Testes unitários para exportação/filtros de logs.
-- Testes de integração para revogação/recovery em cenários heterogêneos.
-- Casos negativos: revogação sem permissão, chave inexistente, recovery key inválida/expirada.
+- Execução de fuzz smoke tests para targets novos/atualizados.
+- Testes unitários/integrados para rejeição de payloads inválidos.
+- Casos negativos de truncamento, tipos inesperados e inconsistência de hash/assinatura.
 
 Documentation:
-- Atualizar `README.md` com fluxos operacionais suportados.
-- Atualizar `/docs` com runbooks de abuso, revogação e recovery.
+- Atualizar `docs/security.md` com política de robustez e cobertura fuzz.
+- Atualizar `README.md` com instruções de execução e escopo de robustez.
+
+Versioning:
+- Confirmado: `VERSION.md` deve ser incrementado quando esta task for executada.
+
+---
+
+## [TASK 4] Readiness de release da primeira versão definitiva
+
+Objective:
+- Consolidar o pacote final para fechamento da primeira versão definitiva (release candidate + checklist de segurança + documentação operacional final).
+
+Context:
+- Funcionalidades principais já existem, mas falta uma trilha única e auditável de “go/no-go” para publicação.
+
+Scope:
+- Arquivos/módulos que podem ser modificados:
+  - `README.md`, `CONTRIBUTING.md`, `CHANGELOG.md`, `docs/*` (checklists, matriz de compatibilidade e operação).
+  - CI/workflows em `.github/workflows/*` para gates finais de teste/segurança.
+- O que NÃO deve ser tocado:
+  - Sem mudanças de protocolo/wire nesta etapa.
+
+Constraints:
+- Todo gate crítico precisa ser explícito e reproduzível.
+- Critérios de segurança/release não podem depender de validação manual implícita.
+
+Acceptance Criteria:
+- Checklist de release v1 definido com critérios objetivos de aprovação/reprovação.
+- Pipeline CI com gates mínimos para testes críticos, robustez adversarial e documentação.
+- Documentação final cobre operação, incidentes e recuperação.
+
+Tests Required:
+- Execução do pipeline de testes definido para release candidate.
+- Casos negativos de gate (ex.: falha em teste crítico bloqueia release).
+
+Documentation:
+- Atualizar `README.md` com fluxo de release final.
+- Atualizar `/docs` com checklist de go-live, runbooks e critérios de rollback.
+- Atualizar `CHANGELOG.md` com agrupamento de escopo para release definitiva.
 
 Versioning:
 - Confirmado: `VERSION.md` deve ser incrementado quando esta task for executada.
