@@ -4685,6 +4685,7 @@ dependencies = [
  "hex",
  "mls-rs",
  "mls-rs-crypto-rustcrypto",
+ "proptest",
  "spex-core",
 ]
 
