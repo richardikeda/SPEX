@@ -22,11 +22,16 @@ use libp2p::{Multiaddr, PeerId, SwarmBuilder};
 use rand::Rng;
 use tracing::{info, warn};
 
+use crate::telemetry::{
+    derive_minimal_correlation_id, derive_operation_correlation_id, NetworkHealthIndicators,
+    NetworkHealthStatus, NetworkHealthThresholds,
+};
+
 use spex_core::hash::{hash_bytes, HashId};
 
 use crate::chunking::Chunk;
 use crate::error::TransportError;
-use crate::inbox::derive_inbox_scan_key;
+use crate::inbox::{bridge_fallback_counters, derive_inbox_scan_key};
 use crate::transport::{
     manifest_payload, parse_manifest_from_gossip, read_bootstrap_snapshot,
     reassemble_payload_from_store, robust_random_walk_with_sources,
@@ -83,16 +88,49 @@ pub struct P2pMetricsSnapshot {
     pub publish_success: u64,
     pub publish_timeout: u64,
     pub publish_retries: u64,
+    pub publish_attempts: u64,
     pub query_success: u64,
     pub query_timeout: u64,
     pub query_retries: u64,
+    pub query_attempts: u64,
     pub recovery_success: u64,
     pub recovery_timeout: u64,
     pub recovery_retries: u64,
+    pub recovery_attempts: u64,
+    pub fallback_attempts: u64,
+    pub fallback_success: u64,
+    pub fallback_failure: u64,
     pub reassemble_failures: u64,
+    pub verification_failures: u64,
     pub publish_latency_ms: Vec<u64>,
     pub query_latency_ms: Vec<u64>,
     pub recovery_latency_ms: Vec<u64>,
+}
+
+impl P2pMetricsSnapshot {
+    /// Returns publish success rate in basis points using attempts as denominator.
+    pub fn publish_success_rate_bps(&self) -> u32 {
+        if self.publish_attempts == 0 {
+            return 0;
+        }
+        ((self.publish_success.saturating_mul(10_000)) / self.publish_attempts) as u32
+    }
+
+    /// Returns recovery timeout ratio in basis points using attempts as denominator.
+    pub fn recovery_timeout_rate_bps(&self) -> u32 {
+        if self.recovery_attempts == 0 {
+            return 0;
+        }
+        ((self.recovery_timeout.saturating_mul(10_000)) / self.recovery_attempts) as u32
+    }
+
+    /// Returns fallback activation frequency in basis points relative to recovery attempts.
+    pub fn fallback_frequency_bps(&self) -> u32 {
+        if self.recovery_attempts == 0 {
+            return 0;
+        }
+        ((self.fallback_attempts.saturating_mul(10_000)) / self.recovery_attempts) as u32
+    }
 }
 
 impl Default for P2pNodeConfig {
@@ -286,10 +324,69 @@ impl P2pTransport {
 
     /// Returns a clone of collected counters and histograms for assertions and diagnostics.
     pub fn metrics_snapshot(&self) -> P2pMetricsSnapshot {
-        self.metrics
+        let mut snapshot = self
+            .metrics
             .lock()
             .map(|metrics| metrics.snapshot.clone())
-            .unwrap_or_default()
+            .unwrap_or_default();
+        let (total, success, failure) = bridge_fallback_counters();
+        snapshot.fallback_attempts = total;
+        snapshot.fallback_success = success;
+        snapshot.fallback_failure = failure;
+        snapshot
+    }
+
+    /// Computes current network health indicators from peer state and timeout/fallback ratios.
+    pub fn network_health_indicators(
+        &self,
+        thresholds: NetworkHealthThresholds,
+    ) -> NetworkHealthIndicators {
+        let snapshot = self.metrics_snapshot();
+        let timeout_total = snapshot
+            .publish_timeout
+            .saturating_add(snapshot.query_timeout)
+            .saturating_add(snapshot.recovery_timeout);
+        let operation_total = snapshot
+            .publish_attempts
+            .saturating_add(snapshot.query_attempts)
+            .saturating_add(snapshot.recovery_attempts)
+            .max(1);
+        let timeout_ratio_bps = ((timeout_total.saturating_mul(10_000)) / operation_total) as u32;
+        let fallback_total = snapshot.fallback_attempts.max(1);
+        let fallback_failure_ratio_bps =
+            ((snapshot.fallback_failure.saturating_mul(10_000)) / fallback_total) as u32;
+        let banned_peers = self
+            .peer_scores
+            .values()
+            .filter(|state| {
+                state
+                    .banned_until
+                    .map(|until| until > Instant::now())
+                    .unwrap_or(false)
+            })
+            .count();
+        let connected_peers = self.connected_peer_count();
+        let status = if connected_peers < thresholds.min_connected_peers
+            || timeout_ratio_bps > thresholds.max_timeout_ratio_bps
+            || fallback_failure_ratio_bps > thresholds.max_fallback_failure_ratio_bps
+        {
+            NetworkHealthStatus::Critical
+        } else if connected_peers <= thresholds.min_connected_peers.saturating_add(1)
+            || timeout_ratio_bps > thresholds.max_timeout_ratio_bps / 2
+            || fallback_failure_ratio_bps > thresholds.max_fallback_failure_ratio_bps / 2
+        {
+            NetworkHealthStatus::Degraded
+        } else {
+            NetworkHealthStatus::Healthy
+        };
+        NetworkHealthIndicators {
+            connected_peers,
+            known_peers: self.known_peer_count(),
+            banned_peers,
+            timeout_ratio_bps,
+            fallback_failure_ratio_bps,
+            status,
+        }
     }
 
     /// Returns persistence warnings collected during startup-safe recovery paths.
@@ -359,6 +456,7 @@ impl P2pTransport {
     ) -> Result<(), TransportError> {
         self.known_manifests.push(manifest.clone());
         let operation_start = Instant::now();
+        self.record_attempt("publish");
         let retry = self.node_config.adaptive_retry();
         let (publish_wait, _, _) = self.tuned_timeouts();
         for inbox_key in inbox_keys {
@@ -389,6 +487,11 @@ impl P2pTransport {
         self.drive_swarm(publish_wait, &mut ignored, |_, _| {})
             .await;
         for inbox_key in inbox_keys {
+            let correlation_id = if inbox_key.is_empty() {
+                derive_minimal_correlation_id("publish")
+            } else {
+                derive_operation_correlation_id("publish", inbox_key)
+            };
             let connect_deadline = Instant::now() + publish_wait;
             while self.swarm.connected_peers().next().is_none() && Instant::now() < connect_deadline
             {
@@ -427,7 +530,7 @@ impl P2pTransport {
                     .publish(topic.clone(), payload.clone())
                 {
                     Ok(_) => {
-                        info!(target: "spex_transport::p2p", operation="publish_manifest", attempt=attempts, "manifest publish completed");
+                        info!(target: "spex_transport::p2p", operation="publish_manifest", correlation_id=%correlation_id, attempt=attempts, "manifest publish completed");
                         break;
                     }
                     Err(PublishError::InsufficientPeers)
@@ -436,7 +539,7 @@ impl P2pTransport {
                         attempts += 1;
                         self.record_retry("publish");
                         let delay = retry.delay_for_attempt(attempts);
-                        warn!(target: "spex_transport::p2p", operation="publish_manifest", attempt=attempts, delay_ms=delay.as_millis() as u64, "publish waiting for peers");
+                        warn!(target: "spex_transport::p2p", operation="publish_manifest", correlation_id=%correlation_id, attempt=attempts, delay_ms=delay.as_millis() as u64, "publish waiting for peers");
                         self.drive_swarm(delay, &mut ignored, |_, _| {}).await;
                     }
                     Err(PublishError::InsufficientPeers) => {
@@ -500,6 +603,12 @@ impl P2pTransport {
             .map_err(|err| TransportError::Libp2p(err.to_string()))?;
 
         let operation_start = Instant::now();
+        self.record_attempt("recovery");
+        let correlation_id = if inbox_key.is_empty() {
+            derive_minimal_correlation_id("recovery")
+        } else {
+            derive_operation_correlation_id("recovery", inbox_key)
+        };
         let retry = self.node_config.adaptive_retry();
         let mut payloads = Vec::new();
         let mut resubscribe_at = Instant::now();
@@ -513,7 +622,7 @@ impl P2pTransport {
                 let delay = retry.delay_for_attempt(resubscribe_attempt.min(retry.max_retries));
                 resubscribe_attempt = resubscribe_attempt.saturating_add(1);
                 self.record_retry("recovery");
-                info!(target: "spex_transport::p2p", operation="recovery_inbox", attempt=resubscribe_attempt, delay_ms=delay.as_millis() as u64, "resubscribing inbox topic");
+                info!(target: "spex_transport::p2p", operation="recovery_inbox", correlation_id=%correlation_id, attempt=resubscribe_attempt, delay_ms=delay.as_millis() as u64, "resubscribing inbox topic");
                 resubscribe_at = Instant::now() + delay;
             }
             let delay = tokio::time::sleep(Duration::from_millis(200));
@@ -535,17 +644,25 @@ impl P2pTransport {
         for payload in payloads {
             let manifest = match parse_manifest_from_gossip(&payload) {
                 Ok(parsed) => parsed,
-                Err(_) => continue,
+                Err(_) => {
+                    self.record_verification_failure();
+                    warn!(target: "spex_transport::p2p", operation="manifest_parse", correlation_id=%correlation_id, "failed to parse manifest payload");
+                    continue;
+                }
             };
             let store = match self.fetch_manifest_chunks(&manifest).await {
                 Ok(store) => store,
-                Err(_) => continue,
+                Err(_) => {
+                    self.record_verification_failure();
+                    warn!(target: "spex_transport::p2p", operation="chunk_verify", correlation_id=%correlation_id, "failed to verify chunk set");
+                    continue;
+                }
             };
             let payload = match reassemble_payload_from_store(&manifest, &store, &self.config) {
                 Ok(payload) => payload,
                 Err(_) => {
                     self.record_reassemble_failure();
-                    warn!(target: "spex_transport::p2p", operation="reassemble", "failed to rebuild payload from chunk store");
+                    warn!(target: "spex_transport::p2p", operation="reassemble", correlation_id=%correlation_id, "failed to rebuild payload from chunk store");
                     continue;
                 }
             };
@@ -744,6 +861,7 @@ impl P2pTransport {
         &mut self,
         manifest: &ChunkManifest,
     ) -> Result<HashMap<Vec<u8>, Vec<u8>>, TransportError> {
+        self.record_attempt("query");
         let mut pending: HashMap<QueryId, Vec<u8>> = HashMap::new();
         let expected: std::collections::HashSet<Vec<u8>> = manifest
             .chunks
@@ -813,6 +931,18 @@ impl P2pTransport {
         }
     }
 
+    /// Updates attempt counters for publish/query/recovery operation classes.
+    fn record_attempt(&self, operation: &str) {
+        if let Ok(mut metrics) = self.metrics.lock() {
+            match operation {
+                "publish" => metrics.snapshot.publish_attempts += 1,
+                "query" => metrics.snapshot.query_attempts += 1,
+                "recovery" => metrics.snapshot.recovery_attempts += 1,
+                _ => {}
+            }
+        }
+    }
+
     /// Updates retry counters for publish/query/recovery operation classes.
     fn record_retry(&self, operation: &str) {
         if let Ok(mut metrics) = self.metrics.lock() {
@@ -863,6 +993,13 @@ impl P2pTransport {
     fn record_reassemble_failure(&self) {
         if let Ok(mut metrics) = self.metrics.lock() {
             metrics.snapshot.reassemble_failures += 1;
+        }
+    }
+
+    /// Increments the counter that tracks payload verification failures.
+    fn record_verification_failure(&self) {
+        if let Ok(mut metrics) = self.metrics.lock() {
+            metrics.snapshot.verification_failures += 1;
         }
     }
 }
@@ -1159,4 +1296,34 @@ fn extract_records(
         }
     }
     store
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Verifies metric rates are emitted deterministically for success and failure counters.
+    #[test]
+    fn test_metrics_rates_cover_success_and_failure_paths() {
+        let snapshot = P2pMetricsSnapshot {
+            publish_success: 3,
+            publish_attempts: 4,
+            recovery_timeout: 2,
+            recovery_attempts: 5,
+            fallback_attempts: 2,
+            ..Default::default()
+        };
+        assert_eq!(snapshot.publish_success_rate_bps(), 7_500);
+        assert_eq!(snapshot.recovery_timeout_rate_bps(), 4_000);
+        assert_eq!(snapshot.fallback_frequency_bps(), 4_000);
+    }
+
+    /// Ensures zero-attempt snapshots never panic and return explicit zero rates.
+    #[test]
+    fn test_metrics_rates_handle_missing_context() {
+        let snapshot = P2pMetricsSnapshot::default();
+        assert_eq!(snapshot.publish_success_rate_bps(), 0);
+        assert_eq!(snapshot.recovery_timeout_rate_bps(), 0);
+        assert_eq!(snapshot.fallback_frequency_bps(), 0);
+    }
 }

@@ -10,6 +10,7 @@ pub mod error;
 pub mod inbox;
 pub mod ingest;
 pub mod p2p;
+pub mod telemetry;
 pub mod transport;
 
 pub use chunking::{chunk_data, reassemble_chunks, Chunk, ChunkingConfig};
@@ -21,6 +22,10 @@ pub use ingest::{
 };
 pub use p2p::{
     inbox_gossip_topic, P2pMetricsSnapshot, P2pNodeConfig, P2pRuntimeProfile, P2pTransport,
+};
+pub use telemetry::{
+    derive_minimal_correlation_id, derive_operation_correlation_id, NetworkHealthIndicators,
+    NetworkHealthStatus, NetworkHealthThresholds,
 };
 pub use transport::manifest_payload;
 pub use transport::{
