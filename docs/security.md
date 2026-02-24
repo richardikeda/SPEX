@@ -28,6 +28,16 @@ Mudanças inesperadas de chave podem indicar comprometimento ou ataque de substi
   iterações ≥3).
 - Restrinja roles/flags com base em políticas locais e evite permissões excessivas.
 
+
+## Persistência P2P e anti-eclipse
+
+Para reduzir perda de estado e risco de eclipse no transporte P2P:
+
+- Persista peers conhecidos, bootstrap e índices mínimos em snapshot determinístico com escrita atômica (`temp + rename`).
+- Trate snapshot corrompido como entrada não-confiável: retorne erro explícito ou faça fallback seguro para store vazio.
+- Aplique peer scoring com penalidades para payload inválido, timeout recorrente e resposta inconsistente.
+- Isole peers com score crítico via disconnect e ban temporário para limitar influência por origem.
+
 ## TLS obrigatório
 
 Transporte deve usar **TLS** (HTTPS) sempre que houver tráfego em rede (bridge, APIs ou
