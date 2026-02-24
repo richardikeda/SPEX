@@ -103,3 +103,31 @@ Política de fuzz smoke para release readiness:
 - O pipeline deve instalar `cargo-fuzz` explicitamente no job de robustez.
 - Todos os alvos em `fuzz/fuzz_targets/*.rs` devem rodar com limite determinístico (`-max_total_time=30` e `-seed=1`).
 - Qualquer crash/panic em fuzzing deve falhar o job imediatamente (exit code não-zero).
+
+
+## Resposta a achados de advisory (cargo-audit / cargo-deny)
+
+Quando o pipeline sinalizar advisory, trate como incidente de segurança e siga um fluxo explícito:
+
+1. **Triagem imediata**
+   - Identifique o advisory (`RUSTSEC-xxxx-xxxx`), pacote afetado, versão vulnerável e severidade.
+   - Determine exposição real no SPEX (binário, feature flag, caminho de execução).
+
+2. **Contenção**
+   - Bloqueie release enquanto o advisory estiver aberto no branch de release.
+   - Se necessário, desative feature opcional dependente do pacote vulnerável até correção.
+
+3. **Remediação**
+   - Priorize atualização para versão corrigida no `Cargo.lock`/`Cargo.toml`.
+   - Quando não houver patch upstream, aplique mitigação temporária documentada e registre risco residual.
+   - Exceções (`ignore`) em `deny.toml` só podem ser temporárias, justificadas e com prazo de remoção.
+
+4. **Validação**
+   - Reexecute `cargo audit` e `cargo deny check` localmente e no CI.
+   - Execute suites de regressão relevantes para confirmar ausência de quebra funcional.
+
+5. **Rastreabilidade e comunicação**
+   - Documente causa raiz, impacto, mitigação e hash do commit de correção.
+   - Registre follow-up para remover workarounds e revisar dependências correlatas.
+
+Critério de saída: release somente com pipeline de supply chain em verde e sem advisory aberto sem exceção formal aprovada.
