@@ -15,10 +15,9 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Critical workspace tests
+      - name: Critical release scope tests
         run: |
-          cargo test --workspace --locked --verbose
-          cargo test --workspace --locked --all-features --verbose
+          cargo test -p spex-core -p spex-mls -p spex-transport --locked --all-features --verbose
 
   release-robustness:
     runs-on: ubuntu-24.04

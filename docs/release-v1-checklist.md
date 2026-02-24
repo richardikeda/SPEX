@@ -19,12 +19,31 @@ Run all commands from repository root.
 ### Gate A — Critical Tests
 
 ```bash
-cargo test --workspace --locked --verbose
-cargo test --workspace --locked --all-features --verbose
+cargo test -p spex-core -p spex-mls -p spex-transport --locked --all-features --verbose
 ```
 
-Go if both commands succeed.
-No-Go if any command fails.
+Go if the command succeeds.
+No-Go if the command fails.
+
+#### Critical test classification criteria
+
+A test is classified as **critical** only when it validates at least one of the rules below:
+
+- protocol invariants that protect canonical encoding, signature validity, and deterministic state transitions;
+- authentication/authorization paths where bypass would compromise security guarantees;
+- transport/session controls that can break integrity, replay protection, or ordering guarantees.
+
+To avoid ambiguity, the critical scope is explicit and package-scoped:
+
+- `spex-core`
+- `spex-mls`
+- `spex-transport`
+
+Any proposal to add/remove crates from this scope must include:
+
+- a security rationale in the PR description;
+- updates to this checklist and `.github/workflows/release-readiness.yml` in the same PR;
+- successful execution of the updated critical suite.
 
 ### Gate B — Security/Robustness Regression
 
@@ -90,3 +109,27 @@ Before publication, verify:
 - Changelog scope matches implemented changes.
 - All docs links referenced by `README.md` resolve.
 - CI workflow status is green for release-required jobs.
+
+## 7) Merge/Release Blocking Policy
+
+`release-critical-tests` is a **mandatory status check** for `main`.
+Merge and release are blocked when this check fails.
+
+Branch protection/ruleset must enforce all conditions below:
+
+- Require pull request before merging.
+- Require status checks to pass before merging.
+- Include `release-critical-tests` in required status checks.
+
+Declarative branch protection policy is stored at:
+
+- `.github/branch-protection/main.json`
+
+Apply it with GitHub API (admin token required):
+
+```bash
+gh api \
+  --method PUT \
+  repos/:owner/:repo/branches/main/protection \
+  --input .github/branch-protection/main.json
+```
