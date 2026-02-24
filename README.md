@@ -52,10 +52,21 @@ Implementação inicial em andamento com os seguintes componentes e nível atual
 - [Wire format (CBOR)](docs/wire-format.md)
 - [Bridge HTTP API](docs/bridge-api.md)
 - [Segurança](docs/security.md)
+- [Observabilidade de transporte/ingestão](docs/observability.md)
 
 Os documentos acima detalham arquitetura, wire format com tabelas de IDs/tipos CBOR, bridge HTTP
 com exemplos de payloads e status codes, fluxo request/grant, armazenamento local (`~/.spex/state.json`),
 fingerprints, requisitos de TLS e práticas de segurança recomendadas.
+
+
+### Observabilidade de transporte/ingestão
+
+O `spex-transport` expõe métricas estruturadas para publish/recovery/fallback, tracing com `correlation_id` determinístico por operação e indicadores contínuos de saúde de rede.
+
+Referências operacionais:
+- catálogo de métricas/traces: [docs/observability.md](docs/observability.md)
+- snapshot de métricas: `P2pMetricsSnapshot`
+- saúde de rede: `network_health_indicators(NetworkHealthThresholds)`
 
 ## Avisos de segurança
 

@@ -15,6 +15,7 @@ use tracing::{info, warn};
 use spex_core::hash::{hash_bytes, hash_ctap2_cbor_value, HashId};
 
 use crate::error::TransportError;
+use crate::telemetry::{derive_minimal_correlation_id, derive_operation_correlation_id};
 
 static BRIDGE_FALLBACK_TOTAL: AtomicU64 = AtomicU64::new(0);
 static BRIDGE_FALLBACK_SUCCESS: AtomicU64 = AtomicU64::new(0);
@@ -74,6 +75,11 @@ pub async fn resolve_inbox_with_fallback(
     kademlia_result: Option<GetRecordOk>,
     bridge: Option<&BridgeClient>,
 ) -> Result<InboxScanResponse, TransportError> {
+    let correlation_id = if inbox_scan_key.is_empty() {
+        derive_minimal_correlation_id("fallback")
+    } else {
+        derive_operation_correlation_id("fallback", inbox_scan_key)
+    };
     if let Some(result) = kademlia_result {
         let response = collect_inbox_items(result);
         if !response.items.is_empty() || bridge.is_none() {
@@ -88,11 +94,11 @@ pub async fn resolve_inbox_with_fallback(
         match &response {
             Ok(ok) => {
                 BRIDGE_FALLBACK_SUCCESS.fetch_add(1, Ordering::Relaxed);
-                info!(target: "spex_transport::bridge", operation="fallback_bridge", items=ok.items.len(), latency_ms=start.elapsed().as_millis() as u64, "bridge fallback succeeded");
+                info!(target: "spex_transport::bridge", operation="fallback_bridge", correlation_id=%correlation_id, items=ok.items.len(), latency_ms=start.elapsed().as_millis() as u64, "bridge fallback succeeded");
             }
             Err(_) => {
                 BRIDGE_FALLBACK_FAILURE.fetch_add(1, Ordering::Relaxed);
-                warn!(target: "spex_transport::bridge", operation="fallback_bridge", latency_ms=start.elapsed().as_millis() as u64, "bridge fallback failed");
+                warn!(target: "spex_transport::bridge", operation="fallback_bridge", correlation_id=%correlation_id, latency_ms=start.elapsed().as_millis() as u64, "bridge fallback failed");
             }
         }
         return response;
@@ -396,6 +402,18 @@ mod tests {
             TransportError::InvalidPayload(_) | TransportError::CborDecode(_)
         ));
     }
+
+    /// Ensures fallback observability handles missing context keys without failing the pipeline.
+    #[tokio::test]
+    async fn test_resolve_inbox_with_fallback_accepts_empty_context() {
+        reset_bridge_fallback_counters_for_test();
+        let response = resolve_inbox_with_fallback(&[], None, None)
+            .await
+            .expect("fallback resolution");
+        assert!(response.items.is_empty());
+        assert!(matches!(response.source, InboxSource::Kademlia));
+        assert_eq!(bridge_fallback_counters(), (0, 0, 0));
+    }
 }
 
 /// Returns global counters for bridge fallback attempts, successes, and failures.
@@ -405,4 +423,12 @@ pub fn bridge_fallback_counters() -> (u64, u64, u64) {
         BRIDGE_FALLBACK_SUCCESS.load(Ordering::Relaxed),
         BRIDGE_FALLBACK_FAILURE.load(Ordering::Relaxed),
     )
+}
+
+/// Resets bridge fallback counters for deterministic tests.
+#[cfg(test)]
+pub(crate) fn reset_bridge_fallback_counters_for_test() {
+    BRIDGE_FALLBACK_TOTAL.store(0, Ordering::Relaxed);
+    BRIDGE_FALLBACK_SUCCESS.store(0, Ordering::Relaxed);
+    BRIDGE_FALLBACK_FAILURE.store(0, Ordering::Relaxed);
 }
