@@ -1,6 +1,7 @@
 use clap::{Parser, Subcommand};
 use libp2p::identity::Keypair;
 use libp2p::Multiaddr;
+use spex_bridge::{export_abuse_logs, AbuseLogFilter};
 use spex_client::{
     accept_request_for_state, create_checkpoint_entry, create_contact_card_payload,
     create_identity_in_state, create_recovery_entry, create_request_for_state,
@@ -16,6 +17,7 @@ use spex_transport::{
     P2pNodeConfig, P2pTransport, TransportConfig,
 };
 use std::fs;
+use std::path::PathBuf;
 use std::time::Duration;
 
 #[derive(Parser)]
@@ -166,6 +168,24 @@ enum LogCommand {
         #[arg(long)]
         path: String,
     },
+    ExportAbuse {
+        #[arg(long)]
+        db_path: String,
+        #[arg(long)]
+        path: String,
+        #[arg(long)]
+        identity: Option<String>,
+        #[arg(long)]
+        request_kind: Option<String>,
+        #[arg(long)]
+        outcome: Option<String>,
+        #[arg(long)]
+        since: Option<u64>,
+        #[arg(long)]
+        until: Option<u64>,
+        #[arg(long)]
+        limit: Option<usize>,
+    },
     Import {
         #[arg(long)]
         path: String,
@@ -286,6 +306,20 @@ async fn recover_payloads_with_fallback(
         items: Vec::new(),
         source: InboxSource::Kademlia,
     })
+}
+
+/// Exports abuse audit records from a bridge SQLite database as JSON lines.
+fn export_abuse_log_file(
+    path: &str,
+    records: &[spex_bridge::AbuseLogRecord],
+) -> Result<(), ClientError> {
+    let mut lines = Vec::with_capacity(records.len());
+    for record in records {
+        let encoded = serde_json::to_string(record)?;
+        lines.push(encoded);
+    }
+    fs::write(path, lines.join("\n"))?;
+    Ok(())
 }
 
 /// Runs the CLI entry point and dispatches commands.
@@ -522,12 +556,20 @@ async fn run_cli() -> Result<(), ClientError> {
                     .identity
                     .as_ref()
                     .ok_or(ClientError::MissingIdentity)?;
-                let entry = create_revocation_entry(identity, &key_hex, recovery_hex, reason)?;
                 let mut log = load_checkpoint_log(&state)?;
-                log.append(CheckpointEntry::Revocation(entry))
-                    .map_err(|err| ClientError::Log(err.to_string()))?;
-                save_checkpoint_log(&mut state, &log)?;
-                println!("revocation appended (len: {})", log.entries.len());
+                let entry = create_revocation_entry(identity, &key_hex, recovery_hex, reason)?;
+                let changed = spex_client::append_revocation_entry_checked(
+                    &mut log,
+                    identity,
+                    entry,
+                    60 * 60 * 24 * 365,
+                )?;
+                if changed {
+                    save_checkpoint_log(&mut state, &log)?;
+                    println!("revocation appended (len: {})", log.entries.len());
+                } else {
+                    println!("revocation already present (len: {})", log.entries.len());
+                }
             }
             LogCommand::Export { path } => {
                 let log = load_checkpoint_log(&state)?;
@@ -536,6 +578,29 @@ async fn run_cli() -> Result<(), ClientError> {
                     .map_err(|err| ClientError::Log(err.to_string()))?;
                 fs::write(path, encoded)?;
                 println!("log exported");
+            }
+            LogCommand::ExportAbuse {
+                db_path,
+                path,
+                identity,
+                request_kind,
+                outcome,
+                since,
+                until,
+                limit,
+            } => {
+                let filter = AbuseLogFilter {
+                    identity,
+                    request_kind,
+                    outcome,
+                    since_timestamp: since,
+                    until_timestamp: until,
+                    limit,
+                };
+                let records = export_abuse_logs(&PathBuf::from(db_path), &filter)
+                    .map_err(|err| ClientError::Log(err.to_string()))?;
+                export_abuse_log_file(&path, &records)?;
+                println!("abuse log exported (records: {})", records.len());
             }
             LogCommand::Import { path } => {
                 let encoded = fs::read_to_string(path)?;

@@ -192,6 +192,8 @@ cargo run -p spex-cli -- log create-recovery-key
 cargo run -p spex-cli -- log revoke-key --key-hex <HEX_KEY> --reason "compromised"
 cargo run -p spex-cli -- log info
 cargo run -p spex-cli -- log export --path <LOG_FILE>
+cargo run -p spex-cli -- log export-abuse --db-path <BRIDGE_DB> --path <ABUSE.jsonl> \
+  --request-kind inbox --outcome rejected --since <UNIX_TS> --until <UNIX_TS> --limit 500
 cargo run -p spex-cli -- log import --path <LOG_FILE>
 cargo run -p spex-cli -- log gossip-verify --path <LOG_FILE>
 ```
@@ -233,6 +235,9 @@ réplicas e verificar integridade usando o root do Merkle tree.
 
 O CLI exporta/importa o log em **CBOR canonical codificado em base64**. Isso facilita transporte
 em canais de texto e compatibilidade com o armazenamento local.
+
+Para fluxos operacionais de abuso/revogação/recovery em ambientes heterogêneos, consulte
+[`docs/operations-revocation-recovery-abuse.md`](docs/operations-revocation-recovery-abuse.md).
 
 ## Wire format (CBOR canonical/CTAP2)
 
