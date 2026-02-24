@@ -80,6 +80,7 @@ compartilhadas (assinaturas, PoW e autorização por thread).
 - `log revoke-key --key-hex <HEX_KEY> --reason "..."`: adiciona revogação de chave.
 - `log info`: exibe status e metadados do log.
 - `log export --path <LOG_FILE>`: exporta o log em CBOR canonical base64.
+- `log export-abuse --db-path <BRIDGE_DB> --path <FILE.jsonl>`: exporta trilha operacional de abuso com filtros (`--identity`, `--request-kind`, `--outcome`, `--since`, `--until`, `--limit`).
 - `log import --path <LOG_FILE>`: importa o log previamente exportado.
 - `log gossip-verify --path <LOG_FILE>`: valida consistência de uma réplica do log.
 

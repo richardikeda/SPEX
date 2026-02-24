@@ -331,3 +331,116 @@ async fn test_cli_message_send_negative_cases() {
     let wrong_key_poll = run_spex(&key_env, &["inbox", "poll", "--inbox-key", "not-hex"]);
     assert!(!wrong_key_poll.status.success());
 }
+
+#[test]
+fn test_cli_revocation_and_recovery_multi_environment() {
+    // Verifies revocation/recovery flow export-import across two state environments.
+    let (_dir_a, env_a) = make_cli_state_env("rev-a");
+    let (_dir_b, env_b) = make_cli_state_env("rev-b");
+
+    let create_a = run_spex(&env_a, &["identity", "new"]);
+    assert!(create_a.status.success(), "identity a failed");
+
+    let checkpoint = run_spex(&env_a, &["log", "append-checkpoint"]);
+    assert!(checkpoint.status.success(), "append checkpoint failed");
+
+    let recovery = run_spex(&env_a, &["log", "create-recovery-key"]);
+    assert!(recovery.status.success(), "create recovery failed");
+    let recovery_stdout = String::from_utf8_lossy(&recovery.stdout);
+    let recovery_hex = recovery_stdout
+        .lines()
+        .find_map(|line| line.strip_prefix("recovery key: "))
+        .expect("extract recovery key")
+        .to_string();
+
+    std::env::set_var("SPEX_STATE_PATH", &env_a.state_path);
+    std::env::set_var("SPEX_STATE_PASSPHRASE_FILE", &env_a.passphrase_path);
+    let state_a = load_state().expect("load env a state");
+    std::env::remove_var("SPEX_STATE_PATH");
+    std::env::remove_var("SPEX_STATE_PASSPHRASE_FILE");
+    let verify_key = state_a.identity.expect("identity").verifying_key_hex;
+
+    let revoke = run_spex(
+        &env_a,
+        &[
+            "log",
+            "revoke-key",
+            "--key-hex",
+            &verify_key,
+            "--recovery-hex",
+            &recovery_hex,
+            "--reason",
+            "operator-test",
+        ],
+    );
+    assert!(revoke.status.success(), "revoke with recovery failed");
+
+    let export_path = tempfile::NamedTempFile::new().expect("temp export file");
+    let export = run_spex(
+        &env_a,
+        &[
+            "log",
+            "export",
+            "--path",
+            export_path.path().to_str().expect("export path"),
+        ],
+    );
+    assert!(export.status.success(), "export failed");
+
+    let create_b = run_spex(&env_b, &["identity", "new"]);
+    assert!(create_b.status.success(), "identity b failed");
+    let import = run_spex(
+        &env_b,
+        &[
+            "log",
+            "import",
+            "--path",
+            export_path.path().to_str().expect("import path"),
+        ],
+    );
+    assert!(import.status.success(), "import failed");
+}
+
+#[test]
+fn test_cli_revocation_negative_cases() {
+    // Covers no-permission/missing identity, nonexistent key, and invalid recovery key handling.
+    let (_dir, env) = make_cli_state_env("rev-neg");
+
+    let without_identity = run_spex(
+        &env,
+        &["log", "revoke-key", "--key-hex", &hex::encode([1u8; 32])],
+    );
+    assert!(!without_identity.status.success());
+
+    let create = run_spex(&env, &["identity", "new"]);
+    assert!(create.status.success(), "identity create failed");
+
+    let checkpoint = run_spex(&env, &["log", "append-checkpoint"]);
+    assert!(checkpoint.status.success(), "append checkpoint failed");
+
+    let missing_key = run_spex(
+        &env,
+        &["log", "revoke-key", "--key-hex", &hex::encode([7u8; 32])],
+    );
+    assert!(!missing_key.status.success());
+
+    std::env::set_var("SPEX_STATE_PATH", &env.state_path);
+    std::env::set_var("SPEX_STATE_PASSPHRASE_FILE", &env.passphrase_path);
+    let state = load_state().expect("load state");
+    std::env::remove_var("SPEX_STATE_PATH");
+    std::env::remove_var("SPEX_STATE_PASSPHRASE_FILE");
+    let verifying_key = state.identity.expect("identity").verifying_key_hex;
+
+    let invalid_recovery = run_spex(
+        &env,
+        &[
+            "log",
+            "revoke-key",
+            "--key-hex",
+            &verifying_key,
+            "--recovery-hex",
+            &hex::encode([9u8; 32]),
+        ],
+    );
+    assert!(!invalid_recovery.status.success());
+}

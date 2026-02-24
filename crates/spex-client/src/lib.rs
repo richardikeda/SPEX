@@ -85,6 +85,12 @@ pub enum ClientError {
     UnauthorizedSender,
     #[error("invalid message encoding")]
     InvalidMessageEncoding,
+    #[error("permission denied for checkpoint operation")]
+    PermissionDenied,
+    #[error("revoked key not found in checkpoint history")]
+    RevokedKeyNotFound,
+    #[error("recovery key invalid or expired")]
+    RecoveryKeyInvalidOrExpired,
     #[error("core error: {0}")]
     Core(String),
     #[error("state encryption error: {0}")]
@@ -158,6 +164,9 @@ impl From<&ClientError> for ClientFailureReason {
             | ClientError::ThreadNotFound
             | ClientError::UnknownSender(_)
             | ClientError::Log(_) => Self::InternalError,
+            ClientError::PermissionDenied
+            | ClientError::RevokedKeyNotFound
+            | ClientError::RecoveryKeyInvalidOrExpired => Self::SecurityViolation,
         }
     }
 }
@@ -1921,6 +1930,58 @@ pub fn create_revocation_entry(
     })
 }
 
+/// Appends a revocation entry only when authorization, key existence, and recovery policy pass.
+///
+/// Returns `Ok(true)` when a new entry is appended and `Ok(false)` when an equivalent
+/// revocation already exists, preserving idempotence for repeated operator actions.
+pub fn append_revocation_entry_checked(
+    log: &mut CheckpointLog,
+    identity: &IdentityState,
+    entry: RevocationDeclaration,
+    recovery_max_age_seconds: u64,
+) -> Result<bool, ClientError> {
+    let identity_user_id = hex::decode(&identity.user_id_hex)?;
+    if entry.user_id != identity_user_id {
+        return Err(ClientError::PermissionDenied);
+    }
+    let key_was_issued = log.entries.iter().any(|candidate| match candidate {
+        CheckpointEntry::Key(key) => {
+            key.user_id == entry.user_id
+                && hash_bytes(HashId::Sha256, &key.verifying_key) == entry.revoked_key_hash
+        }
+        _ => false,
+    });
+    if !key_was_issued {
+        return Err(ClientError::RevokedKeyNotFound);
+    }
+    let already_revoked = log.entries.iter().any(|candidate| match candidate {
+        CheckpointEntry::Revocation(existing) => {
+            existing.user_id == entry.user_id && existing.revoked_key_hash == entry.revoked_key_hash
+        }
+        _ => false,
+    });
+    if already_revoked {
+        return Ok(false);
+    }
+    if let Some(recovery_hash) = &entry.recovery_key_hash {
+        let now = now_unix();
+        let valid_recovery = log.entries.iter().any(|candidate| match candidate {
+            CheckpointEntry::Recovery(recovery) => {
+                recovery.user_id == entry.user_id
+                    && hash_bytes(HashId::Sha256, &recovery.recovery_key) == *recovery_hash
+                    && now.saturating_sub(recovery.issued_at) <= recovery_max_age_seconds
+            }
+            _ => false,
+        });
+        if !valid_recovery {
+            return Err(ClientError::RecoveryKeyInvalidOrExpired);
+        }
+    }
+    log.append(CheckpointEntry::Revocation(entry))
+        .map_err(|err| ClientError::Log(err.to_string()))?;
+    Ok(true)
+}
+
 /// Reports consistency between two checkpoint logs.
 pub fn log_consistency(local: &CheckpointLog, remote: &CheckpointLog) -> LogConsistency {
     local.compare_with(remote)
@@ -2194,4 +2255,74 @@ pub async fn publish_via_bridge(
         .publish_to_inbox(&scan_req.hashed_key, &request)
         .await
         .map_err(|err| ClientError::Transport(err.to_string()))
+}
+
+#[cfg(test)]
+mod revocation_policy_tests {
+    use super::*;
+    use spex_core::log::CheckpointEntry;
+
+    /// Validates revocation append checks, including idempotence and negative recovery cases.
+    #[test]
+    fn test_append_revocation_entry_checked() {
+        let identity = create_identity();
+        let mut log = CheckpointLog::new();
+        let checkpoint = create_checkpoint_entry(&identity).expect("checkpoint");
+        log.append(CheckpointEntry::Key(checkpoint.clone()))
+            .expect("append key");
+
+        let revoked_key_hex = hex::encode(checkpoint.verifying_key.clone());
+        let first = create_revocation_entry(
+            &identity,
+            &revoked_key_hex,
+            None,
+            Some("compromised".into()),
+        )
+        .expect("revocation");
+        assert!(append_revocation_entry_checked(&mut log, &identity, first, 10).expect("append"));
+
+        let duplicate =
+            create_revocation_entry(&identity, &revoked_key_hex, None, Some("repeat".into()))
+                .expect("duplicate");
+        assert!(
+            !append_revocation_entry_checked(&mut log, &identity, duplicate, 10)
+                .expect("idempotent")
+        );
+
+        let missing = create_revocation_entry(&identity, &hex::encode([9u8; 32]), None, None)
+            .expect("missing-key");
+        let err = append_revocation_entry_checked(&mut log, &identity, missing, 10)
+            .expect_err("missing key error");
+        assert!(matches!(err, ClientError::RevokedKeyNotFound));
+
+        let second_key = create_identity();
+        let second_checkpoint = spex_core::log::KeyCheckpoint {
+            user_id: hex::decode(&identity.user_id_hex).expect("decode user"),
+            verifying_key: hex::decode(&second_key.verifying_key_hex).expect("decode key"),
+            device_id: hex::decode(&identity.device_id_hex).expect("decode device"),
+            issued_at: now_unix(),
+        };
+        log.append(CheckpointEntry::Key(second_checkpoint.clone()))
+            .expect("append second key");
+
+        let recovery = create_recovery_entry(&identity).expect("recovery");
+        let recovery_hex = hex::encode(recovery.recovery_key.clone());
+        let stale_recovery = RecoveryKey {
+            user_id: recovery.user_id,
+            recovery_key: recovery.recovery_key,
+            issued_at: now_unix().saturating_sub(5),
+        };
+        log.append(CheckpointEntry::Recovery(stale_recovery))
+            .expect("append recovery");
+        let with_recovery = create_revocation_entry(
+            &identity,
+            &hex::encode(second_checkpoint.verifying_key),
+            Some(recovery_hex),
+            None,
+        )
+        .expect("with recovery");
+        let err = append_revocation_entry_checked(&mut log, &identity, with_recovery, 1)
+            .expect_err("expired recovery");
+        assert!(matches!(err, ClientError::RecoveryKeyInvalidOrExpired));
+    }
 }

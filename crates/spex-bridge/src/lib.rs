@@ -10,7 +10,7 @@ use ed25519_dalek::{Signature, VerifyingKey};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use spex_core::{
-    hash,
+    hash::{self, HashId},
     pow::PowParams,
     types::GrantToken,
     validation::{self, GrantPowValidationError},
@@ -105,6 +105,28 @@ impl RequestKind {
 enum RequestOutcome {
     Accepted,
     Rejected,
+}
+
+/// Filters available when exporting abuse/audit request logs.
+#[derive(Clone, Debug, Default)]
+pub struct AbuseLogFilter {
+    pub identity: Option<String>,
+    pub request_kind: Option<String>,
+    pub outcome: Option<String>,
+    pub since_timestamp: Option<u64>,
+    pub until_timestamp: Option<u64>,
+    pub limit: Option<usize>,
+}
+
+/// Stable operational record returned by abuse log exports.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AbuseLogRecord {
+    pub timestamp: u64,
+    pub identity_hash_hex: String,
+    pub ip_prefix: String,
+    pub request_kind: String,
+    pub outcome: String,
+    pub bytes: u64,
 }
 
 impl RequestOutcome {
@@ -938,6 +960,80 @@ async fn update_reputation(
     .await
     .map_err(|err| BridgeError::Storage(err.to_string()))?
     .map_err(|err: rusqlite::Error| BridgeError::Storage(err.to_string()))
+}
+
+/// Exports abuse-oriented request logs using deterministic ordering and optional filters.
+///
+/// The exported records minimize sensitive data by replacing the raw identity with a
+/// SHA-256 hash and preserving only the already-masked IP prefix stored in the database.
+pub fn export_abuse_logs(
+    db_path: &FsPath,
+    filter: &AbuseLogFilter,
+) -> Result<Vec<AbuseLogRecord>, BridgeError> {
+    let conn = Connection::open(db_path).map_err(|err| BridgeError::Storage(err.to_string()))?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT timestamp, identity, ip, request_kind, outcome, bytes \
+             FROM request_logs ORDER BY id ASC",
+        )
+        .map_err(|err| BridgeError::Storage(err.to_string()))?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)? as u64,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, i64>(5)? as u64,
+            ))
+        })
+        .map_err(|err| BridgeError::Storage(err.to_string()))?;
+
+    let mut exported = Vec::new();
+    for row in rows {
+        let (timestamp, identity, ip, request_kind, outcome, bytes) =
+            row.map_err(|err| BridgeError::Storage(err.to_string()))?;
+        if let Some(expected) = &filter.identity {
+            if &identity != expected {
+                continue;
+            }
+        }
+        if let Some(expected) = &filter.request_kind {
+            if &request_kind != expected {
+                continue;
+            }
+        }
+        if let Some(expected) = &filter.outcome {
+            if &outcome != expected {
+                continue;
+            }
+        }
+        if let Some(since) = filter.since_timestamp {
+            if timestamp < since {
+                continue;
+            }
+        }
+        if let Some(until) = filter.until_timestamp {
+            if timestamp > until {
+                continue;
+            }
+        }
+        exported.push(AbuseLogRecord {
+            timestamp,
+            identity_hash_hex: hex::encode(hash::hash_bytes(HashId::Sha256, identity.as_bytes())),
+            ip_prefix: ip,
+            request_kind,
+            outcome,
+            bytes,
+        });
+        if let Some(limit) = filter.limit {
+            if exported.len() >= limit {
+                break;
+            }
+        }
+    }
+    Ok(exported)
 }
 
 /// Stores binary data in the requested table under the provided key.

@@ -18,6 +18,7 @@ tokio = { version = "1.37", features = ["rt-multi-thread", "macros"] }
 spex-client = { path = "../spex-client" }
 spex-core = { path = "../../spex-core" }
 spex-transport = { path = "../spex-transport" }
+spex-bridge = { path = "../spex-bridge" }
 
 [dev-dependencies]
 axum = "0.7"
