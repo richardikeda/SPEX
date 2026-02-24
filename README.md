@@ -61,7 +61,7 @@ fingerprints, requisitos de TLS e práticas de segurança recomendadas.
 
 ### Observabilidade de transporte/ingestão
 
-O `spex-transport` expõe métricas estruturadas para publish/recovery/fallback, tracing com `correlation_id` determinístico por operação e indicadores contínuos de saúde de rede.
+O `spex-transport` expõe métricas estruturadas para publish/recovery/fallback, tracing com `correlation_id` determinístico por operação (incluindo fallback estável quando metadados mínimos estão ausentes) e indicadores contínuos de saúde de rede.
 
 Referências operacionais:
 - catálogo de métricas/traces: [docs/observability.md](docs/observability.md)
@@ -459,6 +459,7 @@ O runtime `spex-transport` agora aplica tuning operacional explícito por perfil
 
 - `publish_wait`, `query_timeout` e `manifest_wait` são definidos por `P2pNodeConfig::for_profile`.
 - Em runtime, os timeouts são ajustados por conectividade (`P2pTransport::tuned_timeouts`) para reduzir latência média sem quebrar compatibilidade de rede.
+- Em cenários extremos, o backoff adaptativo permanece limitado por perfil para evitar esperas desproporcionais e manter convergência determinística.
 - Políticas de reputação distinguem falhas transitórias (probation) de abuso recorrente (ban temporário).
 - Snapshots de estado persistem reputação e metadados para recovery seguro após churn prolongado.
 - Estado corrompido é quarentenado automaticamente, com aviso explícito (`persistence_warnings`).

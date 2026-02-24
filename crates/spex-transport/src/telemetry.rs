@@ -69,4 +69,12 @@ mod tests {
         assert_eq!(one, two);
         assert_ne!(one, other);
     }
+
+    /// Verifies missing telemetry context falls back to a stable correlation identifier.
+    #[test]
+    fn test_derive_minimal_correlation_id_for_missing_metadata() {
+        let missing = derive_minimal_correlation_id("recovery");
+        let explicit = derive_operation_correlation_id("recovery", b"missing-context");
+        assert_eq!(missing, explicit);
+    }
 }
