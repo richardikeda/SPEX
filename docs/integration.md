@@ -156,7 +156,11 @@ manter chaves e contatos, com permissões restritas e criptografia em repouso qu
 
 O transporte libp2p agora expõe perfis explícitos com `P2pNodeConfig::for_profile(P2pRuntimeProfile::{Dev, Test, Prod})` para definir `publish_wait`, `query_timeout` e `manifest_wait` de forma determinística por ambiente.
 
-Operações de publish/query/recovery usam backoff adaptativo com jitter e instrumentação de métricas (contadores de sucesso/timeout/retries e histogramas de latência).
+Operações de publish/query/recovery usam backoff adaptativo com jitter, tuning por conectividade e instrumentação de métricas (contadores de sucesso/timeout/retries e histogramas de latência).
+
+A reputação operacional agora usa três estágios: saudável, probation (redução de influência sem ban imediato) e ban temporário para abuso recorrente.
+
+Snapshots persistidos incluem reputação de peers para continuidade durante churn e, em caso de corrupção, o arquivo é movido para quarentena e reinicializado com estado vazio seguro.
 
 
 ### Publicação de inbox via bridge (cliente/transporte)

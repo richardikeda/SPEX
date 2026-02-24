@@ -100,3 +100,26 @@ async fn recovery_backoff_times_out_with_retry_metrics() {
     assert!(snapshot.recovery_retries > 0);
     assert!(snapshot.recovery_timeout > 0);
 }
+
+/// Verifies connectivity-aware timeout tuning never exceeds configured profile caps.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn timeout_tuning_by_profile_respects_bounds() {
+    let mut node = P2pTransport::new(
+        Keypair::generate_ed25519(),
+        TransportConfig::default(),
+        P2pNodeConfig::for_profile(P2pRuntimeProfile::Prod),
+    )
+    .await
+    .expect("node");
+
+    let (publish, query, manifest) = node.tuned_timeouts();
+    assert!(publish <= Duration::from_secs(4));
+    assert!(query <= Duration::from_secs(8));
+    assert!(manifest <= Duration::from_secs(8));
+
+    node.drive_for(Duration::from_millis(300)).await;
+    let (publish_after, query_after, manifest_after) = node.tuned_timeouts();
+    assert!(publish_after <= publish);
+    assert!(query_after <= query);
+    assert!(manifest_after <= manifest);
+}

@@ -436,6 +436,17 @@ Responses:
 - **Expiração de grants**: rejeite grants expirados e trate revogações explicitamente.
 - **Dados em repouso**: proteja o armazenamento local (`~/.spex/state.json`) com permissões restritas.
 
+
+## Runtime P2P operacional (hardening)
+
+O runtime `spex-transport` agora aplica tuning operacional explícito por perfil (`Dev`, `Test`, `Prod`) para reduzir esperas fixas:
+
+- `publish_wait`, `query_timeout` e `manifest_wait` são definidos por `P2pNodeConfig::for_profile`.
+- Em runtime, os timeouts são ajustados por conectividade (`P2pTransport::tuned_timeouts`) para reduzir latência média sem quebrar compatibilidade de rede.
+- Políticas de reputação distinguem falhas transitórias (probation) de abuso recorrente (ban temporário).
+- Snapshots de estado persistem reputação e metadados para recovery seguro após churn prolongado.
+- Estado corrompido é quarentenado automaticamente, com aviso explícito (`persistence_warnings`).
+
 ## Próximos passos
 
 1. **Ampliar hardening e observabilidade do runtime libp2p** para operação contínua em produção.

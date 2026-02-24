@@ -1,7 +1,8 @@
 use std::collections::{HashMap, HashSet};
+use std::fs;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use futures::StreamExt;
 use libp2p::gossipsub::{
@@ -30,7 +31,7 @@ use crate::transport::{
     manifest_payload, parse_manifest_from_gossip, read_bootstrap_snapshot,
     reassemble_payload_from_store, robust_random_walk_with_sources,
     write_bootstrap_snapshot_atomic, ChunkManifest, PersistedBootstrapState, PersistedPeer,
-    TransportConfig,
+    PersistedPeerReputation, TransportConfig,
 };
 
 /// Configuration for running a libp2p-backed transport node.
@@ -44,6 +45,8 @@ pub struct P2pNodeConfig {
     pub manifest_wait: Duration,
     pub persistence_path: Option<PathBuf>,
     pub peer_ban_duration: Duration,
+    pub peer_probation_duration: Duration,
+    pub score_recovery_per_minute: i32,
 }
 
 /// Deployment profile with explicit timeout defaults for publish/query/recovery flows.
@@ -104,6 +107,8 @@ impl Default for P2pNodeConfig {
             manifest_wait: Duration::from_secs(5),
             persistence_path: None,
             peer_ban_duration: Duration::from_secs(30),
+            peer_probation_duration: Duration::from_secs(20),
+            score_recovery_per_minute: 4,
         }
     }
 }
@@ -114,19 +119,24 @@ impl P2pNodeConfig {
         let mut config = Self::default();
         match profile {
             P2pRuntimeProfile::Dev => {
-                config.publish_wait = Duration::from_secs(2);
-                config.query_timeout = Duration::from_secs(5);
-                config.manifest_wait = Duration::from_secs(5);
+                config.publish_wait = Duration::from_secs(1);
+                config.query_timeout = Duration::from_secs(3);
+                config.manifest_wait = Duration::from_secs(3);
+                config.score_recovery_per_minute = 6;
             }
             P2pRuntimeProfile::Test => {
-                config.publish_wait = Duration::from_secs(3);
-                config.query_timeout = Duration::from_secs(6);
-                config.manifest_wait = Duration::from_secs(6);
+                config.publish_wait = Duration::from_secs(2);
+                config.query_timeout = Duration::from_secs(4);
+                config.manifest_wait = Duration::from_secs(4);
+                config.score_recovery_per_minute = 5;
             }
             P2pRuntimeProfile::Prod => {
-                config.publish_wait = Duration::from_secs(6);
-                config.query_timeout = Duration::from_secs(12);
-                config.manifest_wait = Duration::from_secs(12);
+                config.publish_wait = Duration::from_secs(4);
+                config.query_timeout = Duration::from_secs(8);
+                config.manifest_wait = Duration::from_secs(8);
+                config.peer_ban_duration = Duration::from_secs(90);
+                config.peer_probation_duration = Duration::from_secs(45);
+                config.score_recovery_per_minute = 3;
             }
         }
         config
@@ -159,7 +169,9 @@ struct PeerScore {
     timeout_penalties: u32,
     invalid_payload_penalties: u32,
     inconsistent_response_penalties: u32,
+    probation_until: Option<Instant>,
     banned_until: Option<Instant>,
+    last_decay_at: Instant,
 }
 
 impl PeerScore {
@@ -170,7 +182,9 @@ impl PeerScore {
             timeout_penalties: 0,
             invalid_payload_penalties: 0,
             inconsistent_response_penalties: 0,
+            probation_until: None,
             banned_until: None,
+            last_decay_at: Instant::now(),
         }
     }
 }
@@ -230,6 +244,7 @@ pub struct P2pTransport {
     known_manifests: Vec<ChunkManifest>,
     known_index_keys: HashSet<String>,
     peer_scores: HashMap<PeerId, PeerScore>,
+    persistence_warnings: Vec<String>,
     metrics: Arc<Mutex<P2pMetrics>>,
 }
 
@@ -256,9 +271,13 @@ impl P2pTransport {
             known_manifests: Vec::new(),
             known_index_keys: HashSet::new(),
             peer_scores: HashMap::new(),
+            persistence_warnings: Vec::new(),
             metrics: Arc::new(Mutex::new(P2pMetrics::default())),
         };
-        transport.load_persisted_state()?;
+        if let Err(err) = transport.load_persisted_state() {
+            transport.persistence_warnings.push(err.to_string());
+            warn!(target: "spex_transport::p2p", operation="persistence_load", error=%err, "state snapshot was recovered with a safe fallback");
+        }
         transport.configure_peers().await?;
         transport.collect_listen_addrs().await?;
         transport.persist_state()?;
@@ -271,6 +290,20 @@ impl P2pTransport {
             .lock()
             .map(|metrics| metrics.snapshot.clone())
             .unwrap_or_default()
+    }
+
+    /// Returns persistence warnings collected during startup-safe recovery paths.
+    pub fn persistence_warnings(&self) -> &[String] {
+        &self.persistence_warnings
+    }
+
+    /// Returns timeout tuning computed from profile defaults and observed connectivity.
+    pub fn tuned_timeouts(&self) -> (Duration, Duration, Duration) {
+        let connected = self.connected_peer_count() as u32;
+        let publish = tuned_timeout(self.node_config.publish_wait, connected);
+        let query = tuned_timeout(self.node_config.query_timeout, connected);
+        let manifest = tuned_timeout(self.node_config.manifest_wait, connected);
+        (publish, query, manifest)
     }
 
     /// Returns the local peer ID for this transport node.
@@ -327,6 +360,7 @@ impl P2pTransport {
         self.known_manifests.push(manifest.clone());
         let operation_start = Instant::now();
         let retry = self.node_config.adaptive_retry();
+        let (publish_wait, _, _) = self.tuned_timeouts();
         for inbox_key in inbox_keys {
             self.known_index_keys.insert(hex::encode(inbox_key));
         }
@@ -352,10 +386,10 @@ impl P2pTransport {
 
         let payload = manifest_payload(manifest)?;
         let mut ignored = Vec::new();
-        self.drive_swarm(self.node_config.publish_wait, &mut ignored, |_, _| {})
+        self.drive_swarm(publish_wait, &mut ignored, |_, _| {})
             .await;
         for inbox_key in inbox_keys {
-            let connect_deadline = Instant::now() + self.node_config.publish_wait;
+            let connect_deadline = Instant::now() + publish_wait;
             while self.swarm.connected_peers().next().is_none() && Instant::now() < connect_deadline
             {
                 self.drive_swarm(Duration::from_millis(200), &mut ignored, |_, _| {})
@@ -368,7 +402,7 @@ impl P2pTransport {
                 .gossipsub
                 .subscribe(&topic)
                 .map_err(|err| TransportError::Libp2p(err.to_string()))?;
-            let deadline = Instant::now() + self.node_config.publish_wait;
+            let deadline = Instant::now() + publish_wait;
             let topic_hash = topic.hash();
             while Instant::now() < deadline {
                 let has_subscribers = self
@@ -415,7 +449,7 @@ impl P2pTransport {
                 }
             }
         }
-        self.drive_swarm(self.node_config.publish_wait, &mut ignored, |_, _| {})
+        self.drive_swarm(publish_wait, &mut ignored, |_, _| {})
             .await;
         self.persist_state()?;
         self.record_success("publish", operation_start.elapsed());
@@ -444,7 +478,8 @@ impl P2pTransport {
                 .start_providing(record_key);
         }
         let mut ignored = Vec::new();
-        self.drive_swarm(self.node_config.publish_wait, &mut ignored, |_, _| {})
+        let (publish_wait, _, _) = self.tuned_timeouts();
+        self.drive_swarm(publish_wait, &mut ignored, |_, _| {})
             .await;
         Ok(())
     }
@@ -469,7 +504,9 @@ impl P2pTransport {
         let mut payloads = Vec::new();
         let mut resubscribe_at = Instant::now();
         let mut resubscribe_attempt = 0;
-        let deadline = Instant::now() + wait;
+        let (_, _, manifest_wait) = self.tuned_timeouts();
+        let effective_wait = wait.min(manifest_wait).max(Duration::from_millis(500));
+        let deadline = Instant::now() + effective_wait;
         while Instant::now() < deadline {
             if Instant::now() >= resubscribe_at {
                 let _ = self.swarm.behaviour_mut().gossipsub.subscribe(&topic);
@@ -547,19 +584,32 @@ impl P2pTransport {
 
     /// Applies timeout penalties to a peer and disconnects if ban policy triggers.
     pub fn report_timeout(&mut self, peer_id: PeerId) {
-        self.apply_penalty(peer_id, 10, |score| score.timeout_penalties += 1);
+        self.apply_penalty(peer_id, 8, |score| score.timeout_penalties += 1);
     }
 
     /// Applies invalid-payload penalties to a peer and disconnects if ban policy triggers.
     pub fn report_invalid_payload(&mut self, peer_id: PeerId) {
-        self.apply_penalty(peer_id, 25, |score| score.invalid_payload_penalties += 1);
+        self.apply_penalty(peer_id, 30, |score| score.invalid_payload_penalties += 1);
     }
 
     /// Applies inconsistent-response penalties to a peer and disconnects if ban policy triggers.
     pub fn report_inconsistent_response(&mut self, peer_id: PeerId) {
-        self.apply_penalty(peer_id, 20, |score| {
+        self.apply_penalty(peer_id, 18, |score| {
             score.inconsistent_response_penalties += 1
         });
+    }
+
+    /// Restores part of a peer score after successful interactions to avoid false-positive bans.
+    pub fn report_successful_interaction(&mut self, peer_id: PeerId) {
+        let state = self
+            .peer_scores
+            .entry(peer_id)
+            .or_insert_with(PeerScore::neutral);
+        state.score = (state.score + 6).min(20);
+        if state.score > -25 {
+            state.probation_until = None;
+        }
+        let _ = self.persist_state();
     }
 
     /// Returns the current score of a peer for anti-eclipse assertions.
@@ -577,6 +627,14 @@ impl P2pTransport {
             .is_some_and(|until| Instant::now() < until)
     }
 
+    /// Returns whether a peer is currently in probation and should have reduced influence.
+    pub fn is_peer_probationary(&self, peer_id: &PeerId) -> bool {
+        self.peer_scores
+            .get(peer_id)
+            .and_then(|state| state.probation_until)
+            .is_some_and(|until| Instant::now() < until)
+    }
+
     /// Returns peers selected for random walk while enforcing source diversity and influence caps.
     pub fn random_walk_candidates(
         &self,
@@ -586,12 +644,11 @@ impl P2pTransport {
     ) -> Vec<Vec<u8>> {
         let mut origins = Vec::new();
         for peer in self.peer_store.values() {
-            if !self.is_peer_banned(
-                &peer
-                    .peer_id
-                    .parse()
-                    .unwrap_or_else(|_| self.local_peer_id()),
-            ) {
+            let parsed_peer = peer
+                .peer_id
+                .parse()
+                .unwrap_or_else(|_| self.local_peer_id());
+            if !self.is_peer_banned(&parsed_peer) && !self.is_peer_probationary(&parsed_peer) {
                 origins.push(peer.origin_tag.clone());
             }
         }
@@ -701,7 +758,8 @@ impl P2pTransport {
 
         let started = Instant::now();
         let retry = self.node_config.adaptive_retry();
-        let deadline = Instant::now() + self.node_config.query_timeout;
+        let (_, query_timeout, _) = self.tuned_timeouts();
+        let deadline = Instant::now() + query_timeout;
         let mut store = HashMap::new();
         let mut retries: HashMap<Vec<u8>, u32> = HashMap::new();
         while !pending.is_empty() && Instant::now() < deadline {
@@ -820,24 +878,30 @@ fn infer_origin_tag(addr: &Multiaddr) -> &str {
 }
 
 impl P2pTransport {
-    /// Applies a generic penalty function and enforces disconnect/temporary-ban policy.
+    /// Applies a generic penalty function and enforces probation and temporary-ban policy.
     fn apply_penalty<F>(&mut self, peer_id: PeerId, penalty: i32, mutate: F)
     where
         F: FnOnce(&mut PeerScore),
     {
+        let now = Instant::now();
         let state = self
             .peer_scores
             .entry(peer_id)
             .or_insert_with(PeerScore::neutral);
+        apply_score_decay(state, now, self.node_config.score_recovery_per_minute);
         state.score -= penalty;
         mutate(state);
-        if state.score <= -60 {
-            state.banned_until = Some(Instant::now() + self.node_config.peer_ban_duration);
+
+        if state.score <= -70 {
+            state.banned_until = Some(now + self.node_config.peer_ban_duration);
+            state.probation_until = None;
             let _ = self.swarm.disconnect_peer_id(peer_id);
             self.swarm
                 .behaviour_mut()
                 .gossipsub
                 .remove_explicit_peer(&peer_id);
+        } else if state.score <= -35 {
+            state.probation_until = Some(now + self.node_config.peer_probation_duration);
         }
         let _ = self.persist_state();
     }
@@ -861,7 +925,7 @@ impl P2pTransport {
         entry.origin_tag = origin_tag.to_string();
     }
 
-    /// Loads persisted state from disk and tolerates corrupted snapshots with safe fallback.
+    /// Loads persisted state from disk and quarantines corrupted snapshots before fallback.
     fn load_persisted_state(&mut self) -> Result<(), TransportError> {
         let Some(path) = &self.node_config.persistence_path else {
             return Ok(());
@@ -869,13 +933,27 @@ impl P2pTransport {
         if !path.exists() {
             return Ok(());
         }
-        let snapshot =
-            read_bootstrap_snapshot(path).unwrap_or_else(|_| PersistedBootstrapState::empty());
+        let snapshot = match read_bootstrap_snapshot(path) {
+            Ok(snapshot) => snapshot,
+            Err(err) => {
+                self.quarantine_corrupted_snapshot(path)?;
+                write_bootstrap_snapshot_atomic(path, &PersistedBootstrapState::empty())?;
+                return Err(TransportError::InvalidPayload(format!(
+                    "corrupted persisted state detected and quarantined: {err}"
+                )));
+            }
+        };
         self.known_manifests = snapshot.manifests;
         self.known_index_keys = snapshot.index_keys.into_iter().collect();
         for peer in snapshot.known_peers {
             if let Ok(peer_id) = peer.peer_id.parse() {
                 self.peer_store.insert(peer_id, peer);
+            }
+        }
+        for reputation in snapshot.peer_reputation {
+            if let Ok(peer_id) = reputation.peer_id.parse() {
+                self.peer_scores
+                    .insert(peer_id, load_peer_score(&reputation));
             }
         }
         Ok(())
@@ -900,8 +978,22 @@ impl P2pTransport {
             bootstrap_addrs,
             manifests: self.known_manifests.clone(),
             index_keys: self.known_index_keys.iter().cloned().collect(),
+            peer_reputation: self
+                .peer_scores
+                .iter()
+                .map(|(peer_id, score)| persist_peer_score(peer_id, score))
+                .collect(),
         };
         write_bootstrap_snapshot_atomic(path, &snapshot)
+    }
+
+    /// Moves a corrupted snapshot away from active path so recovery can continue safely.
+    fn quarantine_corrupted_snapshot(&self, path: &PathBuf) -> Result<(), TransportError> {
+        let unix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |duration| duration.as_secs());
+        let quarantined = path.with_extension(format!("corrupt-{unix}.json"));
+        fs::rename(path, quarantined).map_err(|err| TransportError::Libp2p(err.to_string()))
     }
 
     /// Returns bootstrap addresses loaded from persistent snapshots for rehydration.
@@ -916,6 +1008,80 @@ impl P2pTransport {
         }
         addrs
     }
+}
+
+/// Computes an adaptive timeout from profile defaults and current connectivity.
+fn tuned_timeout(base: Duration, connected_peers: u32) -> Duration {
+    if connected_peers >= 4 {
+        base.mul_f64(0.65).max(Duration::from_millis(600))
+    } else if connected_peers >= 2 {
+        base.mul_f64(0.8).max(Duration::from_millis(800))
+    } else {
+        base
+    }
+}
+
+/// Applies score decay over time to avoid over-penalizing transient failures.
+fn apply_score_decay(state: &mut PeerScore, now: Instant, recovery_per_minute: i32) {
+    let elapsed_secs = now.saturating_duration_since(state.last_decay_at).as_secs();
+    if elapsed_secs == 0 || recovery_per_minute <= 0 {
+        return;
+    }
+    let recovered = ((elapsed_secs as i32) * recovery_per_minute) / 60;
+    if recovered > 0 {
+        state.score = (state.score + recovered).min(20);
+        state.last_decay_at = now;
+    }
+}
+
+/// Converts persisted reputation data into runtime score tracking.
+fn load_peer_score(snapshot: &PersistedPeerReputation) -> PeerScore {
+    PeerScore {
+        score: snapshot.score,
+        timeout_penalties: snapshot.timeout_penalties,
+        invalid_payload_penalties: snapshot.invalid_payload_penalties,
+        inconsistent_response_penalties: snapshot.inconsistent_response_penalties,
+        probation_until: snapshot
+            .probation_until_unix_seconds
+            .map(unix_seconds_to_instant),
+        banned_until: snapshot
+            .banned_until_unix_seconds
+            .map(unix_seconds_to_instant),
+        last_decay_at: Instant::now(),
+    }
+}
+
+/// Converts runtime score tracking into persisted reputation data.
+fn persist_peer_score(peer_id: &PeerId, state: &PeerScore) -> PersistedPeerReputation {
+    PersistedPeerReputation {
+        peer_id: peer_id.to_string(),
+        score: state.score,
+        timeout_penalties: state.timeout_penalties,
+        invalid_payload_penalties: state.invalid_payload_penalties,
+        inconsistent_response_penalties: state.inconsistent_response_penalties,
+        probation_until_unix_seconds: state.probation_until.map(instant_to_unix_seconds),
+        banned_until_unix_seconds: state.banned_until.map(instant_to_unix_seconds),
+    }
+}
+
+/// Converts a unix timestamp to a runtime instant using saturating arithmetic.
+fn unix_seconds_to_instant(unix_seconds: u64) -> Instant {
+    let now_unix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |duration| duration.as_secs());
+    if unix_seconds <= now_unix {
+        Instant::now()
+    } else {
+        Instant::now() + Duration::from_secs(unix_seconds - now_unix)
+    }
+}
+
+/// Converts an instant into unix timestamp for persistence and restart recovery.
+fn instant_to_unix_seconds(instant: Instant) -> u64 {
+    let now_unix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |duration| duration.as_secs());
+    now_unix + instant.saturating_duration_since(Instant::now()).as_secs()
 }
 
 /// Builds a libp2p swarm with Kademlia, gossipsub, and identify configured.
