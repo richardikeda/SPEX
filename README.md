@@ -72,6 +72,13 @@ Referências operacionais:
 
 ## Fluxo de release candidate (v1.0)
 
+### Gates de CI/release (fonte de verdade)
+
+- **`Rust CI`** (`.github/workflows/rust.yml`): workflow único para gates gerais do workspace em PR/push para `main`.
+  - `build-test`: valida `cargo build --workspace --locked`, `cargo test --workspace --locked`, `cargo test --workspace --locked --all-features` e `cargo test --workspace --locked --release`.
+  - `lint`: valida `cargo fmt --all -- --check` e `cargo clippy --workspace --locked --all-targets -- -D warnings`.
+- Não há workflow separado de `test.yml` para evitar duplicidade de responsabilidade. Qualquer expansão futura deve ter objetivo explícito (ex.: matriz por SO ou conjunto de features específico).
+
 Para fechamento de versão, execute os gates objetivos abaixo:
 
 ```bash
