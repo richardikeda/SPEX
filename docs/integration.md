@@ -157,3 +157,25 @@ manter chaves e contatos, com permissões restritas e criptografia em repouso qu
 O transporte libp2p agora expõe perfis explícitos com `P2pNodeConfig::for_profile(P2pRuntimeProfile::{Dev, Test, Prod})` para definir `publish_wait`, `query_timeout` e `manifest_wait` de forma determinística por ambiente.
 
 Operações de publish/query/recovery usam backoff adaptativo com jitter e instrumentação de métricas (contadores de sucesso/timeout/retries e histogramas de latência).
+
+
+### Publicação de inbox via bridge (cliente/transporte)
+
+O fluxo recomendado para publicação HTTP usa:
+
+- `spex_transport::inbox::build_bridge_publish_request` para serializar envelope (`CTAP2/CBOR`), assinar grant e calcular PoW.
+- `spex_transport::inbox::BridgeClient::publish_to_inbox` para `PUT /inbox/:key`.
+- `spex_client::publish_via_bridge` como API de alto nível consumida pela CLI.
+
+Contrato de integração:
+
+- Método: `PUT /inbox/:hex_sha256(inbox_key_seed)`
+- Header: `Content-Type: application/json`
+- Campos obrigatórios: `data`, `grant`, `puzzle`
+- Campo opcional: `ttl_seconds`
+
+Erros esperados no cliente/transporte:
+
+- `TransportError::GrantInvalid` para grant inválido.
+- `TransportError::PowInvalid` para PoW inválido/insuficiente.
+- `TransportError::InvalidTtl` para TTL fora da política.

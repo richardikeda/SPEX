@@ -28,6 +28,8 @@ pub enum TransportError {
     PayloadLengthMismatch { expected: usize, actual: usize },
     #[error("invalid payload: {0}")]
     InvalidPayload(String),
+    #[error("bridge rejected ttl policy")]
+    InvalidTtl,
     #[error("grant signature invalid")]
     GrantInvalid,
     #[error("grant expired")]

@@ -4,6 +4,7 @@ use axum::{
     Json, Router,
 };
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+use serde_json::json;
 use spex_client::{create_identity, publish_via_bridge};
 use spex_core::types::{Ctap2Cbor, Envelope};
 use spex_transport::inbox::{BridgeClient, BridgePublishRequest};
@@ -98,4 +99,58 @@ async fn test_publish_via_bridge_success() {
     let envelope_bytes = envelope.to_ctap2_canonical_bytes().unwrap();
     let payload_bytes = BASE64.decode(&payload.data).unwrap();
     assert_eq!(payload_bytes, envelope_bytes);
+}
+
+async fn handle_put_inbox_reject(
+    Path(_inbox_key): Path<String>,
+    Json(payload): Json<BridgePublishRequest>,
+) -> (axum::http::StatusCode, Json<serde_json::Value>) {
+    let status_and_error = if payload.ttl_seconds == Some(0) {
+        (
+            axum::http::StatusCode::BAD_REQUEST,
+            "invalid request: invalid inbox ttl",
+        )
+    } else if payload.grant.signature == BASE64.encode([0u8; 64]) {
+        (
+            axum::http::StatusCode::UNAUTHORIZED,
+            "grant signature invalid",
+        )
+    } else {
+        (
+            axum::http::StatusCode::UNAUTHORIZED,
+            "puzzle validation failed",
+        )
+    };
+    (
+        status_and_error.0,
+        Json(json!({"error": status_and_error.1})),
+    )
+}
+
+#[tokio::test]
+async fn test_publish_via_bridge_explicit_rejections() {
+    let app = Router::new().route("/inbox/:key", put(handle_put_inbox_reject));
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    let bridge = BridgeClient::new(format!("http://{}", addr));
+    let identity = create_identity();
+    let recipient_user_id = spex_client::random_bytes(32);
+    let envelope = Envelope {
+        thread_id: spex_client::random_bytes(32),
+        epoch: 1,
+        seq: 1,
+        sender_user_id: hex::decode(&identity.user_id_hex).unwrap(),
+        ciphertext: b"encrypted".to_vec(),
+        signature: None,
+        extensions: Default::default(),
+    };
+
+    let ttl_err = publish_via_bridge(&identity, &recipient_user_id, &envelope, &bridge, Some(0))
+        .await
+        .expect_err("ttl rejection");
+    assert!(format!("{ttl_err}").contains("ttl"));
 }

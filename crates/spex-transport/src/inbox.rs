@@ -1,13 +1,18 @@
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use base64::Engine;
+use ed25519_dalek::SigningKey;
 use libp2p::kad::store::MemoryStore;
 use libp2p::kad::{Behaviour as Kademlia, GetRecordOk, QueryId, RecordKey};
 use serde::{Deserialize, Serialize};
+use spex_core::pow;
+use spex_core::sign::{ed25519_sign_hash, ed25519_verify_key};
+use spex_core::types::GrantToken;
+use spex_core::validation;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 use tracing::{info, warn};
 
-use spex_core::hash::{hash_bytes, HashId};
+use spex_core::hash::{hash_bytes, hash_ctap2_cbor_value, HashId};
 
 use crate::error::TransportError;
 
@@ -114,6 +119,11 @@ struct BridgeInboxResponse {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+struct BridgeErrorResponse {
+    error: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct BridgePublishRequest {
     pub data: String,
     pub grant: BridgeGrantPayload,
@@ -145,6 +155,75 @@ pub struct BridgePowParams {
     pub iterations: u32,
     pub parallelism: u32,
     pub output_len: usize,
+}
+
+/// Input required to build a bridge inbox publish request from a canonical envelope.
+#[derive(Clone, Debug)]
+pub struct BridgeEnvelopePublishInput {
+    pub sender_user_id: Vec<u8>,
+    pub recipient_key_seed: Vec<u8>,
+    pub envelope: Vec<u8>,
+    pub role: u64,
+    pub flags: Option<u64>,
+    pub now_unix: u64,
+    pub grant_ttl_seconds: u64,
+    pub inbox_ttl_seconds: Option<u64>,
+    pub pow_params: pow::PowParams,
+}
+
+/// Builds a complete bridge inbox publish request with signed grant and PoW puzzle.
+pub fn build_bridge_publish_request(
+    signing_key: &SigningKey,
+    input: &BridgeEnvelopePublishInput,
+) -> Result<BridgePublishRequest, TransportError> {
+    let grant = GrantToken {
+        user_id: input.sender_user_id.clone(),
+        role: input.role,
+        flags: input.flags,
+        expires_at: Some(input.now_unix.saturating_add(input.grant_ttl_seconds)),
+        extensions: Default::default(),
+    };
+    let grant_hash = hash_ctap2_cbor_value(HashId::Sha256, &grant).map_err(TransportError::from)?;
+    let signature = ed25519_sign_hash(signing_key, &grant_hash);
+    let verifying_key = ed25519_verify_key(signing_key);
+
+    let nonce = pow::generate_pow_nonce(pow::PowNonceParams::default());
+    let puzzle_input = pow::build_puzzle_input(&nonce, &input.recipient_key_seed);
+    let puzzle_output =
+        pow::generate_puzzle_output(&input.recipient_key_seed, &puzzle_input, input.pow_params)
+            .map_err(TransportError::from)?;
+    validation::validate_pow_puzzle(
+        &input.recipient_key_seed,
+        &puzzle_input,
+        &puzzle_output,
+        input.pow_params,
+        pow::PowParams::minimum(),
+    )
+    .map_err(|err| TransportError::InvalidPayload(err.to_string()))?;
+
+    Ok(BridgePublishRequest {
+        data: BASE64_STANDARD.encode(&input.envelope),
+        grant: BridgeGrantPayload {
+            user_id: BASE64_STANDARD.encode(&grant.user_id),
+            role: grant.role,
+            flags: grant.flags,
+            expires_at: grant.expires_at,
+            verifying_key: BASE64_STANDARD.encode(verifying_key.to_bytes()),
+            signature: BASE64_STANDARD.encode(signature.to_bytes()),
+        },
+        puzzle: BridgePuzzlePayload {
+            recipient_key: BASE64_STANDARD.encode(&input.recipient_key_seed),
+            puzzle_input: BASE64_STANDARD.encode(&puzzle_input),
+            puzzle_output: BASE64_STANDARD.encode(&puzzle_output),
+            params: Some(BridgePowParams {
+                memory_kib: input.pow_params.memory_kib,
+                iterations: input.pow_params.iterations,
+                parallelism: input.pow_params.parallelism,
+                output_len: input.pow_params.output_len,
+            }),
+        },
+        ttl_seconds: input.inbox_ttl_seconds,
+    })
 }
 
 impl BridgeClient {
@@ -211,13 +290,32 @@ impl BridgeClient {
             self.base_url.trim_end_matches('/'),
             encoded_key
         );
-        self.client
-            .put(&url)
-            .json(request)
-            .send()
-            .await?
-            .error_for_status()?;
-        Ok(())
+        let response = self.client.put(&url).json(request).send().await?;
+        if response.status().is_success() {
+            return Ok(());
+        }
+        let status = response.status();
+        let body = response
+            .json::<BridgeErrorResponse>()
+            .await
+            .ok()
+            .map(|parsed| parsed.error)
+            .unwrap_or_default();
+        if status == reqwest::StatusCode::UNAUTHORIZED {
+            if body.contains("grant expired") {
+                return Err(TransportError::GrantExpired);
+            }
+            if body.contains("grant signature invalid") {
+                return Err(TransportError::GrantInvalid);
+            }
+            if body.contains("puzzle validation failed") {
+                return Err(TransportError::PowInvalid);
+            }
+        }
+        if status == reqwest::StatusCode::BAD_REQUEST && body.contains("invalid inbox ttl") {
+            return Err(TransportError::InvalidTtl);
+        }
+        Err(TransportError::InvalidPayload(body))
     }
 }
 
@@ -246,6 +344,57 @@ mod tests {
             RecordKey::new(&expected_hash),
             "Record key mismatch for derive_inbox_scan_key"
         );
+    }
+
+    /// Ensures envelope publish requests serialize grant and payload fields deterministically.
+    #[test]
+    fn test_build_bridge_publish_request_serializes_envelope() {
+        let signing_key = SigningKey::from_bytes(&[7u8; 32]);
+        let input = BridgeEnvelopePublishInput {
+            sender_user_id: vec![1u8; 32],
+            recipient_key_seed: vec![2u8; 32],
+            envelope: vec![9, 8, 7, 6],
+            role: 1,
+            flags: None,
+            now_unix: 100,
+            grant_ttl_seconds: 30,
+            inbox_ttl_seconds: Some(15),
+            pow_params: spex_core::pow::PowParams::default(),
+        };
+        let request = build_bridge_publish_request(&signing_key, &input).expect("build publish");
+        let payload = BASE64_STANDARD
+            .decode(request.data.as_bytes())
+            .expect("payload");
+        assert_eq!(payload, input.envelope);
+        assert_eq!(request.ttl_seconds, Some(15));
+        assert_eq!(request.grant.expires_at, Some(130));
+    }
+
+    /// Rejects PoW parameters weaker than the enforced minimum when building requests.
+    #[test]
+    fn test_build_bridge_publish_request_rejects_weak_pow() {
+        let signing_key = SigningKey::from_bytes(&[8u8; 32]);
+        let input = BridgeEnvelopePublishInput {
+            sender_user_id: vec![3u8; 32],
+            recipient_key_seed: vec![4u8; 32],
+            envelope: vec![1, 2, 3],
+            role: 1,
+            flags: None,
+            now_unix: 200,
+            grant_ttl_seconds: 30,
+            inbox_ttl_seconds: Some(20),
+            pow_params: spex_core::pow::PowParams {
+                memory_kib: 1,
+                iterations: 1,
+                parallelism: 1,
+                output_len: 32,
+            },
+        };
+        let err = build_bridge_publish_request(&signing_key, &input).expect_err("weak pow");
+        assert!(matches!(
+            err,
+            TransportError::InvalidPayload(_) | TransportError::CborDecode(_)
+        ));
     }
 }
 

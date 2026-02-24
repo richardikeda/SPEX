@@ -37,8 +37,8 @@ Implementação inicial em andamento com os seguintes componentes e nível atual
 
 ## Roadmap (pendências atuais)
 
-- **Escrita de inbox via cliente/transporte**: concluir APIs de alto nível para publicar envelopes na bridge e validar fluxo E2E CLI↔bridge.
-  - Referências: [TODO.md](TODO.md), [docs/bridge-api.md](docs/bridge-api.md), testes de bridge em `crates/spex-bridge/tests/integration.rs`.
+- **Escrita de inbox via cliente/transporte**: concluída com API de alto nível para publicar envelopes na bridge (`publish_via_bridge` + `build_bridge_publish_request`) e cobertura de integração CLI↔bridge.
+  - Referências: [docs/bridge-api.md](docs/bridge-api.md), `crates/spex-client/tests/bridge_publish.rs`, `crates/spex-transport/tests/bridge_publish_http.rs`.
 - **Hardening/observabilidade do runtime P2P**: reduzir latências operacionais, ampliar reputação anti-eclipse e métricas/tracing de publish/recovery/fallback.
   - Referências: [TODO.md](TODO.md), testes de transporte em `crates/spex-transport/tests/p2p_manifest_delivery.rs`.
 - **Cobertura MLS de conformidade avançada**: ampliar cenários de interop/permutação/ressincronização e casos negativos de epoch.
@@ -438,9 +438,9 @@ Responses:
 
 ## Próximos passos
 
-1. **Completar escrita de inbox no cliente/transporte** com cobertura E2E CLI↔bridge (grant/PoW).
-2. **Ampliar hardening e observabilidade do runtime libp2p** para operação contínua em produção.
-3. **Expandir suíte MLS avançada** com cenários adicionais de conformidade e recuperação.
+1. **Ampliar hardening e observabilidade do runtime libp2p** para operação contínua em produção.
+2. **Expandir suíte MLS avançada** com cenários adicionais de conformidade e recuperação.
+3. **Expandir testes adversariais/fuzz** para parsing de payload HTTP e superfícies bridge/P2P.
 
 ## Test vectors v0.1.1
 

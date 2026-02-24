@@ -164,6 +164,20 @@ GET /slot/<SHA256_HEX> HTTP/1.1
 - `404 Not Found`: slot não existe.
 - `500 Internal Server Error`: falha de armazenamento.
 
+## Contrato cliente/transporte → bridge (inbox publish)
+
+Fluxo de referência no código:
+
+- `spex_transport::inbox::build_bridge_publish_request`: serializa envelope + grant + PoW de forma determinística.
+- `spex_transport::inbox::BridgeClient::publish_to_inbox`: envia `PUT /inbox/:key` e mapeia erros HTTP da bridge.
+- `spex_client::publish_via_bridge`: API de alto nível usada pela CLI para publicar mensagens em inbox remota.
+
+Mapeamento de erros para integração:
+
+- `401` com `grant signature invalid` → `TransportError::GrantInvalid`
+- `401` com `puzzle validation failed` → `TransportError::PowInvalid`
+- `400` com `invalid inbox ttl` → `TransportError::InvalidTtl`
+
 ## PUT /inbox/:key
 
 Armazena um envelope (CBOR base64) associado ao `inbox_key`. O payload segue o mesmo formato de
