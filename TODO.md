@@ -47,6 +47,80 @@ Acceptance Criteria:
 - Métricas/traces de publish/recovery/fallback permitem correlação operacional ponta a ponta.
 - Recovery após restart em churn prolongado é validado com estado íntegro e quarentena explícita para estado corrompido.
 
+Subtarefas incrementais obrigatórias (sem Big Bang):
+
+### [TASK 1.1] Reputação
+
+- Arquivos-alvo (`crates/spex-transport/src/*`):
+  - `crates/spex-transport/src/p2p.rs`
+  - `crates/spex-transport/src/transport.rs`
+  - `crates/spex-transport/src/telemetry.rs`
+  - `crates/spex-transport/src/error.rs`
+- Testes-alvo (`crates/spex-transport/tests/*`):
+  - `crates/spex-transport/tests/p2p_backoff_churn.rs`
+  - `crates/spex-transport/tests/security_replay_tamper.rs`
+  - `crates/spex-transport/tests/p2p_manifest_delivery.rs`
+- Critério objetivo:
+  - Reputação diferencia peer intermitente de peer malicioso recorrente com thresholds explícitos;
+  - Evidência via suíte de teste: cenário intermitente não gera ban permanente e cenário malicioso recorrente gera quarentena/ban determinístico com telemetria associada.
+- Fechamento de documentação incremental:
+  - Atualizar `docs/observability.md` ao concluir esta subtarefa com métricas/trace de reputação e alertas de falso positivo.
+
+### [TASK 1.2] Recovery/Snapshot
+
+- Arquivos-alvo (`crates/spex-transport/src/*`):
+  - `crates/spex-transport/src/inbox.rs`
+  - `crates/spex-transport/src/ingest.rs`
+  - `crates/spex-transport/src/p2p.rs`
+  - `crates/spex-transport/src/lib.rs`
+- Testes-alvo (`crates/spex-transport/tests/*`):
+  - `crates/spex-transport/tests/p2p_manifest_recovery.rs`
+  - `crates/spex-transport/tests/planned_p2p_persistence.rs`
+  - `crates/spex-transport/tests/p2p_ingest_validation.rs`
+- Critério objetivo:
+  - Recovery após restart com snapshot íntegro restaura estado operacional sem perda silenciosa;
+  - Estado parcial/corrompido entra em quarentena explícita e retorna erro determinístico;
+  - Evidência via testes de restart + persistência + validação negativa de corrupção.
+- Fechamento de documentação incremental:
+  - Atualizar `docs/observability.md` ao concluir esta subtarefa com sinais de integridade de snapshot, contadores de quarentena e runbook de recuperação.
+
+### [TASK 1.3] Churn testing
+
+- Arquivos-alvo (`crates/spex-transport/src/*`):
+  - `crates/spex-transport/src/p2p.rs`
+  - `crates/spex-transport/src/transport.rs`
+  - `crates/spex-transport/src/chunking.rs`
+  - `crates/spex-transport/src/telemetry.rs`
+- Testes-alvo (`crates/spex-transport/tests/*`):
+  - `crates/spex-transport/tests/p2p_backoff_churn.rs`
+  - `crates/spex-transport/tests/dht_gossip_random_walk.rs`
+  - `crates/spex-transport/tests/stress_chunking.rs`
+- Critério objetivo:
+  - Sob churn prolongado, publish/recovery mantêm SLO mínimo definido para sucesso e latência;
+  - Backoff converge sem flapping e sem explosão de retries;
+  - Evidência via testes de churn/estresse reproduzíveis com thresholds objetivos.
+- Fechamento de documentação incremental:
+  - Atualizar `docs/observability.md` ao concluir esta subtarefa com painéis/SLO de churn, thresholds de degradação e procedimentos de mitigação.
+
+### [TASK 1.4] Observabilidade
+
+- Arquivos-alvo (`crates/spex-transport/src/*`):
+  - `crates/spex-transport/src/telemetry.rs`
+  - `crates/spex-transport/src/p2p.rs`
+  - `crates/spex-transport/src/transport.rs`
+  - `crates/spex-transport/src/ingest.rs`
+- Testes-alvo (`crates/spex-transport/tests/*`):
+  - `crates/spex-transport/tests/p2p_manifest_delivery.rs`
+  - `crates/spex-transport/tests/p2p_manifest_recovery.rs`
+  - `crates/spex-transport/tests/p2p_ingest_property.rs`
+  - `crates/spex-transport/tests/p2p_ingest_validation.rs`
+- Critério objetivo:
+  - Catálogo de métricas/traces cobre publish, recovery, fallback, reassemble e ingestão com correlação ponta a ponta;
+  - Ausência de metadado de tracing gera fallback determinístico (sem vazar payload/segredos);
+  - Evidência via testes de instrumentação/negativos e checklist de campos obrigatórios por operação.
+- Fechamento de documentação incremental:
+  - Atualizar `docs/observability.md` ao concluir esta subtarefa com catálogo final consolidado, SLOs recomendados e critérios de readiness operacional.
+
 Tests Required:
 - Testes unitários para tuning de timeout por perfil e conectividade.
 - Testes de integração de reputação (peer intermitente vs. malicioso recorrente).
