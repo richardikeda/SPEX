@@ -64,3 +64,43 @@ Interpretação operacional:
 - **Healthy**: conectividade e razões de erro dentro do esperado.
 - **Degraded**: sinais intermediários, pede investigação.
 - **Critical**: conectividade insuficiente ou erro acima do limite.
+
+## Plano incremental por subtarefa (TASK 1)
+
+Para evitar atualização "Big Bang" no fim, este documento deve ser atualizado ao término de cada subtarefa abaixo.
+
+### Subtarefa 1.1 — Reputação
+
+- Atualização obrigatória ao concluir:
+  - política de score/penalidade e thresholds de promoção/quarentena/ban;
+  - métricas de falso positivo/falso negativo operacional;
+  - eventos de trace para transição de estado de reputação.
+- Critério de aceite documental:
+  - seção de troubleshooting contendo como diferenciar peer intermitente de abuso recorrente.
+
+### Subtarefa 1.2 — Recovery/Snapshot
+
+- Atualização obrigatória ao concluir:
+  - sinais de integridade de snapshot e resultado de validação no boot;
+  - contadores de quarentena para estado parcial/corrompido;
+  - fluxo de diagnóstico para recovery após restart.
+- Critério de aceite documental:
+  - runbook com decisão explícita entre retry, isolamento e recuperação limpa.
+
+### Subtarefa 1.3 — Churn testing
+
+- Atualização obrigatória ao concluir:
+  - SLOs de publish/recovery sob churn e respectivos limiares;
+  - indicadores de flapping, saturação de retry e impacto em latência;
+  - critérios de status (`healthy`, `degraded`, `critical`) calibrados para churn.
+- Critério de aceite documental:
+  - matriz de sintomas versus ação corretiva para incidentes de churn prolongado.
+
+### Subtarefa 1.4 — Observabilidade
+
+- Atualização obrigatória ao concluir:
+  - catálogo final de métricas/traces por operação (`publish`, `recovery`, `fallback`, `ingest`, `reassemble`);
+  - política de correlação determinística com fallback para metadado ausente;
+  - checklist de campos obrigatórios para auditoria operacional.
+- Critério de aceite documental:
+  - seção de readiness com critérios objetivos para liberar operação contínua em produção.
