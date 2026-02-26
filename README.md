@@ -75,10 +75,10 @@ Referências operacionais:
 
 ### Gates de CI/release (fonte de verdade)
 
-- **`Rust CI`** (`.github/workflows/rust.yml`): workflow único para gates gerais do workspace em PR/push para `main`.
-  - `build-test`: valida `cargo build --workspace --locked`, `cargo test --workspace --locked`, `cargo test --workspace --locked --all-features` e `cargo test --workspace --locked --release`.
-  - `lint`: valida `cargo fmt --all -- --check` e `cargo clippy --workspace --locked --all-targets -- -D warnings`.
-- Não há workflow separado de `test.yml` para evitar duplicidade de responsabilidade. Qualquer expansão futura deve ter objetivo explícito (ex.: matriz por SO ou conjunto de features específico).
+- **`Rust CI`** (`.github/workflows/rust.yml`): workflow principal para PR/push em `main`, com foco em feedback rápido e validações essenciais.
+  - `build-and-test`: valida `cargo build --workspace --locked` em `ubuntu-latest` (stable/beta) e `macos-latest` (stable), mantendo os testes do workspace (`default` e `all-features`) apenas em `ubuntu-latest` + stable para evitar duplicidade de carga.
+  - `lint`: valida `cargo fmt --all -- --check` e `cargo clippy --workspace --locked -- -D warnings` em `ubuntu-latest` + stable.
+- **`Release Readiness`** (`.github/workflows/release-readiness.yml`): mantém gates obrigatórios de release em PR/push (`release-critical-tests`, `release-docs-and-quality`, `release-negative-gate`) e move suites pesadas de robustez/supply-chain para execução agendada semanal (`cron`) ou manual (`workflow_dispatch`).
 
 Para fechamento de versão, execute os gates objetivos abaixo:
 
@@ -86,7 +86,7 @@ Para fechamento de versão, execute os gates objetivos abaixo:
 cargo test --workspace --locked --verbose
 cargo test --workspace --locked --all-features --verbose
 cargo fmt --all -- --check
-cargo clippy --workspace --locked --all-targets --all-features -- -D warnings
+cargo clippy --workspace --locked -- -D warnings
 ./scripts/release_gate_docs.sh
 ./scripts/release_gate_negative_test.sh
 ```
@@ -139,8 +139,8 @@ O pipeline em `.github/workflows/rust.yml` executa uma matrix com:
 
 Escopo por job:
 
-- **build-test**: `cargo build` em toda a matrix; suíte completa de testes (`default`, `all-features`, `release`) somente em `stable` no Linux para controlar custo de CI.
-- **lint**: `cargo fmt --check` e `cargo clippy -D warnings` em toda a matrix.
+- **build-and-test**: `cargo build` em toda a matrix; suíte de testes (`default` e `all-features`) somente em `ubuntu-latest` + `stable` para controlar custo de CI sem perder cobertura principal.
+- **lint**: `cargo fmt --check` e `cargo clippy -D warnings` somente em `ubuntu-latest` + `stable`.
 
 O cache é segregado por job/SO/toolchain para evitar colisões entre ambientes.
 

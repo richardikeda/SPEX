@@ -325,6 +325,23 @@ impl BridgeClient {
     }
 }
 
+/// Returns global counters for bridge fallback attempts, successes, and failures.
+pub fn bridge_fallback_counters() -> (u64, u64, u64) {
+    (
+        BRIDGE_FALLBACK_TOTAL.load(Ordering::Relaxed),
+        BRIDGE_FALLBACK_SUCCESS.load(Ordering::Relaxed),
+        BRIDGE_FALLBACK_FAILURE.load(Ordering::Relaxed),
+    )
+}
+
+/// Resets bridge fallback counters for deterministic tests.
+#[cfg(test)]
+pub(crate) fn reset_bridge_fallback_counters_for_test() {
+    BRIDGE_FALLBACK_TOTAL.store(0, Ordering::Relaxed);
+    BRIDGE_FALLBACK_SUCCESS.store(0, Ordering::Relaxed);
+    BRIDGE_FALLBACK_FAILURE.store(0, Ordering::Relaxed);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -414,21 +431,4 @@ mod tests {
         assert!(matches!(response.source, InboxSource::Kademlia));
         assert_eq!(bridge_fallback_counters(), (0, 0, 0));
     }
-}
-
-/// Returns global counters for bridge fallback attempts, successes, and failures.
-pub fn bridge_fallback_counters() -> (u64, u64, u64) {
-    (
-        BRIDGE_FALLBACK_TOTAL.load(Ordering::Relaxed),
-        BRIDGE_FALLBACK_SUCCESS.load(Ordering::Relaxed),
-        BRIDGE_FALLBACK_FAILURE.load(Ordering::Relaxed),
-    )
-}
-
-/// Resets bridge fallback counters for deterministic tests.
-#[cfg(test)]
-pub(crate) fn reset_bridge_fallback_counters_for_test() {
-    BRIDGE_FALLBACK_TOTAL.store(0, Ordering::Relaxed);
-    BRIDGE_FALLBACK_SUCCESS.store(0, Ordering::Relaxed);
-    BRIDGE_FALLBACK_FAILURE.store(0, Ordering::Relaxed);
 }
