@@ -54,6 +54,7 @@ Implementação inicial em andamento com os seguintes componentes e nível atual
 - [Segurança](docs/security.md)
 - [Observabilidade de transporte/ingestão](docs/observability.md)
 - [Checklist de release v1.0 (go/no-go)](docs/release-v1-checklist.md)
+- [Matriz de cenários MLS avançados](docs/mls-advanced-scenarios-matrix.md)
 - [Runbook operacional de release/incidentes](docs/runbook-release-operations.md)
 
 Os documentos acima detalham arquitetura, wire format com tabelas de IDs/tipos CBOR, bridge HTTP
@@ -96,6 +97,7 @@ Critério de aprovação:
 
 Referências detalhadas:
 - [Checklist de release v1.0](docs/release-v1-checklist.md)
+- [Matriz de cenários MLS avançados](docs/mls-advanced-scenarios-matrix.md) (**critério de pronto da v1 para robustez MLS**)
 - [Runbook operacional de release](docs/runbook-release-operations.md)
 
 ## Avisos de segurança
