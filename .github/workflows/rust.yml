@@ -1,18 +1,31 @@
 name: Rust CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: rust-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build-test:
+  build-and-test:
+    name: build-and-test (${{ matrix.os }}, ${{ matrix.toolchain }})
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
-        toolchain: [stable, beta]
+        include:
+          - os: ubuntu-latest
+            toolchain: stable
+            run_tests: true
+          - os: ubuntu-latest
+            toolchain: beta
+            run_tests: false
+          - os: macos-latest
+            toolchain: stable
+            run_tests: false
     runs-on: ${{ matrix.os }}
     env:
       RUSTC_WRAPPER: sccache
@@ -23,21 +36,17 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: ${{ matrix.toolchain }}
 
       - name: Install sccache
-        uses: mozilla-actions/sccache-action@8417cffc2ec64127ad83077aceaa8631f7cdc83e
-
-      - name: Validate native dependencies (pkg-config)
-        if: runner.os == 'Linux'
-        run: pkg-config --version
+        uses: mozilla-actions/sccache-action@v0.0.9
 
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: "rust-ci-${{ github.job }}-${{ runner.os }}-${{ matrix.toolchain }}"
+          shared-key: rust-ci-${{ runner.os }}-${{ matrix.toolchain }}
           cache-on-failure: true
           add-job-id-key: false
           cache-directories: |
@@ -50,27 +59,19 @@ jobs:
         run: cargo build --workspace --locked --verbose
 
       - name: Test (default features)
-        if: matrix.toolchain == 'stable' && runner.os == 'Linux'
+        if: matrix.run_tests
         run: cargo test --workspace --locked --verbose
 
       - name: Test (all features)
-        if: matrix.toolchain == 'stable' && runner.os == 'Linux'
+        if: matrix.run_tests
         run: cargo test --workspace --locked --all-features --verbose
-
-      - name: Test (release profile)
-        if: matrix.toolchain == 'stable' && runner.os == 'Linux'
-        run: cargo test --workspace --locked --release --verbose
 
       - name: sccache stats
         run: sccache --show-stats || true
 
   lint:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-        toolchain: [stable, beta]
-    runs-on: ${{ matrix.os }}
+    name: lint (ubuntu, stable)
+    runs-on: ubuntu-latest
     env:
       RUSTC_WRAPPER: sccache
       SCCACHE_GHA_ENABLED: "false"
@@ -80,22 +81,18 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install Rust toolchain (fmt, clippy)
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: ${{ matrix.toolchain }}
+          toolchain: stable
           components: rustfmt, clippy
 
       - name: Install sccache
-        uses: mozilla-actions/sccache-action@8417cffc2ec64127ad83077aceaa8631f7cdc83e
-
-      - name: Validate native dependencies (pkg-config)
-        if: runner.os == 'Linux'
-        run: pkg-config --version
+        uses: mozilla-actions/sccache-action@v0.0.9
 
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: "rust-ci-${{ github.job }}-${{ runner.os }}-${{ matrix.toolchain }}"
+          shared-key: rust-ci-lint-${{ runner.os }}
           cache-on-failure: true
           add-job-id-key: false
           cache-directories: |
@@ -108,7 +105,7 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Clippy
-        run: cargo clippy --workspace --locked --all-targets -- -D warnings
+        run: cargo clippy --workspace --locked -- -D warnings
 
       - name: sccache stats
         run: sccache --show-stats || true

@@ -319,13 +319,13 @@ async fn concurrent_same_identity_escalates_pow_and_rejects_stale_params() {
     let identity_hex = identity.identity_hex();
     let (logged_accepted, logged_rejected) = load_request_outcome_counts(&db_path, &identity_hex);
     assert!(
-        logged_accepted >= accepted + 1,
+        logged_accepted > accepted,
         "logged_accepted={logged_accepted}"
     );
     assert!(logged_rejected >= 1, "logged_rejected={logged_rejected}");
 
     let reputation_score = load_reputation_score(&db_path, &identity_hex);
-    assert!(reputation_score >= -20 && reputation_score <= 100);
+    assert!((-20..=100).contains(&reputation_score));
 }
 
 /// Verifies per-identity isolation under concurrent load with alternating payload sizes.

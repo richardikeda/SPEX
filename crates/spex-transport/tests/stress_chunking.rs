@@ -18,7 +18,7 @@ fn stress_test_large_payload_chunking() {
     // Correct calculation: (10*1024*1024 + 64*1024 - 1) / (64*1024) = 160
     assert_eq!(
         chunks.len(),
-        (payload_size + config.chunk_size - 1) / config.chunk_size
+        payload_size.div_ceil(config.chunk_size)
     );
 
     // Reassemble
@@ -28,7 +28,7 @@ fn stress_test_large_payload_chunking() {
 
 #[test]
 fn stress_test_tiny_chunks_many() {
-    let payload_size = 1 * 1024 * 1024; // 1 MB
+    let payload_size = 1024 * 1024; // 1 MB
     let mut payload = vec![0u8; payload_size];
     rand::thread_rng().fill_bytes(&mut payload);
 

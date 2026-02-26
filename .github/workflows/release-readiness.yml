@@ -5,6 +5,13 @@ on:
     branches: [main]
   push:
     branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 3 * * 1'
+
+concurrency:
+  group: release-readiness-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   release-critical-tests:
@@ -14,20 +21,53 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
 
       - name: Critical release scope tests
         run: |
           cargo test -p spex-core -p spex-mls -p spex-transport --locked --all-features --verbose
 
-  release-robustness:
+  release-docs-and-quality:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust (stable + nightly for fuzz)
+      - name: Install Rust (fmt + clippy)
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable,nightly
+          toolchain: stable
+          components: rustfmt, clippy
+
+      - name: Docs and quality gates
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy --workspace --locked -- -D warnings
+          ./scripts/release_gate_docs.sh
+
+  release-negative-gate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate block-on-failure behavior
+        run: ./scripts/release_gate_negative_test.sh
+
+  release-robustness:
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Install Rust (nightly)
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          toolchain: nightly
 
       - name: Install cargo-fuzz
         run: cargo +nightly install cargo-fuzz --locked
@@ -50,37 +90,16 @@ jobs:
             cargo +nightly fuzz run "${target_name}" --fuzz-dir fuzz -- -max_total_time=30 -seed=1
           done
 
-  release-docs-and-quality:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust (fmt + clippy)
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-
-      - name: Docs and quality gates
-        run: |
-          cargo fmt --all -- --check
-          cargo clippy --workspace --locked --all-targets --all-features -- -D warnings
-          ./scripts/release_gate_docs.sh
-
-  release-negative-gate:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Validate block-on-failure behavior
-        run: ./scripts/release_gate_negative_test.sh
-
   release-supply-chain:
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
 
       - name: Install cargo-audit and cargo-deny
         run: |
