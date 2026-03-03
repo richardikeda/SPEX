@@ -7,6 +7,7 @@ use axum::{
 };
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use ed25519_dalek::{Signature, VerifyingKey};
+use parking_lot::Mutex;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use spex_core::{
@@ -26,8 +27,76 @@ use tokio::task;
 #[derive(Clone)]
 pub struct AppState {
     db_path: PathBuf,
+    pool: Arc<DbPool>,
     clock: Arc<dyn Clock + Send + Sync>,
     limits: RateLimitConfig,
+}
+
+/// A simple connection pool for SQLite.
+pub struct DbPool {
+    path: PathBuf,
+    connections: Mutex<Vec<Connection>>,
+    max_size: usize,
+}
+
+impl DbPool {
+    /// Creates a new connection pool for the given database path.
+    fn new(path: PathBuf, max_size: usize) -> Self {
+        Self {
+            path,
+            connections: Mutex::new(Vec::new()),
+            max_size,
+        }
+    }
+
+    /// Acquires a connection from the pool or opens a new one.
+    ///
+    /// The lock is released before opening a new connection to reduce contention.
+    fn get(self: &Arc<Self>) -> rusqlite::Result<PooledConnection> {
+        let mut conns = self.connections.lock();
+        if let Some(conn) = conns.pop() {
+            Ok(PooledConnection {
+                pool: self.clone(),
+                conn: Some(conn),
+            })
+        } else {
+            drop(conns);
+            let conn = Connection::open(&self.path)?;
+            Ok(PooledConnection {
+                pool: self.clone(),
+                conn: Some(conn),
+            })
+        }
+    }
+
+    /// Returns a connection to the pool.
+    fn put(&self, conn: Connection) {
+        let mut conns = self.connections.lock();
+        if conns.len() < self.max_size {
+            conns.push(conn);
+        }
+    }
+}
+
+/// A guard that returns a connection to the pool when dropped.
+pub struct PooledConnection {
+    pool: Arc<DbPool>,
+    conn: Option<Connection>,
+}
+
+impl std::ops::Deref for PooledConnection {
+    type Target = Connection;
+    fn deref(&self) -> &Self::Target {
+        self.conn.as_ref().unwrap()
+    }
+}
+
+impl Drop for PooledConnection {
+    fn drop(&mut self) {
+        if let Some(conn) = self.conn.take() {
+            self.pool.put(conn);
+        }
+    }
 }
 
 /// Provides the current time source for grant validation.
@@ -313,6 +382,7 @@ pub fn init_state(db_path: impl Into<PathBuf>) -> Result<AppState, BridgeError> 
     let db_path = db_path.into();
     init_db(&db_path).map_err(|err| BridgeError::Storage(err.to_string()))?;
     Ok(AppState {
+        pool: Arc::new(DbPool::new(db_path.clone(), 10)),
         db_path,
         clock: Arc::new(SystemClock),
         limits: RateLimitConfig::default(),
@@ -327,6 +397,7 @@ pub fn init_state_with_clock(
     let db_path = db_path.into();
     init_db(&db_path).map_err(|err| BridgeError::Storage(err.to_string()))?;
     Ok(AppState {
+        pool: Arc::new(DbPool::new(db_path.clone(), 10)),
         db_path,
         clock,
         limits: RateLimitConfig::default(),
@@ -417,7 +488,7 @@ async fn put_card(
     let identity = identity_from_grant(&payload.grant)?;
     let now = state.clock.now();
     let ip = extract_ip(connect_info);
-    let snapshot = load_rate_limit_snapshot(&state.db_path, &identity, now, state.limits).await?;
+    let snapshot = load_rate_limit_snapshot(&state, &identity, now, state.limits).await?;
     let minimum_pow = required_pow_params(&snapshot, &state.limits);
     let state_clone = state.clone();
     let card_hash_clone = card_hash.clone();
@@ -441,9 +512,9 @@ async fn put_card(
 
     match result {
         Ok(()) => {
-            store_entry(&state.db_path, "cards", "card_hash", &card_hash, data).await?;
+            store_entry(&state, "cards", "card_hash", &card_hash, data).await?;
             record_request_log(
-                &state.db_path,
+                &state,
                 now,
                 &identity,
                 &ip,
@@ -453,12 +524,12 @@ async fn put_card(
                 RequestOutcome::Accepted,
             )
             .await?;
-            update_reputation(&state.db_path, &identity, RequestOutcome::Accepted).await?;
+            update_reputation(&state, &identity, RequestOutcome::Accepted).await?;
             Ok(StatusCode::NO_CONTENT)
         }
         Err(err) => {
             record_request_log(
-                &state.db_path,
+                &state,
                 now,
                 &identity,
                 &ip,
@@ -468,7 +539,7 @@ async fn put_card(
                 RequestOutcome::Rejected,
             )
             .await?;
-            update_reputation(&state.db_path, &identity, RequestOutcome::Rejected).await?;
+            update_reputation(&state, &identity, RequestOutcome::Rejected).await?;
             Err(err)
         }
     }
@@ -479,7 +550,7 @@ async fn get_card(
     State(state): State<AppState>,
     Path(card_hash): Path<String>,
 ) -> Result<Json<StoredResponse>, BridgeError> {
-    let data = load_entry(&state.db_path, "cards", "card_hash", &card_hash)
+    let data = load_entry(&state, "cards", "card_hash", &card_hash)
         .await?
         .ok_or(BridgeError::NotFound)?;
     Ok(Json(StoredResponse {
@@ -510,7 +581,7 @@ async fn put_slot(
             "invalid grant for slot request"
         );
         record_request_log(
-            &state.db_path,
+            &state,
             now,
             &identity,
             &ip,
@@ -520,10 +591,10 @@ async fn put_slot(
             RequestOutcome::Rejected,
         )
         .await?;
-        update_reputation(&state.db_path, &identity, RequestOutcome::Rejected).await?;
+        update_reputation(&state, &identity, RequestOutcome::Rejected).await?;
         return Err(err);
     }
-    let snapshot = load_rate_limit_snapshot(&state.db_path, &identity, now, state.limits).await?;
+    let snapshot = load_rate_limit_snapshot(&state, &identity, now, state.limits).await?;
     let minimum_pow = required_pow_params(&snapshot, &state.limits);
     let state_clone = state.clone();
     let slot_id_clone = slot_id.clone();
@@ -547,9 +618,9 @@ async fn put_slot(
 
     match result {
         Ok(()) => {
-            store_entry(&state.db_path, "slots", "slot_id", &slot_id, data).await?;
+            store_entry(&state, "slots", "slot_id", &slot_id, data).await?;
             record_request_log(
-                &state.db_path,
+                &state,
                 now,
                 &identity,
                 &ip,
@@ -559,12 +630,12 @@ async fn put_slot(
                 RequestOutcome::Accepted,
             )
             .await?;
-            update_reputation(&state.db_path, &identity, RequestOutcome::Accepted).await?;
+            update_reputation(&state, &identity, RequestOutcome::Accepted).await?;
             Ok(StatusCode::NO_CONTENT)
         }
         Err(err) => {
             record_request_log(
-                &state.db_path,
+                &state,
                 now,
                 &identity,
                 &ip,
@@ -574,7 +645,7 @@ async fn put_slot(
                 RequestOutcome::Rejected,
             )
             .await?;
-            update_reputation(&state.db_path, &identity, RequestOutcome::Rejected).await?;
+            update_reputation(&state, &identity, RequestOutcome::Rejected).await?;
             Err(err)
         }
     }
@@ -585,7 +656,7 @@ async fn get_slot(
     State(state): State<AppState>,
     Path(slot_id): Path<String>,
 ) -> Result<Json<StoredResponse>, BridgeError> {
-    let data = load_entry(&state.db_path, "slots", "slot_id", &slot_id)
+    let data = load_entry(&state, "slots", "slot_id", &slot_id)
         .await?
         .ok_or(BridgeError::NotFound)?;
     Ok(Json(StoredResponse {
@@ -608,7 +679,7 @@ async fn put_inbox(
     let identity = identity_from_grant(&payload.grant)?;
     let now = state.clock.now();
     let ip = extract_ip(connect_info);
-    let snapshot = load_rate_limit_snapshot(&state.db_path, &identity, now, state.limits).await?;
+    let snapshot = load_rate_limit_snapshot(&state, &identity, now, state.limits).await?;
     let minimum_pow = required_pow_params(&snapshot, &state.limits);
     let state_clone = state.clone();
     let (result, data) = task::spawn_blocking(move || {
@@ -631,9 +702,9 @@ async fn put_inbox(
 
     match result {
         Ok(expires_at) => {
-            store_inbox_item(&state.db_path, &inbox_key, data, expires_at).await?;
+            store_inbox_item(&state, &inbox_key, data, expires_at).await?;
             record_request_log(
-                &state.db_path,
+                &state,
                 now,
                 &identity,
                 &ip,
@@ -643,12 +714,12 @@ async fn put_inbox(
                 RequestOutcome::Accepted,
             )
             .await?;
-            update_reputation(&state.db_path, &identity, RequestOutcome::Accepted).await?;
+            update_reputation(&state, &identity, RequestOutcome::Accepted).await?;
             Ok(StatusCode::NO_CONTENT)
         }
         Err(err) => {
             record_request_log(
-                &state.db_path,
+                &state,
                 now,
                 &identity,
                 &ip,
@@ -658,7 +729,7 @@ async fn put_inbox(
                 RequestOutcome::Rejected,
             )
             .await?;
-            update_reputation(&state.db_path, &identity, RequestOutcome::Rejected).await?;
+            update_reputation(&state, &identity, RequestOutcome::Rejected).await?;
             Err(err)
         }
     }
@@ -674,7 +745,7 @@ async fn get_inbox(
     let limit = normalize_inbox_limit(query.limit);
     let max_bytes = normalize_inbox_max_bytes(query.max_bytes, state.limits.max_bytes);
     let page = load_inbox_items(
-        &state.db_path,
+        &state,
         &inbox_key,
         now,
         query.cursor,
@@ -827,15 +898,15 @@ fn mask_ip(ip: std::net::IpAddr) -> String {
 
 /// Loads recent request volume and reputation for rate limiting.
 async fn load_rate_limit_snapshot(
-    db_path: &FsPath,
+    state: &AppState,
     identity: &str,
     now: u64,
     limits: RateLimitConfig,
 ) -> Result<RateLimitSnapshot, BridgeError> {
-    let db_path = db_path.to_path_buf();
+    let pool = state.pool.clone();
     let identity = identity.to_string();
     task::spawn_blocking(move || {
-        let conn = Connection::open(db_path)?;
+        let conn = pool.get()?;
         let window_start = now.saturating_sub(limits.window_seconds) as i64;
         let (count, bytes): (u64, u64) = conn.query_row(
             "SELECT COUNT(*), COALESCE(SUM(bytes), 0) FROM request_logs \
@@ -899,7 +970,7 @@ fn required_pow_params(snapshot: &RateLimitSnapshot, limits: &RateLimitConfig) -
 /// Persists an audit log entry for a request attempt.
 #[allow(clippy::too_many_arguments)]
 async fn record_request_log(
-    db_path: &FsPath,
+    state: &AppState,
     timestamp: u64,
     identity: &str,
     ip: &str,
@@ -908,14 +979,14 @@ async fn record_request_log(
     kind: RequestKind,
     outcome: RequestOutcome,
 ) -> Result<(), BridgeError> {
-    let db_path = db_path.to_path_buf();
+    let pool = state.pool.clone();
     let identity = identity.to_string();
     let ip = ip.to_string();
     let slot_id = slot_id.map(|value| value.to_string());
     let kind = kind.as_str().to_string();
     let outcome = outcome.as_str().to_string();
     task::spawn_blocking(move || {
-        let conn = Connection::open(db_path)?;
+        let conn = pool.get()?;
         conn.execute(
             "INSERT INTO request_logs (timestamp, identity, ip, slot_id, bytes, request_kind, outcome) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
@@ -930,14 +1001,14 @@ async fn record_request_log(
 
 /// Updates the local reputation score based on request outcome.
 async fn update_reputation(
-    db_path: &FsPath,
+    state: &AppState,
     identity: &str,
     outcome: RequestOutcome,
 ) -> Result<(), BridgeError> {
-    let db_path = db_path.to_path_buf();
+    let pool = state.pool.clone();
     let identity = identity.to_string();
     task::spawn_blocking(move || {
-        let conn = Connection::open(db_path)?;
+        let conn = pool.get()?;
         let current: i32 = conn
             .query_row(
                 "SELECT score FROM identity_reputation WHERE identity = ?1",
@@ -1038,18 +1109,18 @@ pub fn export_abuse_logs(
 
 /// Stores binary data in the requested table under the provided key.
 async fn store_entry(
-    db_path: &FsPath,
+    state: &AppState,
     table: &str,
     key_col: &str,
     key: &str,
     data: Vec<u8>,
 ) -> Result<(), BridgeError> {
-    let db_path = db_path.to_path_buf();
+    let pool = state.pool.clone();
     let table = table.to_string();
     let key_col = key_col.to_string();
     let key = key.to_string();
     task::spawn_blocking(move || {
-        let conn = Connection::open(db_path)?;
+        let conn = pool.get()?;
         conn.execute(
             &format!(
                 "INSERT INTO {table} ({key_col}, data) VALUES (?1, ?2) \
@@ -1066,17 +1137,17 @@ async fn store_entry(
 
 /// Loads binary data for the requested key from the database.
 async fn load_entry(
-    db_path: &FsPath,
+    state: &AppState,
     table: &str,
     key_col: &str,
     key: &str,
 ) -> Result<Option<Vec<u8>>, BridgeError> {
-    let db_path = db_path.to_path_buf();
+    let pool = state.pool.clone();
     let table = table.to_string();
     let key_col = key_col.to_string();
     let key = key.to_string();
     task::spawn_blocking(move || {
-        let conn = Connection::open(db_path)?;
+        let conn = pool.get()?;
         let mut stmt = conn.prepare(&format!("SELECT data FROM {table} WHERE {key_col} = ?1"))?;
         let mut rows = stmt.query([key])?;
         if let Some(row) = rows.next()? {
@@ -1116,17 +1187,17 @@ fn normalize_inbox_max_bytes(max_bytes: Option<usize>, max_allowed: u64) -> usiz
 
 /// Loads inbox items for the given key, returning None when the inbox is missing.
 async fn load_inbox_items(
-    db_path: &FsPath,
+    state: &AppState,
     inbox_key: &str,
     now: u64,
     cursor: Option<i64>,
     limit: usize,
     max_bytes: usize,
 ) -> Result<Option<InboxPage>, BridgeError> {
-    let db_path = db_path.to_path_buf();
+    let pool = state.pool.clone();
     let inbox_key = inbox_key.to_string();
     task::spawn_blocking(move || {
-        let conn = Connection::open(db_path)?;
+        let conn = pool.get()?;
         let exists: Option<String> = conn
             .query_row(
                 "SELECT inbox_key FROM inbox_keys WHERE inbox_key = ?1",
@@ -1195,15 +1266,15 @@ fn validate_inbox_item_size(data_len: usize) -> Result<(), BridgeError> {
 
 /// Persists an inbox item and ensures the inbox key exists.
 async fn store_inbox_item(
-    db_path: &FsPath,
+    state: &AppState,
     inbox_key: &str,
     item: Vec<u8>,
     expires_at: u64,
 ) -> Result<(), BridgeError> {
-    let db_path = db_path.to_path_buf();
+    let pool = state.pool.clone();
     let inbox_key = inbox_key.to_string();
     task::spawn_blocking(move || {
-        let conn = Connection::open(db_path)?;
+        let conn = pool.get()?;
         conn.execute(
             "INSERT OR IGNORE INTO inbox_keys (inbox_key) VALUES (?1)",
             params![inbox_key],
