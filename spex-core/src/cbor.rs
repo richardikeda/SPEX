@@ -199,7 +199,10 @@ fn encode_float(value: f64, output: &mut Vec<u8>) {
 
 #[cfg(test)]
 mod tests {
-    use super::{ctap2_canonical_value_bytes, parse_cbor_payload};
+    use super::{
+        ctap2_canonical_value_bytes, ctap2_canonical_value_from_slice, parse_cbor_payload,
+    };
+    use crate::error::SpexError;
     use proptest::prelude::*;
     use serde_cbor::Value;
 
@@ -231,6 +234,44 @@ mod tests {
         #[test]
         fn parse_cbor_payload_never_panics(input in proptest::collection::vec(any::<u8>(), 0..2048)) {
             let _ = parse_cbor_payload(&input);
+        }
+    }
+
+    #[test]
+    fn test_ctap2_canonical_value_from_slice() {
+        // 1. Canonical input: integer 1
+        let canonical_int = vec![0x01];
+        let result = ctap2_canonical_value_from_slice(&canonical_int);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), Value::Integer(1));
+
+        // 2. Non-canonical input: integer 1 with 1-byte encoding (0x18 0x01)
+        let non_canonical_int = vec![0x18, 0x01];
+        let result = ctap2_canonical_value_from_slice(&non_canonical_int);
+        match result {
+            Err(SpexError::CborNotCanonical) => (),
+            _ => panic!("Expected CborNotCanonical error, got {:?}", result),
+        }
+
+        // 3. Canonical map: {0: 0, 1: 1}
+        let canonical_map = vec![0xa2, 0x00, 0x00, 0x01, 0x01];
+        let result = ctap2_canonical_value_from_slice(&canonical_map);
+        assert!(result.is_ok());
+
+        // 4. Non-canonical map: {1: 1, 0: 0} but encoded in that order
+        let non_canonical_map = vec![0xa2, 0x01, 0x01, 0x00, 0x00];
+        let result = ctap2_canonical_value_from_slice(&non_canonical_map);
+        match result {
+            Err(SpexError::CborNotCanonical) => (),
+            _ => panic!("Expected CborNotCanonical error, got {:?}", result),
+        }
+
+        // 5. Invalid CBOR
+        let invalid_cbor = vec![0xff];
+        let result = ctap2_canonical_value_from_slice(&invalid_cbor);
+        match result {
+            Err(SpexError::Cbor(_)) => (),
+            _ => panic!("Expected Cbor error, got {:?}", result),
         }
     }
 }
