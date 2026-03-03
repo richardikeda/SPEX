@@ -4,7 +4,7 @@ use chacha20poly1305::aead::{Aead, KeyInit, Payload};
 use chacha20poly1305::{ChaCha20Poly1305, Nonce};
 use ed25519_dalek::SigningKey;
 use keyring::Entry;
-use rand::RngCore;
+use rand::{rngs::OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 use spex_core::{
     aead_ad,
@@ -493,7 +493,7 @@ pub struct InboxMessageReceipt {
 /// Generates a new identity state with fresh keys and device metadata.
 pub fn create_identity() -> IdentityState {
     let mut seed = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut seed);
+    OsRng.fill_bytes(&mut seed);
     let signing_key = SigningKey::from_bytes(&seed);
     let verifying_key = signing_key.verifying_key();
     let user_id = random_bytes(32);
@@ -518,7 +518,7 @@ pub fn create_identity_in_state(state: &mut LocalState) -> IdentityState {
 /// Rotates the local identity signing and verification keys in place.
 pub fn rotate_identity(identity: &mut IdentityState) -> &IdentityState {
     let mut seed = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut seed);
+    OsRng.fill_bytes(&mut seed);
     let signing_key = SigningKey::from_bytes(&seed);
     let verifying_key = signing_key.verifying_key();
     identity.signing_key_hex = hex::encode(seed);
@@ -934,7 +934,7 @@ pub fn encrypt_payload_with_aead(
     let cipher = ChaCha20Poly1305::new_from_slice(&key)
         .map_err(|err| ClientError::Crypto(err.to_string()))?;
     let mut nonce_bytes = [0u8; 12];
-    rand::thread_rng().fill_bytes(&mut nonce_bytes);
+    OsRng.fill_bytes(&mut nonce_bytes);
     let nonce = Nonce::from_slice(&nonce_bytes);
     let ciphertext = cipher
         .encrypt(
@@ -1201,7 +1201,7 @@ pub fn random_hex(len: usize) -> String {
 /// Generates random bytes for identifiers and secrets.
 pub fn random_bytes(len: usize) -> Vec<u8> {
     let mut buffer = vec![0u8; len];
-    rand::thread_rng().fill_bytes(&mut buffer);
+    OsRng.fill_bytes(&mut buffer);
     buffer
 }
 
@@ -1279,12 +1279,12 @@ fn parse_encrypted_state_file(contents: &str) -> Option<EncryptedStateFile> {
 fn encrypt_state_file(state: &LocalState) -> Result<String, ClientError> {
     let plaintext = serde_json::to_vec(state)?;
     let mut nonce = [0u8; 12];
-    rand::thread_rng().fill_bytes(&mut nonce);
+    OsRng.fill_bytes(&mut nonce);
     let key_source = resolve_state_key_source()?;
     let (kdf, salt_base64, key) = match key_source {
         StateKeySource::Passphrase(passphrase) => {
             let mut salt = [0u8; 16];
-            rand::thread_rng().fill_bytes(&mut salt);
+            OsRng.fill_bytes(&mut salt);
             let key = derive_key_from_passphrase(&passphrase, &salt)?;
             ("argon2id".to_string(), BASE64_STANDARD.encode(salt), key)
         }
@@ -1404,7 +1404,7 @@ fn resolve_keychain_key() -> Result<Vec<u8>, ClientError> {
         Err(err) => match err {
             keyring::Error::NoEntry => {
                 let mut key = [0u8; 32];
-                rand::thread_rng().fill_bytes(&mut key);
+                OsRng.fill_bytes(&mut key);
                 let encoded = BASE64_STANDARD.encode(key);
                 entry
                     .set_password(&encoded)
