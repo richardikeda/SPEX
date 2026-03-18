@@ -251,18 +251,21 @@ impl BridgeClient {
         &self,
         inbox_scan_key: &[u8],
     ) -> Result<InboxScanResponse, TransportError> {
+        use std::fmt::Write;
         let encoded_key = hex::encode(inbox_scan_key);
         let mut items = Vec::new();
         let mut cursor: Option<i64> = None;
+        let base = self.base_url.trim_end_matches('/');
+
+        let limit = DEFAULT_BRIDGE_PAGE_LIMIT;
         loop {
-            let mut url = format!(
-                "{}/inbox/{}?limit={}",
-                self.base_url.trim_end_matches('/'),
-                encoded_key,
-                DEFAULT_BRIDGE_PAGE_LIMIT
-            );
+            let mut url = String::with_capacity(base.len() + encoded_key.len() + 48);
+            write!(url, "{base}/inbox/{encoded_key}?limit={limit}")
+                .map_err(|e| TransportError::InvalidPayload(e.to_string()))?;
+
             if let Some(cursor_value) = cursor {
-                url.push_str(&format!("&cursor={cursor_value}"));
+                write!(url, "&cursor={cursor_value}")
+                    .map_err(|e| TransportError::InvalidPayload(e.to_string()))?;
             }
             let response = self.client.get(url).send().await?.error_for_status()?;
             let payload: BridgeInboxResponse = response.json().await?;
@@ -290,12 +293,12 @@ impl BridgeClient {
         inbox_scan_key: &[u8],
         request: &BridgePublishRequest,
     ) -> Result<(), TransportError> {
+        use std::fmt::Write;
         let encoded_key = hex::encode(inbox_scan_key);
-        let url = format!(
-            "{}/inbox/{}",
-            self.base_url.trim_end_matches('/'),
-            encoded_key
-        );
+        let base = self.base_url.trim_end_matches('/');
+        let mut url = String::with_capacity(base.len() + encoded_key.len() + 7);
+        write!(url, "{base}/inbox/{encoded_key}")
+            .map_err(|e| TransportError::InvalidPayload(e.to_string()))?;
         let response = self.client.put(&url).json(request).send().await?;
         if response.status().is_success() {
             return Ok(());
