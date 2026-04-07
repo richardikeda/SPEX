@@ -123,7 +123,75 @@ AI agents MUST NOT:
 
 ## 4. TASK TEMPLATE (Mandatory)
 
-Every task given to an AI agent MUST follow this structure.
+Every task given to an AI agent MUST follow this structur// ...existing code...
+
+## 4. TASK TEMPLATE (Mandatory)
+
+Every task handled by an AI agent MUST use this structure.
+
+If the requester does not provide the template, the agent MUST:
+1. Convert the request into this template,
+2. Fill all fields with available information,
+3. Mark missing items as `[NEEDS CLARIFICATION]`,
+4. Send the completed template back to the requester,
+5. Explicitly ask for execution approval (e.g., "Can I proceed with execution?").
+
+The agent MUST NOT execute the task until explicit requester approval is given.
+
+```
+[TASK NAME]
+
+Objective:
+- What exactly needs to be implemented or changed?
+
+Context:
+- Why is this needed?
+- Which problem does it solve?
+
+Scope:
+- Files/modules that may be modified
+- Explicitly list what must NOT be touched
+
+Constraints:
+- Security invariants that must be preserved
+- Performance or compatibility constraints
+
+Acceptance Criteria:
+- What conditions define this task as "done"?
+- Expected behavior (including failure cases)
+
+Tests Required:
+- What tests must be added or updated?
+- Any negative/security test required?
+
+Documentation:
+- Which docs must be updated (README, /docs/*)?
+
+Versioning:
+- Confirm that VERSION.md must be incremented
+```
+
+If any section remains ambiguous, the agent MUST ask for clarification and wait for confirmation before proceeding.
+
+// ...existing code...
+
+## 6. Stop Conditions (Agents MUST Halt)
+
+An agent MUST stop and report if:
+
+* requirements are ambiguous
+* task implies a protocol change
+* task weakens security controls
+* tests cannot reasonably be added
+* documentation impact is unclear
+* a shortcut would bypass validation
+* requester approval to execute was not explicitly granted after the completed task template was returned
+
+Silence or guessing is unacceptable.
+
+// ...existing code...# ...existing code...
+<increment current version by one step using project rule>
+# ...existing code...e.
 
 Agents MUST refuse tasks that do not follow this template.
 
