@@ -1,10 +1,11 @@
 use std::time::{Duration, Instant};
 
-use libp2p::identity::Keypair;
+use libp2p::{identity::Keypair, PeerId};
 use spex_transport::chunking::{chunk_data, ChunkingConfig};
 use spex_transport::transport::ChunkDescriptor;
 use spex_transport::{
-    Chunk, ChunkManifest, P2pNodeConfig, P2pRuntimeProfile, P2pTransport, TransportConfig,
+    Chunk, ChunkManifest, P2pNodeConfig, P2pRuntimeProfile, P2pTransport, PeerReputationState,
+    TransportConfig,
 };
 
 /// Builds a manifest descriptor list from generated chunks for test publication.
@@ -122,4 +123,35 @@ async fn timeout_tuning_by_profile_respects_bounds() {
     assert!(publish_after <= publish);
     assert!(query_after <= query);
     assert!(manifest_after <= manifest);
+}
+
+/// Verifies intermittent timeout-only failures trigger probation but avoid immediate bans.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn intermittent_peer_timeout_penalties_do_not_immediately_ban() {
+    let mut node = P2pTransport::new(
+        Keypair::generate_ed25519(),
+        TransportConfig::default(),
+        P2pNodeConfig {
+            peer_ban_duration: Duration::from_secs(60),
+            peer_probation_duration: Duration::from_secs(60),
+            ..P2pNodeConfig::for_profile(P2pRuntimeProfile::Test)
+        },
+    )
+    .await
+    .expect("node");
+
+    let peer = PeerId::random();
+    for _ in 0..5 {
+        node.report_timeout(peer);
+    }
+
+    let snapshot = node.peer_reputation_snapshot(peer);
+    assert_eq!(snapshot.timeout_penalties, 5);
+    assert_eq!(snapshot.state, PeerReputationState::Probation);
+    assert!(!node.is_peer_banned(&peer));
+
+    for _ in 0..4 {
+        node.report_successful_interaction(peer);
+    }
+    assert!(!node.is_peer_probationary(&peer));
 }

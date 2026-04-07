@@ -1,9 +1,11 @@
 use std::time::{Duration, Instant};
 
-use libp2p::identity::Keypair;
+use libp2p::{identity::Keypair, PeerId};
 use spex_transport::chunking::{chunk_data, ChunkingConfig};
 use spex_transport::transport::ChunkDescriptor;
-use spex_transport::{Chunk, ChunkManifest, P2pNodeConfig, P2pTransport, TransportConfig};
+use spex_transport::{
+    Chunk, ChunkManifest, P2pNodeConfig, P2pTransport, PeerReputationState, TransportConfig,
+};
 
 /// Builds a chunk manifest from chunk data and payload length.
 fn build_manifest_from_chunks(chunks: &[Chunk], total_len: usize) -> ChunkManifest {
@@ -113,4 +115,30 @@ async fn two_nodes_publish_and_recover_manifest_delivery() {
 
     assert!(!recovered.is_empty());
     assert_eq!(recovered[0], payload);
+}
+
+/// Verifies recurring invalid payload behavior deterministically escalates to temporary ban.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn recurring_invalid_payload_escalates_to_ban() {
+    let mut node = P2pTransport::new(
+        Keypair::generate_ed25519(),
+        TransportConfig::default(),
+        P2pNodeConfig {
+            invalid_payload_ban_threshold: 2,
+            ..P2pNodeConfig::default()
+        },
+    )
+    .await
+    .expect("node");
+
+    let peer = PeerId::random();
+    node.report_invalid_payload(peer);
+    let first = node.peer_reputation_snapshot(peer);
+    assert_eq!(first.state, PeerReputationState::Neutral);
+
+    node.report_invalid_payload(peer);
+    let second = node.peer_reputation_snapshot(peer);
+    assert_eq!(second.invalid_payload_penalties, 2);
+    assert_eq!(second.state, PeerReputationState::Banned);
+    assert!(node.is_peer_banned(&peer));
 }

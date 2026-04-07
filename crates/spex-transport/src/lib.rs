@@ -22,6 +22,7 @@ pub use ingest::{
 };
 pub use p2p::{
     inbox_gossip_topic, P2pMetricsSnapshot, P2pNodeConfig, P2pRuntimeProfile, P2pTransport,
+    PeerReputationSnapshot, PeerReputationState,
 };
 pub use telemetry::{
     derive_minimal_correlation_id, derive_operation_correlation_id, NetworkHealthIndicators,

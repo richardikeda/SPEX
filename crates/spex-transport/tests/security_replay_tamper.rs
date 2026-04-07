@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 
+use libp2p::{identity::Keypair, PeerId};
 use spex_transport::transport::ChunkDescriptor;
 use spex_transport::{
     chunking::{chunk_data, ChunkingConfig},
-    reassemble_chunks_with_manifest, reassemble_payload_from_store, ChunkManifest, TransportConfig,
-    TransportError,
+    reassemble_chunks_with_manifest, reassemble_payload_from_store, ChunkManifest, P2pNodeConfig,
+    P2pTransport, PeerReputationState, TransportConfig, TransportError,
 };
 
 /// Builds a deterministic chunk manifest for a payload and chunk configuration.
@@ -91,4 +92,35 @@ fn manifest_with_partial_references_is_rejected() {
     let err = reassemble_payload_from_store(&partial_manifest, &store, &config)
         .expect_err("partial manifest must fail");
     assert!(matches!(err, TransportError::PayloadLengthMismatch { .. }));
+}
+
+/// Ensures inconsistent responses escalate through probation before deterministic ban.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn inconsistent_responses_escalate_probation_then_ban() {
+    let mut node = P2pTransport::new(
+        Keypair::generate_ed25519(),
+        TransportConfig::default(),
+        P2pNodeConfig {
+            inconsistent_response_ban_threshold: 4,
+            ..P2pNodeConfig::default()
+        },
+    )
+    .await
+    .expect("node");
+
+    let peer = PeerId::random();
+    node.report_inconsistent_response(peer);
+    node.report_inconsistent_response(peer);
+
+    let probation = node.peer_reputation_snapshot(peer);
+    assert_eq!(probation.state, PeerReputationState::Probation);
+    assert!(!node.is_peer_banned(&peer));
+
+    node.report_inconsistent_response(peer);
+    node.report_inconsistent_response(peer);
+
+    let banned = node.peer_reputation_snapshot(peer);
+    assert_eq!(banned.inconsistent_response_penalties, 4);
+    assert_eq!(banned.state, PeerReputationState::Banned);
+    assert!(node.is_peer_banned(&peer));
 }

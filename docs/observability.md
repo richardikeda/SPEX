@@ -71,12 +71,29 @@ Para evitar atualização "Big Bang" no fim, este documento deve ser atualizado 
 
 ### Subtarefa 1.1 — Reputação
 
-- Atualização obrigatória ao concluir:
-  - política de score/penalidade e thresholds de promoção/quarentena/ban;
-  - métricas de falso positivo/falso negativo operacional;
-  - eventos de trace para transição de estado de reputação.
-- Critério de aceite documental:
-  - seção de troubleshooting contendo como diferenciar peer intermitente de abuso recorrente.
+Política implementada:
+- Penalidades por evento: timeout `-8`, resposta inconsistente `-18`, payload inválido `-30`.
+- Limiar de probation por score: `<= -35`.
+- Limiar de ban por score: `<= -70`.
+- Ban determinístico por recorrência maliciosa:
+  - `invalid_payload_penalties >= 2`.
+  - `inconsistent_response_penalties >= 4`.
+- Recuperação gradual por interação bem sucedida: `+6` por sucesso, com limpeza de probation ao ultrapassar `-25`.
+
+Métricas/traces adicionados para reputação:
+- `reputation_probation_transitions`: total de transições para probation.
+- `reputation_ban_transitions`: total de transições para ban.
+- Evento de trace `operation="peer_reputation_transition"` com campos:
+  - `peer_id`, `reason`, `previous_state`, `current_state`, `score`.
+  - `timeout_penalties`, `invalid_payload_penalties`, `inconsistent_response_penalties`.
+
+Troubleshooting (intermitente vs abuso recorrente):
+- Peer intermitente:
+  - cresce em `timeout_penalties`, pode entrar em probation, mas não deve banir rapidamente.
+  - sinais: `reason=timeout`, score recupera com sucessos, `reputation_ban_transitions` estável.
+- Peer malicioso recorrente:
+  - repete `invalid_payload` ou `inconsistent_response` e aciona ban determinístico.
+  - sinais: aumento de `invalid_payload_penalties`/`inconsistent_response_penalties` seguido de `current_state=banned`.
 
 ### Subtarefa 1.2 — Recovery/Snapshot
 

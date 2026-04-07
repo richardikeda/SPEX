@@ -23,7 +23,7 @@ Se você acredita ter encontrado uma vulnerabilidade, **não abra uma issue púb
 
 Envie um e-mail para:
 
-**📧 [security@spex.dev](mailto:security@spex.dev)**
+**📧 [contato@enterscript.com](mailto:contato@enterscript.com)**
 *(substitua pelo e-mail real antes de publicar)*
 
 Inclua, se possível:

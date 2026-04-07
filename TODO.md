@@ -177,6 +177,14 @@ Subtarefas incrementais obrigatórias (sem Big Bang):
 
 ### [TASK 1.1] Reputação
 
+Status:
+- ✅ Concluída com thresholds explícitos de reputação, ban determinístico para abuso recorrente e transições observáveis.
+
+Evidência de testes (TASK 1.1):
+- `cargo test -p spex-transport --test p2p_backoff_churn intermittent_peer_timeout_penalties_do_not_immediately_ban -- --nocapture`
+- `cargo test -p spex-transport --test p2p_manifest_delivery recurring_invalid_payload_escalates_to_ban -- --nocapture`
+- `cargo test -p spex-transport --test security_replay_tamper inconsistent_responses_escalate_probation_then_ban -- --nocapture`
+
 - Arquivos-alvo (`crates/spex-transport/src/*`):
   - `crates/spex-transport/src/p2p.rs`
   - `crates/spex-transport/src/transport.rs`

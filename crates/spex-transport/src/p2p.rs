@@ -52,6 +52,29 @@ pub struct P2pNodeConfig {
     pub peer_ban_duration: Duration,
     pub peer_probation_duration: Duration,
     pub score_recovery_per_minute: i32,
+    pub probation_score_threshold: i32,
+    pub ban_score_threshold: i32,
+    pub probation_clear_score: i32,
+    pub invalid_payload_ban_threshold: u32,
+    pub inconsistent_response_ban_threshold: u32,
+}
+
+/// Coarse-grained state class for peer reputation enforcement.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PeerReputationState {
+    Neutral,
+    Probation,
+    Banned,
+}
+
+/// Snapshot of one peer reputation record for deterministic assertions.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PeerReputationSnapshot {
+    pub score: i32,
+    pub timeout_penalties: u32,
+    pub invalid_payload_penalties: u32,
+    pub inconsistent_response_penalties: u32,
+    pub state: PeerReputationState,
 }
 
 /// Deployment profile with explicit timeout defaults for publish/query/recovery flows.
@@ -102,6 +125,8 @@ pub struct P2pMetricsSnapshot {
     pub fallback_failure: u64,
     pub reassemble_failures: u64,
     pub verification_failures: u64,
+    pub reputation_probation_transitions: u64,
+    pub reputation_ban_transitions: u64,
     pub publish_latency_ms: Vec<u64>,
     pub query_latency_ms: Vec<u64>,
     pub recovery_latency_ms: Vec<u64>,
@@ -147,6 +172,11 @@ impl Default for P2pNodeConfig {
             peer_ban_duration: Duration::from_secs(30),
             peer_probation_duration: Duration::from_secs(20),
             score_recovery_per_minute: 4,
+            probation_score_threshold: -35,
+            ban_score_threshold: -70,
+            probation_clear_score: -25,
+            invalid_payload_ban_threshold: 2,
+            inconsistent_response_ban_threshold: 4,
         }
     }
 }
@@ -701,17 +731,19 @@ impl P2pTransport {
 
     /// Applies timeout penalties to a peer and disconnects if ban policy triggers.
     pub fn report_timeout(&mut self, peer_id: PeerId) {
-        self.apply_penalty(peer_id, 8, |score| score.timeout_penalties += 1);
+        self.apply_penalty(peer_id, 8, "timeout", |score| score.timeout_penalties += 1);
     }
 
     /// Applies invalid-payload penalties to a peer and disconnects if ban policy triggers.
     pub fn report_invalid_payload(&mut self, peer_id: PeerId) {
-        self.apply_penalty(peer_id, 30, |score| score.invalid_payload_penalties += 1);
+        self.apply_penalty(peer_id, 30, "invalid_payload", |score| {
+            score.invalid_payload_penalties += 1
+        });
     }
 
     /// Applies inconsistent-response penalties to a peer and disconnects if ban policy triggers.
     pub fn report_inconsistent_response(&mut self, peer_id: PeerId) {
-        self.apply_penalty(peer_id, 18, |score| {
+        self.apply_penalty(peer_id, 18, "inconsistent_response", |score| {
             score.inconsistent_response_penalties += 1
         });
     }
@@ -723,7 +755,7 @@ impl P2pTransport {
             .entry(peer_id)
             .or_insert_with(PeerScore::neutral);
         state.score = (state.score + 6).min(20);
-        if state.score > -25 {
+        if state.score > self.node_config.probation_clear_score {
             state.probation_until = None;
         }
         let _ = self.persist_state();
@@ -750,6 +782,27 @@ impl P2pTransport {
             .get(peer_id)
             .and_then(|state| state.probation_until)
             .is_some_and(|until| Instant::now() < until)
+    }
+
+    /// Returns the current reputation snapshot for one peer.
+    pub fn peer_reputation_snapshot(&self, peer_id: PeerId) -> PeerReputationSnapshot {
+        let now = Instant::now();
+        match self.peer_scores.get(&peer_id) {
+            Some(state) => PeerReputationSnapshot {
+                score: state.score,
+                timeout_penalties: state.timeout_penalties,
+                invalid_payload_penalties: state.invalid_payload_penalties,
+                inconsistent_response_penalties: state.inconsistent_response_penalties,
+                state: classify_peer_reputation_state(state, now),
+            },
+            None => PeerReputationSnapshot {
+                score: 0,
+                timeout_penalties: 0,
+                invalid_payload_penalties: 0,
+                inconsistent_response_penalties: 0,
+                state: PeerReputationState::Neutral,
+            },
+        }
     }
 
     /// Returns peers selected for random walk while enforcing source diversity and influence caps.
@@ -1016,31 +1069,92 @@ fn infer_origin_tag(addr: &Multiaddr) -> &str {
 
 impl P2pTransport {
     /// Applies a generic penalty function and enforces probation and temporary-ban policy.
-    fn apply_penalty<F>(&mut self, peer_id: PeerId, penalty: i32, mutate: F)
+    fn apply_penalty<F>(&mut self, peer_id: PeerId, penalty: i32, reason: &str, mutate: F)
     where
         F: FnOnce(&mut PeerScore),
     {
         let now = Instant::now();
-        let state = self
-            .peer_scores
-            .entry(peer_id)
-            .or_insert_with(PeerScore::neutral);
-        apply_score_decay(state, now, self.node_config.score_recovery_per_minute);
-        state.score -= penalty;
-        mutate(state);
+        let mut transition = None;
+        {
+            let state = self
+                .peer_scores
+                .entry(peer_id)
+                .or_insert_with(PeerScore::neutral);
+            let previous_state = classify_peer_reputation_state(state, now);
+            apply_score_decay(state, now, self.node_config.score_recovery_per_minute);
+            state.score -= penalty;
+            mutate(state);
 
-        if state.score <= -70 {
-            state.banned_until = Some(now + self.node_config.peer_ban_duration);
-            state.probation_until = None;
-            let _ = self.swarm.disconnect_peer_id(peer_id);
-            self.swarm
-                .behaviour_mut()
-                .gossipsub
-                .remove_explicit_peer(&peer_id);
-        } else if state.score <= -35 {
-            state.probation_until = Some(now + self.node_config.peer_probation_duration);
+            let reached_ban_threshold = state.score <= self.node_config.ban_score_threshold
+                || state.invalid_payload_penalties >= self.node_config.invalid_payload_ban_threshold
+                || state.inconsistent_response_penalties
+                    >= self.node_config.inconsistent_response_ban_threshold;
+
+            if reached_ban_threshold {
+                state.banned_until = Some(now + self.node_config.peer_ban_duration);
+                state.probation_until = None;
+                let _ = self.swarm.disconnect_peer_id(peer_id);
+                self.swarm
+                    .behaviour_mut()
+                    .gossipsub
+                    .remove_explicit_peer(&peer_id);
+            } else if state.score <= self.node_config.probation_score_threshold {
+                state.probation_until = Some(now + self.node_config.peer_probation_duration);
+            }
+
+            let current_state = classify_peer_reputation_state(state, now);
+            if previous_state != current_state {
+                transition = Some((
+                    previous_state,
+                    current_state,
+                    state.score,
+                    state.timeout_penalties,
+                    state.invalid_payload_penalties,
+                    state.inconsistent_response_penalties,
+                ));
+            }
+        }
+
+        if let Some((
+            previous_state,
+            current_state,
+            score,
+            timeout_penalties,
+            invalid_payload_penalties,
+            inconsistent_response_penalties,
+        )) = transition
+        {
+            self.record_reputation_transition(current_state);
+            warn!(
+                target: "spex_transport::p2p",
+                operation = "peer_reputation_transition",
+                peer_id = %peer_id,
+                reason = %reason,
+                previous_state = ?previous_state,
+                current_state = ?current_state,
+                score,
+                timeout_penalties,
+                invalid_payload_penalties,
+                inconsistent_response_penalties,
+                "peer reputation state transitioned"
+            );
         }
         let _ = self.persist_state();
+    }
+
+    /// Increments counters for probation and ban transitions.
+    fn record_reputation_transition(&self, state: PeerReputationState) {
+        if let Ok(mut metrics) = self.metrics.lock() {
+            match state {
+                PeerReputationState::Probation => {
+                    metrics.snapshot.reputation_probation_transitions += 1;
+                }
+                PeerReputationState::Banned => {
+                    metrics.snapshot.reputation_ban_transitions += 1;
+                }
+                PeerReputationState::Neutral => {}
+            }
+        }
     }
 
     /// Registers peer observation metadata so restart bootstrap can be deterministic.
@@ -1144,6 +1258,17 @@ impl P2pTransport {
             }
         }
         addrs
+    }
+}
+
+/// Classifies a peer reputation state from runtime probation/ban timers.
+fn classify_peer_reputation_state(state: &PeerScore, now: Instant) -> PeerReputationState {
+    if state.banned_until.is_some_and(|until| now < until) {
+        PeerReputationState::Banned
+    } else if state.probation_until.is_some_and(|until| now < until) {
+        PeerReputationState::Probation
+    } else {
+        PeerReputationState::Neutral
     }
 }
 
