@@ -1143,7 +1143,8 @@ impl P2pTransport {
             mutate(state);
 
             let reached_ban_threshold = state.score <= self.node_config.ban_score_threshold
-                || state.invalid_payload_penalties >= self.node_config.invalid_payload_ban_threshold
+                || state.invalid_payload_penalties
+                    >= self.node_config.invalid_payload_ban_threshold
                 || state.inconsistent_response_penalties
                     >= self.node_config.inconsistent_response_ban_threshold;
 

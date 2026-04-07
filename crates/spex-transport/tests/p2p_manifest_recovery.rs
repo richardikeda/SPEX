@@ -321,7 +321,10 @@ fn malformed_manifest_payload_returns_explicit_error() {
 /// Ensures manifest recovery ignores malformed payloads and returns explicit invalid-manifest when none are valid.
 #[test]
 fn manifest_recovery_returns_explicit_error_when_all_payloads_invalid() {
-    let payloads = vec![b"{bad-json".to_vec(), b"{\"chunks\":[],\"total_len\":1}".to_vec()];
+    let payloads = vec![
+        b"{bad-json".to_vec(),
+        b"{\"chunks\":[],\"total_len\":1}".to_vec(),
+    ];
     let err = recover_manifest_from_gossip(&payloads)
         .expect_err("recovery must fail when all candidate payloads are invalid");
     assert!(matches!(err, TransportError::InvalidManifest(_)));

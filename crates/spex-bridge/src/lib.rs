@@ -26,7 +26,6 @@ use tokio::task;
 
 #[derive(Clone)]
 pub struct AppState {
-    db_path: PathBuf,
     pool: Arc<DbPool>,
     clock: Arc<dyn Clock + Send + Sync>,
     limits: RateLimitConfig,
@@ -383,7 +382,6 @@ pub fn init_state(db_path: impl Into<PathBuf>) -> Result<AppState, BridgeError> 
     init_db(&db_path).map_err(|err| BridgeError::Storage(err.to_string()))?;
     Ok(AppState {
         pool: Arc::new(DbPool::new(db_path.clone(), 10)),
-        db_path,
         clock: Arc::new(SystemClock),
         limits: RateLimitConfig::default(),
     })
@@ -398,7 +396,6 @@ pub fn init_state_with_clock(
     init_db(&db_path).map_err(|err| BridgeError::Storage(err.to_string()))?;
     Ok(AppState {
         pool: Arc::new(DbPool::new(db_path.clone(), 10)),
-        db_path,
         clock,
         limits: RateLimitConfig::default(),
     })
@@ -744,16 +741,9 @@ async fn get_inbox(
     let now = state.clock.now();
     let limit = normalize_inbox_limit(query.limit);
     let max_bytes = normalize_inbox_max_bytes(query.max_bytes, state.limits.max_bytes);
-    let page = load_inbox_items(
-        &state,
-        &inbox_key,
-        now,
-        query.cursor,
-        limit,
-        max_bytes,
-    )
-    .await?
-    .ok_or(BridgeError::NotFound)?;
+    let page = load_inbox_items(&state, &inbox_key, now, query.cursor, limit, max_bytes)
+        .await?
+        .ok_or(BridgeError::NotFound)?;
     Ok(Json(InboxResponse {
         items: page
             .items

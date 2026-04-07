@@ -22,10 +22,7 @@ fn stress_test_large_payload_chunking() {
     let chunks = chunk_data(&config, &payload);
     let split_elapsed = split_start.elapsed();
     // Correct calculation: (10*1024*1024 + 64*1024 - 1) / (64*1024) = 160
-    assert_eq!(
-        chunks.len(),
-        payload_size.div_ceil(config.chunk_size)
-    );
+    assert_eq!(chunks.len(), payload_size.div_ceil(config.chunk_size));
     assert!(split_elapsed <= Duration::from_millis(LARGE_PAYLOAD_MAX_CHUNK_MS));
 
     // Reassemble

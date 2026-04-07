@@ -1,5 +1,5 @@
-use spex_bridge::{parse_inbox_store_request_bytes, parse_storage_request_bytes};
 use proptest::prelude::*;
+use spex_bridge::{parse_inbox_store_request_bytes, parse_storage_request_bytes};
 
 /// Returns a deterministic baseline-valid payload used for adversarial parser mutations.
 fn valid_payload_json() -> String {

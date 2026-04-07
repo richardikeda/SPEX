@@ -32,8 +32,7 @@ fn stress_test_group_creation_and_messaging() {
     let start_add = Instant::now();
 
     // We only update Alice's state here for the stress test
-    for i in 1..member_count {
-        let member = &clients[i];
+    for member in clients.iter().take(member_count).skip(1) {
         let _commit = group_alice
             .add_member(member)
             .expect("failed to add member");
@@ -66,9 +65,7 @@ fn stress_test_full_mesh_sync_small_group() {
     active_groups.push(alice_group);
 
     // Add remaining members
-    for i in 1..member_count {
-        let new_member_client = &clients[i];
-
+    for (i, new_member_client) in clients.iter().enumerate().take(member_count).skip(1) {
         // Alice (index 0) adds member
         let commit_output = active_groups[0]
             .add_member(new_member_client)
@@ -81,13 +78,13 @@ fn stress_test_full_mesh_sync_small_group() {
         // New member joins
         let tree = active_groups[0].export_tree();
         let new_group_state = new_member_client
-            .join_group(&welcome, Some(tree))
+            .join_group(welcome, Some(tree))
             .expect("Member joins");
 
         // Existing members 1..i-1 must process commit
-        for j in 1..i {
+        for group_state in active_groups.iter_mut().take(i).skip(1) {
             let msg = commit_output.commit_message.clone();
-            active_groups[j]
+            group_state
                 .process_commit_message(msg)
                 .expect("Existing member processes commit");
         }

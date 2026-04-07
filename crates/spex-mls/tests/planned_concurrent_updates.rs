@@ -296,9 +296,10 @@ fn rejects_stale_replay_after_successful_resync() {
     assert_eq!(bob_group.epoch(), 3);
 
     let stale = bob_group
-        .process_external_commit_with_resync(explicit_external(3, &update.commit_message), |_, _| {
-            panic!("fetch_missing must not be called for stale/current replay")
-        })
+        .process_external_commit_with_resync(
+            explicit_external(3, &update.commit_message),
+            |_, _| panic!("fetch_missing must not be called for stale/current replay"),
+        )
         .expect_err("stale replay must be rejected after resync");
 
     match stale {

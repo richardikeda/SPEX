@@ -64,7 +64,10 @@ pub fn derive_minimal_correlation_id(operation: &str) -> String {
 }
 
 /// Builds operation correlation output and marks whether minimal fallback context was used.
-pub fn derive_operation_correlation(operation: &str, context: Option<&[u8]>) -> OperationCorrelation {
+pub fn derive_operation_correlation(
+    operation: &str,
+    context: Option<&[u8]>,
+) -> OperationCorrelation {
     match context {
         Some(bytes) if !bytes.is_empty() => OperationCorrelation {
             correlation_id: derive_operation_correlation_id(operation, bytes),

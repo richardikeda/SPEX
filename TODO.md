@@ -8,6 +8,7 @@
 - ✅ `TASK 3` Expansão de robustez adversarial (fuzz + property tests em superfícies críticas) concluída.
 
 Sem bloqueadores técnicos remanescentes de `TASK 1-3` para fechamento da v1.0.
+O release definitivo permanece bloqueado até fechamento dos gates da `Fase 5`.
 
 ## Roadmap de execução (SPEX only, tarefa por tarefa)
 
@@ -128,17 +129,26 @@ Testes obrigatórios:
 Critério de conclusão:
 - Todos os gates verdes e sem bloqueadores críticos abertos.
 
+Status de execução da fase:
+- 🔄 Em andamento.
+- ✅ Gate A (testes críticos): `cargo test -p spex-core -p spex-mls -p spex-transport --locked --all-features --verbose` passou.
+- ✅ Gate C (lint): `cargo clippy --workspace --locked --all-targets --all-features -- -D warnings` passou.
+- ❌ Gate C (fmt): `cargo fmt --all -- --check` falhou com diffs pendentes de formatação.
+- ❌ Supply chain (`cargo deny check`) falhou com:
+  - `RUSTSEC-2026-0049` em `rustls-webpki 0.103.9` (upgrade sugerido >= 0.103.10);
+  - `RUSTSEC-2021-0127` (`serde_cbor` unmaintained, sem upgrade seguro direto);
+  - inconsistências em `bans/licenses` que exigem saneamento adicional de política/deps.
+
 ### Ordem de execução imediata (próximas tarefas)
 
-1. Executar `TASK 1` (hardening/observabilidade P2P) em subtarefas `1.1 -> 1.4`.
-2. Executar `TASK 2` (conformidade MLS avançada).
-3. Executar `TASK 3` (robustez adversarial com fuzz/property).
-4. Rodar gate final consolidado da Fase 5.
+1. Corrigir diffs de formatação e fechar `cargo fmt --all -- --check`.
+2. Mitigar advisories e política de dependências para obter `cargo deny check` verde.
+3. Reexecutar gate final consolidado da Fase 5 e registrar decisão GO/NO-GO.
 
 ## Backlog acionável para fechamento da v1
 
-Esta lista contém apenas pendências **não implementadas** após revisão do estado atual em `README.md`, `docs/*` e suites de testes.
-Itens concluídos foram removidos desta lista e mantidos no histórico (`CHANGELOG.md`).
+Esta seção mantém o registro operacional das tasks de fechamento da v1 com status, evidências e critérios de aceite.
+Itens concluídos permanecem documentados abaixo para rastreabilidade de auditoria e revisão.
 
 ---
 
