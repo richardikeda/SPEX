@@ -3,7 +3,9 @@ db-path = "~/.cargo/advisory-db"
 db-urls = ["https://github.com/RustSec/advisory-db"]
 unmaintained = "workspace"
 yanked = "deny"
-ignore = []
+# Temporary and explicit exception: serde_cbor is currently used across core flows.
+# Keep this scoped to the known unmaintained advisory while migration is executed.
+ignore = ["RUSTSEC-2021-0127"]
 
 [bans]
 multiple-versions = "warn"
