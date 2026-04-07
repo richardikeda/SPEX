@@ -10,6 +10,120 @@
 
 A publicação definitiva da v1.0 permanece bloqueada até conclusão validada de `TASK 1-3`.
 
+## Roadmap de execução (SPEX only, tarefa por tarefa)
+
+Este roadmap organiza a entrega da v1.0 em sequência operacional, sempre com testes obrigatórios por etapa.
+
+### Fase 0 - Norte e congelamento de escopo v1.0
+
+Objetivo:
+- Consolidar SPEX como protocolo E2E baseado em MLS e agnóstico de rede (`HTTP`, `P2P`, `WebSocket`).
+- Congelar escopo da v1.0 para o fluxo essencial: identidade -> grupo -> membro -> envio -> consumo.
+
+Entregáveis:
+- Declaração oficial de posicionamento no `README.md`.
+- Escopo v1.0 fechado e itens não essenciais movidos para backlog pós-v1.
+
+Testes obrigatórios:
+- Regressão do fluxo feliz via CLI (duas identidades trocando payload válido).
+- Caso negativo de autorização (membro não autorizado não descriptografa).
+
+Critério de conclusão:
+- Escopo aprovado e documentado sem ambiguidade.
+
+### Fase 1 - Interface de integração SPEX (SDK/Bindings)
+
+Objetivo:
+- Expor uma interface estável de cliente para integrações (incluindo web) sem alterar invariantes de segurança.
+
+Entregáveis:
+- API mínima estável para inicialização, criação de grupo, adição de membro, envio e recebimento.
+- Contrato de erros explícitos para falhas de epoch, assinatura e autorização.
+
+Testes obrigatórios:
+- Unit tests para API pública e mapeamento de erros.
+- Testes de integração ponta a ponta usando a API (init -> create_group -> add_member -> send/receive).
+- Testes negativos para chave inválida, assinatura inválida e epoch inconsistente.
+
+Critério de conclusão:
+- API de integração estável e coberta por suíte determinística em CI.
+
+### Fase 2 - Fechamento do Core (wire + compatibilidade)
+
+Objetivo:
+- Congelar wire format e alinhar documentação/código com verificação automatizada.
+
+Entregáveis:
+- `docs/wire-format.md` 100% aderente ao código.
+- Política de versionamento para mudanças de formato.
+
+Testes obrigatórios:
+- Vetores fixos de serialização/assinatura.
+- Regressão de compatibilidade para encode/decode canônico.
+- Casos negativos com payload truncado, tipo inválido e hash divergente.
+
+Critério de conclusão:
+- Qualquer desvio wire/documentação falha em CI.
+
+### Fase 3 - Robustez operacional (offline, inbox, recovery)
+
+Objetivo:
+- Garantir operação confiável com usuários offline e recuperação determinística de estado.
+
+Entregáveis:
+- Inbox persistente com pull posterior sem perda silenciosa.
+- Procedimento de backup/restore criptografado do estado do cliente.
+
+Testes obrigatórios:
+- Integração offline->online com retenção e entrega tardia.
+- Testes de restart/recovery com estado íntegro.
+- Negativos para estado parcial/corrompido com erro explícito.
+
+Critério de conclusão:
+- Recovery reproduzível sob churn sem violar invariantes.
+
+### Fase 4 - Hardening final de segurança
+
+Objetivo:
+- Fechar pendências de robustez adversarial e observabilidade sem vazar segredos.
+
+Entregáveis:
+- Expansão de fuzz targets nas superfícies críticas restantes.
+- Property tests de determinismo/idempotência.
+- Catálogo operacional final de métricas/traces em `docs/observability.md`.
+
+Testes obrigatórios:
+- Fuzz smoke em targets críticos.
+- Property tests para invariantes de epoch/cfg_hash/assinatura.
+- Testes negativos para replay, reorder e metadado de tracing ausente.
+
+Critério de conclusão:
+- Entradas malformadas retornam erro explícito sem panic path.
+
+### Fase 5 - Release readiness v1.0
+
+Objetivo:
+- Fechar gate final de release com qualidade, documentação e segurança verificadas.
+
+Entregáveis:
+- `cargo clippy` e `cargo deny` sem bloqueadores.
+- `README.md` + `docs/*` com fluxo de integração e operação atualizado.
+- Checklist de release validado ponta a ponta.
+
+Testes obrigatórios:
+- Execução completa de unit, integração, e2e, negativos, property e fuzz smoke.
+- Regressão final do fluxo de ponta a ponta em ambiente limpo.
+
+Critério de conclusão:
+- Todos os gates verdes e sem bloqueadores críticos abertos.
+
+### Ordem de execução imediata (próximas tarefas)
+
+1. Executar `TASK 1` (hardening/observabilidade P2P) em subtarefas `1.1 -> 1.4`.
+2. Executar `TASK 2` (conformidade MLS avançada).
+3. Executar `TASK 3` (robustez adversarial com fuzz/property).
+4. Rodar gate final consolidado da Fase 5.
+
 ## Backlog acionável para fechamento da v1
 
 Esta lista contém apenas pendências **não implementadas** após revisão do estado atual em `README.md`, `docs/*` e suites de testes.
