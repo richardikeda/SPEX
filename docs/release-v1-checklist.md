@@ -1,5 +1,14 @@
 # Release v1.0 Checklist (Go/No-Go)
 
+## Protocol Alignment (Normative)
+
+SPEX means **Secure Permissioned Exchange**.
+SPEX is a **protocol**, not just an application.
+Security comes before convenience.
+Core cryptographic invariants are non-negotiable.
+All architecture and behavior described in this document must remain aligned with:
+**Secure. Permissioned. Explicit.**
+
 This checklist defines objective and reproducible criteria for the first definitive SPEX release.
 All critical gates are explicit and can be executed locally or in CI.
 

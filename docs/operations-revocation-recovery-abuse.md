@@ -1,4 +1,13 @@
-# Operações: abuso, revogação e recovery
+# Operacoes: abuso, revogacao e recovery
+
+## Protocol Alignment (Normative)
+
+SPEX means **Secure Permissioned Exchange**.
+SPEX is a **protocol**, not just an application.
+Security comes before convenience.
+Core cryptographic invariants are non-negotiable.
+All architecture and behavior described in this document must remain aligned with:
+**Secure. Permissioned. Explicit.**
 
 Este guia cobre fluxos operacionais para ambientes heterogêneos com foco em auditabilidade e segurança.
 

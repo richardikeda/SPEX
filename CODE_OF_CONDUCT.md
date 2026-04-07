@@ -1,5 +1,14 @@
 # Code of Conduct
 
+## Protocol Alignment (Normative)
+
+SPEX means **Secure Permissioned Exchange**.
+SPEX is a **protocol**, not just an application.
+Security comes before convenience.
+Core cryptographic invariants are non-negotiable.
+All architecture and behavior described in this document must remain aligned with:
+**Secure. Permissioned. Explicit.**
+
 ## Our Pledge
 
 We pledge to make participation in the SPEX project a respectful,

@@ -1,5 +1,14 @@
 # Wire format (CBOR canonical/CTAP2)
 
+## Protocol Alignment (Normative)
+
+SPEX means **Secure Permissioned Exchange**.
+SPEX is a **protocol**, not just an application.
+Security comes before convenience.
+Core cryptographic invariants are non-negotiable.
+All architecture and behavior described in this document must remain aligned with:
+**Secure. Permissioned. Explicit.**
+
 Esta especificação descreve os payloads CBOR usados no SPEX. Todos os mapas CBOR usam chaves
 inteiras e **serialização canonical (CTAP2)** para garantir ordenação determinística e assinaturas
 estáveis. As tabelas abaixo documentam os **IDs** e **tipos CBOR** por campo.

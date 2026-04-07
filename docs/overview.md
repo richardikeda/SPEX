@@ -1,4 +1,13 @@
-# Visão geral da arquitetura
+# Visao geral da arquitetura
+
+## Protocol Alignment (Normative)
+
+SPEX means **Secure Permissioned Exchange**.
+SPEX is a **protocol**, not just an application.
+Security comes before convenience.
+Core cryptographic invariants are non-negotiable.
+All architecture and behavior described in this document must remain aligned with:
+**Secure. Permissioned. Explicit.**
 
 O SPEX é organizado em camadas para garantir modularidade e interoperabilidade entre
 implementações. A separação por crates permite evoluir a especificação de dados e de

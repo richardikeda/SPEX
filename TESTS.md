@@ -1,5 +1,14 @@
 # SPEX Test Documentation
 
+## Protocol Alignment (Normative)
+
+SPEX means **Secure Permissioned Exchange**.
+SPEX is a **protocol**, not just an application.
+Security comes before convenience.
+Core cryptographic invariants are non-negotiable.
+All architecture and behavior described in this document must remain aligned with:
+**Secure. Permissioned. Explicit.**
+
 This document outlines the testing strategy, structure, and coverage for the SPEX project.
 
 ## Running Tests

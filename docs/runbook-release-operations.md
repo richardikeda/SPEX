@@ -1,5 +1,14 @@
 # Release Operations Runbook (v1.0)
 
+## Protocol Alignment (Normative)
+
+SPEX means **Secure Permissioned Exchange**.
+SPEX is a **protocol**, not just an application.
+Security comes before convenience.
+Core cryptographic invariants are non-negotiable.
+All architecture and behavior described in this document must remain aligned with:
+**Secure. Permissioned. Explicit.**
+
 This runbook consolidates operational actions for go-live, incident triage, and rollback.
 
 ## 1) Pre-Go-Live

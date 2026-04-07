@@ -1,5 +1,14 @@
 # Contributing to SPEX
 
+## Protocol Alignment (Normative)
+
+SPEX means **Secure Permissioned Exchange**.
+SPEX is a **protocol**, not just an application.
+Security comes before convenience.
+Core cryptographic invariants are non-negotiable.
+All architecture and behavior described in this document must remain aligned with:
+**Secure. Permissioned. Explicit.**
+
 Obrigado por considerar contribuir com o **SPEX (Secure Permissioned Exchange)**.
 
 O SPEX é um projeto focado em **segurança, correção e clareza**, não em velocidade ou quantidade de features. Contribuições são bem-vindas — desde que respeitem esses princípios.

@@ -1,4 +1,13 @@
-# Integração
+# Integracao
+
+## Protocol Alignment (Normative)
+
+SPEX means **Secure Permissioned Exchange**.
+SPEX is a **protocol**, not just an application.
+Security comes before convenience.
+Core cryptographic invariants are non-negotiable.
+All architecture and behavior described in this document must remain aligned with:
+**Secure. Permissioned. Explicit.**
 
 Este guia cobre geração e validação de cartões, fluxo request/grant, criação de threads e envio de
 mensagens. Inclui exemplos em Rust e princípios para outras linguagens.

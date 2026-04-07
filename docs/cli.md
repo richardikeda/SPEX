@@ -1,5 +1,14 @@
 # CLI (spex-cli)
 
+## Protocol Alignment (Normative)
+
+SPEX means **Secure Permissioned Exchange**.
+SPEX is a **protocol**, not just an application.
+Security comes before convenience.
+Core cryptographic invariants are non-negotiable.
+All architecture and behavior described in this document must remain aligned with:
+**Secure. Permissioned. Explicit.**
+
 Esta página descreve os subcomandos principais do `spex-cli`, o formato do estado local,
 interpretação de fingerprints e exemplos de uso.
 
@@ -89,14 +98,14 @@ compartilhadas (assinaturas, PoW e autorização por thread).
 ### Fluxo básico (card → request → grant)
 
 ```bash
-# gerar identidade e criar card
+
 cargo run -p spex-cli -- identity new
 cargo run -p spex-cli -- card create
 
-# importar card recebido (mostra fingerprint)
+
 cargo run -p spex-cli -- card redeem --card <BASE64>
 
-# enviar request e aceitar grant
+
 cargo run -p spex-cli -- request send --to <USER_ID_HEX> --role 1
 cargo run -p spex-cli -- grant accept --request <BASE64>
 ```
@@ -104,17 +113,17 @@ cargo run -p spex-cli -- grant accept --request <BASE64>
 ### Envio de mensagem para uma thread
 
 ```bash
-# criar thread com membros conhecidos
+
 cargo run -p spex-cli -- thread new --members <USER_ID_HEX>,<USER_ID_HEX>
 
-# enviar mensagem
+
 cargo run -p spex-cli -- msg send --thread <THREAD_ID_HEX> --text "Olá"
 
-# enviar mensagem via P2P libp2p
+
 cargo run -p spex-cli -- msg send --thread <THREAD_ID_HEX> --text "Olá" --p2p \
   --bootstrap /ip4/127.0.0.1/tcp/9001/p2p/<PEER_ID>
 
-# recuperar inbox via P2P libp2p
+
 cargo run -p spex-cli -- inbox poll --p2p --inbox-key <HEX_KEY> \
   --peer /ip4/127.0.0.1/tcp/9001/p2p/<PEER_ID>
 ```

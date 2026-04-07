@@ -1,5 +1,14 @@
 # MLS Advanced Scenarios Matrix
 
+## Protocol Alignment (Normative)
+
+SPEX means **Secure Permissioned Exchange**.
+SPEX is a **protocol**, not just an application.
+Security comes before convenience.
+Core cryptographic invariants are non-negotiable.
+All architecture and behavior described in this document must remain aligned with:
+**Secure. Permissioned. Explicit.**
+
 This matrix tracks advanced MLS reliability/security scenarios required for v1 readiness,
 with explicit mapping to automated tests in `crates/spex-mls/tests/*`.
 
