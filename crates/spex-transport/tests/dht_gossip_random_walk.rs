@@ -236,7 +236,9 @@ fn robust_random_walk_avoids_malicious_peer_ids() {
     let record_keys = robust_random_walk_with_seed(&mut components.kademlia, seed, 3);
 
     assert_eq!(record_keys.len(), 3);
+    let mut unique = HashSet::new();
     for key in record_keys {
+        assert!(unique.insert(key.to_vec()));
         assert!(!malicious_keys.contains(key.as_ref()));
     }
 }

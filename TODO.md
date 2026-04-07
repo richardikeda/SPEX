@@ -229,6 +229,14 @@ Evidência de testes (TASK 1.2):
 
 ### [TASK 1.3] Churn testing
 
+Status:
+- ✅ Concluída com SLOs explícitos de churn, limites objetivos de retry pressure e classificação determinística de saúde (`degraded`/`critical`).
+
+Evidência de testes (TASK 1.3):
+- `cargo test -p spex-transport --test p2p_backoff_churn -- --nocapture`
+- `cargo test -p spex-transport --test dht_gossip_random_walk -- --nocapture`
+- `cargo test -p spex-transport --test stress_chunking -- --nocapture`
+
 - Arquivos-alvo (`crates/spex-transport/src/*`):
   - `crates/spex-transport/src/p2p.rs`
   - `crates/spex-transport/src/transport.rs`

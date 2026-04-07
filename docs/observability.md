@@ -129,12 +129,29 @@ Runbook de decisão (restart/recovery):
 
 ### Subtarefa 1.3 — Churn testing
 
-- Atualização obrigatória ao concluir:
-  - SLOs de publish/recovery sob churn e respectivos limiares;
-  - indicadores de flapping, saturação de retry e impacto em latência;
-  - critérios de status (`healthy`, `degraded`, `critical`) calibrados para churn.
-- Critério de aceite documental:
-  - matriz de sintomas versus ação corretiva para incidentes de churn prolongado.
+SLOs implementados para churn prolongado:
+- Publish sob churn sem peers deve falhar de forma explícita dentro da janela alvo: 400ms a 8000ms.
+- Recovery sob churn sem dados deve encerrar em timeout controlado: 2000ms a 5000ms.
+- Pressão de retry deve permanecer abaixo de saturação:
+  - `publish_retry_pressure_bps <= 50000`;
+  - `recovery_retry_pressure_bps <= 50000`.
+
+Indicadores de flapping/saturação:
+- `publish_retries`, `recovery_retries`, `publish_timeout`, `recovery_timeout` monitorados por `metrics_snapshot()`.
+- Classificação de saúde de rede com limiares explícitos via `network_health_indicators(...)`:
+  - `healthy`: conectividade e ratios dentro da meta;
+  - `degraded`: conectividade limítrofe ou metade dos limiares atingida;
+  - `critical`: conectividade insuficiente ou violação direta dos limiares.
+
+Matriz de sintomas versus ação corretiva:
+1. Sintoma: `publish_timeout` crescente com `connected_peers` baixo.
+  Ação: ampliar bootstrap peers, manter backoff padrão e evitar retry agressivo manual.
+2. Sintoma: `recovery_retry_pressure_bps` acima de baseline.
+  Ação: verificar disponibilidade de provedores DHT/gossip e aplicar re-hidratação progressiva.
+3. Sintoma: status `critical` recorrente.
+  Ação: isolar nós degradados, preservar evidências de métricas e executar recovery controlado.
+4. Sintoma: alternância `degraded`/`critical` em intervalos curtos (flapping).
+  Ação: reduzir churn de peers de borda, revisar thresholds operacionais e estabilizar janela de timeout.
 
 ### Subtarefa 1.4 — Observabilidade
 

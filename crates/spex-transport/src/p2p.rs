@@ -190,6 +190,22 @@ impl P2pMetricsSnapshot {
         }
         ((self.fallback_attempts.saturating_mul(10_000)) / self.recovery_attempts) as u32
     }
+
+    /// Returns publish retry pressure in basis points using publish attempts as denominator.
+    pub fn publish_retry_pressure_bps(&self) -> u32 {
+        if self.publish_attempts == 0 {
+            return 0;
+        }
+        ((self.publish_retries.saturating_mul(10_000)) / self.publish_attempts) as u32
+    }
+
+    /// Returns recovery retry pressure in basis points using recovery attempts as denominator.
+    pub fn recovery_retry_pressure_bps(&self) -> u32 {
+        if self.recovery_attempts == 0 {
+            return 0;
+        }
+        ((self.recovery_retries.saturating_mul(10_000)) / self.recovery_attempts) as u32
+    }
 }
 
 impl Default for P2pNodeConfig {

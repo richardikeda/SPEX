@@ -7,6 +7,14 @@ use spex_transport::{
     Chunk, ChunkManifest, P2pNodeConfig, P2pRuntimeProfile, P2pTransport, PeerReputationState,
     TransportConfig,
 };
+use spex_transport::{NetworkHealthStatus, NetworkHealthThresholds};
+
+const CHURN_PUBLISH_MIN_MS: u64 = 400;
+const CHURN_PUBLISH_MAX_MS: u64 = 8_000;
+const CHURN_RECOVERY_MIN_MS: u64 = 2_000;
+const CHURN_RECOVERY_MAX_MS: u64 = 5_000;
+const CHURN_MAX_PUBLISH_RETRY_PRESSURE_BPS: u32 = 50_000;
+const CHURN_MAX_RECOVERY_RETRY_PRESSURE_BPS: u32 = 50_000;
 
 /// Builds a manifest descriptor list from generated chunks for test publication.
 fn build_manifest_from_chunks(chunks: &[Chunk], total_len: usize) -> ChunkManifest {
@@ -63,12 +71,13 @@ async fn publish_backoff_records_retries_under_degraded_network() {
     let elapsed = started.elapsed();
 
     assert!(result.is_err(), "publish should fail without peers");
-    assert!(elapsed >= Duration::from_millis(400));
-    assert!(elapsed <= Duration::from_secs(8));
+    assert!(elapsed >= Duration::from_millis(CHURN_PUBLISH_MIN_MS));
+    assert!(elapsed <= Duration::from_millis(CHURN_PUBLISH_MAX_MS));
 
     let snapshot = node.metrics_snapshot();
     assert!(snapshot.publish_timeout > 0);
     assert!(snapshot.publish_retries + snapshot.publish_timeout > 0);
+    assert!(snapshot.publish_retry_pressure_bps() <= CHURN_MAX_PUBLISH_RETRY_PRESSURE_BPS);
 }
 
 /// Validates recovery/query timeout under degraded network while tracking retry and convergence bounds.
@@ -94,12 +103,13 @@ async fn recovery_backoff_times_out_with_retry_metrics() {
     let elapsed = started.elapsed();
 
     assert!(recovered.is_empty());
-    assert!(elapsed >= Duration::from_secs(2));
-    assert!(elapsed <= Duration::from_secs(5));
+    assert!(elapsed >= Duration::from_millis(CHURN_RECOVERY_MIN_MS));
+    assert!(elapsed <= Duration::from_millis(CHURN_RECOVERY_MAX_MS));
 
     let snapshot = node.metrics_snapshot();
     assert!(snapshot.recovery_retries > 0);
     assert!(snapshot.recovery_timeout > 0);
+    assert!(snapshot.recovery_retry_pressure_bps() <= CHURN_MAX_RECOVERY_RETRY_PRESSURE_BPS);
 }
 
 /// Verifies connectivity-aware timeout tuning never exceeds configured profile caps.
@@ -154,4 +164,30 @@ async fn intermittent_peer_timeout_penalties_do_not_immediately_ban() {
         node.report_successful_interaction(peer);
     }
     assert!(!node.is_peer_probationary(&peer));
+}
+
+/// Verifies health status thresholds classify churn behavior without silent ambiguity.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn network_health_thresholds_classify_degraded_and_critical_under_churn() {
+    let node = P2pTransport::new(
+        Keypair::generate_ed25519(),
+        TransportConfig::default(),
+        P2pNodeConfig::for_profile(P2pRuntimeProfile::Test),
+    )
+    .await
+    .expect("node");
+
+    let degraded = node.network_health_indicators(NetworkHealthThresholds {
+        min_connected_peers: 0,
+        max_timeout_ratio_bps: 5_000,
+        max_fallback_failure_ratio_bps: 5_000,
+    });
+    assert_eq!(degraded.status, NetworkHealthStatus::Degraded);
+
+    let critical = node.network_health_indicators(NetworkHealthThresholds {
+        min_connected_peers: 1,
+        max_timeout_ratio_bps: 5_000,
+        max_fallback_failure_ratio_bps: 5_000,
+    });
+    assert_eq!(critical.status, NetworkHealthStatus::Critical);
 }
