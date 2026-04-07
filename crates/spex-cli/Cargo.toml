@@ -2,6 +2,7 @@
 name = "spex-cli"
 version = "0.1.0"
 edition = "2021"
+license = "Apache-2.0 OR MIT"
 
 [[bin]]
 name = "spex"
@@ -15,10 +16,10 @@ libp2p = { version = "0.53", features = ["dns", "gossipsub", "identify", "kad", 
 serde_json = "1.0"
 tokio = { version = "1.37", features = ["rt-multi-thread", "macros"] }
 
-spex-client = { path = "../spex-client" }
-spex-core = { path = "../../spex-core" }
-spex-transport = { path = "../spex-transport" }
-spex-bridge = { path = "../spex-bridge" }
+spex-client = { version = "0.1.0", path = "../spex-client" }
+spex-core = { version = "0.1.1", path = "../../spex-core" }
+spex-transport = { version = "0.1.0", path = "../spex-transport" }
+spex-bridge = { version = "0.1.0", path = "../spex-bridge" }
 
 [dev-dependencies]
 axum = "0.7"
@@ -26,5 +27,5 @@ reqwest = { version = "0.11", features = ["json", "rustls-tls"] }
 serde_json = "1.0"
 tempfile = "3"
 tokio = { version = "1.37", features = ["rt-multi-thread", "macros", "net"] }
-spex-bridge = { path = "../spex-bridge" }
-spex-core = { path = "../../spex-core" }
+spex-bridge = { version = "0.1.0", path = "../spex-bridge" }
+spex-core = { version = "0.1.1", path = "../../spex-core" }

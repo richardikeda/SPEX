@@ -61,7 +61,7 @@ Tests the Messaging Layer Security integration using `mls-rs`.
 *   `tests/mls_scenarios.rs`: Advanced scenarios like key rotation, member permutation, and resynchronization.
 *   `tests/secrets_crypto.rs`: Verifies encryption/decryption of application messages using group secrets.
 *   `tests/stress_group.rs`: Stress tests for group creation and messaging with multiple members (partial/full sync).
-*   `tests/planned_concurrent_updates.rs`: (Planned) Tests for concurrent proposal handling and epoch recovery (currently ignored).
+*   `tests/planned_concurrent_updates.rs`: Tests for concurrent proposal handling and epoch recovery (active in CI/local suites).
 
 ### 3. Transport (`spex-transport`)
 
@@ -74,7 +74,7 @@ Tests the P2P networking layer, chunking, and data delivery.
 *   `tests/p2p_manifest_recovery.rs`: Tests recovering full payloads from scattered chunks fetched via manifests.
 *   `tests/two_identity_flow.rs`: End-to-end flow between two identities using the transport layer (mocked/simulated network).
 *   `tests/stress_chunking.rs`: Stress tests for chunking large payloads (10MB) and many small chunks.
-*   `tests/planned_p2p_persistence.rs`: (Planned) Tests for peer persistence and anti-eclipse scoring (currently ignored).
+*   `tests/planned_p2p_persistence.rs`: Tests for peer persistence and anti-eclipse scoring (active in CI/local suites).
 
 ### 4. Bridge (`spex-bridge`)
 
@@ -103,12 +103,13 @@ Tests the high-level client library that ties everything together.
 
 ### 6. CLI (`spex-cli`)
 
-*   `tests/planned_cli_flow.rs`: (Planned) Integration tests invoking the `spex` binary for identity and messaging flows (currently ignored).
+*   `tests/planned_cli_flow.rs`: Integration tests invoking the `spex` binary for identity and messaging flows (active in CI/local suites).
 
 ## Pending & Planned Tests
 
-The following areas are identified for future expansion or currently have placeholder tests marked with `#[ignore]`:
+The following areas are identified for future expansion. Existing `planned_*` suites are active and no longer documentation-placeholders.
 
-*   **Robust Libp2p Runtime:** Tests for persistent peer identity and eclipse attack mitigation in long-running scenarios.
-*   **Full MLS Sync:** Tests for handling out-of-order delivery and complex group state divergences.
-*   **CLI Integration:** Full end-to-end testing of the binary against a live network.
+*   **Robust Libp2p Runtime:** Expand long-duration chaos and soak coverage under prolonged churn.
+*   **Full MLS Sync:** Add broader multi-group fault-injection scenarios for extreme divergence/recovery.
+*   **CLI Integration:** Expand live-network matrix and platform variability checks.
+*   **Known ignored test:** `crates/spex-bridge/tests/integration.rs` contains `tls_validation_checklist` as ignored checklist coverage.

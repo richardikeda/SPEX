@@ -130,20 +130,17 @@ Critério de conclusão:
 - Todos os gates verdes e sem bloqueadores críticos abertos.
 
 Status de execução da fase:
-- 🔄 Em andamento.
+- ✅ Concluída.
 - ✅ Gate A (testes críticos): `cargo test -p spex-core -p spex-mls -p spex-transport --locked --all-features --verbose` passou.
-- ✅ Gate C (lint): `cargo clippy --workspace --locked --all-targets --all-features -- -D warnings` passou.
-- ❌ Gate C (fmt): `cargo fmt --all -- --check` falhou com diffs pendentes de formatação.
-- ❌ Supply chain (`cargo deny check`) falhou com:
-  - `RUSTSEC-2026-0049` em `rustls-webpki 0.103.9` (upgrade sugerido >= 0.103.10);
-  - `RUSTSEC-2021-0127` (`serde_cbor` unmaintained, sem upgrade seguro direto);
-  - inconsistências em `bans/licenses` que exigem saneamento adicional de política/deps.
+- ✅ Gate C (fmt): `cargo fmt --all -- --check` passou.
+- ✅ Supply chain (`cargo deny check`) passou (`advisories ok, bans ok, licenses ok, sources ok`).
+- ✅ Regressão completa de workspace: `cargo test --workspace --locked -q` passou.
 
 ### Ordem de execução imediata (próximas tarefas)
 
-1. Corrigir diffs de formatação e fechar `cargo fmt --all -- --check`.
-2. Mitigar advisories e política de dependências para obter `cargo deny check` verde.
-3. Reexecutar gate final consolidado da Fase 5 e registrar decisão GO/NO-GO.
+1. Publicar artefatos de release v1.0.0.
+2. Executar checklist operacional de go-live do runbook.
+3. Iniciar backlog estruturado de v2.0.
 
 ## Backlog acionável para fechamento da v1
 

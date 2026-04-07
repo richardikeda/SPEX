@@ -10,32 +10,41 @@ https://semver.org/
 ## [Unreleased]
 
 ### Scope
-- Work in progress after `0.1.65`.
-- Current repository version is tracked in `VERSION.md`.
-- Release-readiness baseline for the definitive v1.0 closure process.
+- Post-v1 maintenance and v2 planning.
 
-### Notes
-- Changes since `0.1.65` are not part of a published release section yet.
-- Added explicit go/no-go checklist and operational runbook to consolidate release candidate decisions.
+---
+
+## [1.0.0] - 2026-04-07
+
+### Release Summary
+- First stable SPEX protocol release with v1 closure gates satisfied.
+- Release checklist and operational runbook finalized for reproducible go/no-go decisions.
+
+### Security / Supply Chain
+- Resolved cargo-deny blockers across advisories, bans, licenses, and source policy.
+- Upgraded vulnerable transitive dependencies in lockfiles.
+- Added explicit temporary exception for `RUSTSEC-2021-0127` (`serde_cbor`) with documented mitigation policy.
+- Removed wildcard internal dependency declarations by pinning local crate versions.
+
+### Testing and Quality
+- Full workspace regression revalidated (`cargo test --workspace --locked -q`).
+- Formatting gate validated (`cargo fmt --all -- --check`).
+- Supply-chain gate validated (`cargo deny check`).
+- Stabilized CLI negative-path assertion for invalid PoW to enforce explicit 4xx rejection semantics.
 
 ### Documentation
-- Added `docs/release-v1-checklist.md` with objective release gates (critical tests, robustness, docs quality, and rollback criteria).
-- Added `docs/runbook-release-operations.md` with go-live, incident, recovery, and rollback procedures.
-- Updated `README.md` and `CONTRIBUTING.md` with mandatory release gate commands.
-- Updated `TODO.md` with v1.0 closure status and remaining blockers (`TASK 1-3`).
-
-### CI / Tooling
-- Added `.github/workflows/release-readiness.yml` to enforce release-required jobs in CI.
-- Added `scripts/release_gate_docs.sh` and `scripts/release_gate_negative_test.sh` for reproducible doc gate and explicit block-on-failure validation.
+- Synchronized release status in `TODO.md` and `TESTS.md` with actual validated gate state.
+- Added formal go/no-go decision record for v1.0.0.
+- Added resolution report for all pending blockers plus v2 direction.
 
 ---
 
 ## Published Versions
 
-- `0.1.65` (latest published)
-- `0.1.64` ... `0.1.0`
+- `1.0.0` (latest published)
+- `0.1.65` ... `0.1.0`
 
-This list is intentionally aligned with `VERSION.md`: repository state is ahead of latest published release.
+This list is aligned with `VERSION.md`.
 
 ---
 

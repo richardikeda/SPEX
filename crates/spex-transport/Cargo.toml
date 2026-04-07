@@ -28,12 +28,12 @@ thiserror = "1"
 tokio = { version = "1", features = ["macros", "rt", "time"] }
 tracing = "0.1"
 
-spex-core = { path = "../../spex-core" }
+spex-core = { version = "0.1.1", path = "../../spex-core" }
 
 [dev-dependencies]
 axum = "0.7"
 proptest = "1"
 ed25519-dalek = "2.1"
 serde_cbor = "0.11"
-spex-mls = { path = "../spex-mls" }
+spex-mls = { version = "0.1.0", path = "../spex-mls" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

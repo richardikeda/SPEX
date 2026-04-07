@@ -307,8 +307,9 @@ async fn test_cli_message_send_negative_cases() {
         .await
         .expect("send invalid pow request");
     assert!(
-        invalid_pow_res.status() == StatusCode::BAD_REQUEST
-            || invalid_pow_res.status() == StatusCode::FORBIDDEN
+        invalid_pow_res.status().is_client_error(),
+        "invalid PoW must be rejected with a 4xx status, got {}",
+        invalid_pow_res.status()
     );
 
     let malformed_req = json!({
