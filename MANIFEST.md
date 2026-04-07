@@ -1,4 +1,4 @@
-# Manifesto SPEX
+# SPEX Manifesto
 
 ## Protocol Alignment (Normative)
 
@@ -9,208 +9,127 @@ Core cryptographic invariants are non-negotiable.
 All architecture and behavior described in this document must remain aligned with:
 **Secure. Permissioned. Explicit.**
 
-**Secure Permissioned Exchange**
+Secure Permissioned Exchange
 
-## 1. Comunicação é infraestrutura crítica
+## 1. Communication Is Critical Infrastructure
 
-Comunicação não é um detalhe.
-Não é apenas “mensagem”.
-É **infraestrutura crítica** para pessoas, empresas e sistemas.
+Communication is not a side feature.
+It is critical infrastructure for people, organizations, and systems.
 
-Grande parte das falhas de segurança, vazamentos de dados, fraudes e incidentes operacionais não acontece por falha de criptografia — acontece porque **a comunicação é implícita, permissiva demais e mal definida**.
-
-O SPEX nasce do princípio de que **comunicação deve ser tratada com o mesmo rigor que código, contratos e sistemas críticos**.
+Many real-world failures happen because communication is implicit, over-permissive, and poorly bounded.
+SPEX exists to make communication explicit, verifiable, and constrained.
 
 ---
 
-## 2. Comunicação não é chat — é um ato
+## 2. Communication Is a Cryptographic Act
 
-No SPEX, uma mensagem não é apenas um texto enviado de A para B.
+In SPEX, a message is not just bytes from A to B.
+It includes explicit identity, permissions, time constraints, and verifiable context.
 
-Ela é:
-
-* um **ato criptográfico**
-* com **identidade explícita**
-* **permissões claras**
-* **validade temporal**
-* e **contexto verificável**
-
-Cada mensagem carrega:
-
-* quem pode enviar
-* quem pode responder
-* quem pode anexar
-* por quanto tempo
-* sob quais regras
-
-Comunicação sem contexto é ruído.
-Comunicação sem limites é risco.
+Communication without context becomes noise.
+Communication without boundaries becomes risk.
 
 ---
 
-## 3. Segurança não é confiança — é verificação
+## 3. Security Means Verification, Not Trust
 
-O SPEX parte de um princípio simples:
+SPEX follows one core rule:
 
-> **Não confie no transporte. Não confie no servidor. Não confie na rede. Verifique tudo.**
+Do not trust transport, server, or network. Verify everything.
 
-Por isso:
+Therefore:
 
-* bridges e DHTs são considerados **não confiáveis**
-* toda mensagem é validada por hash, assinatura e contexto
-* mudanças de chave são eventos críticos
-* expiração e revogação são obrigatórias
-
-No SPEX, **o protocolo protege o usuário mesmo quando a infraestrutura falha**.
+- bridges and DHT paths are untrusted
+- message processing validates hash, signature, and context
+- key changes are critical events
+- expiration and revocation are mandatory controls
 
 ---
 
-## 4. Permissão deve ser explícita, não implícita
+## 4. Permissions Must Be Explicit
 
-A maioria dos sistemas assume permissões implícitas:
+Implicit permissions are rejected.
 
-* “se chegou, pode responder”
-* “se está no grupo, pode tudo”
-* “se tem o contato, pode enviar para sempre”
+In SPEX, permissions are:
 
-O SPEX rejeita essa lógica.
+- explicitly granted
+- cryptographically verifiable
+- revocable
+- time-bounded
 
-Aqui:
-
-* permissões são **concedidas explicitamente**
-* são **revogáveis**
-* são **limitadas no tempo**
-* são **verificadas criptograficamente**
-
-Sem permissão explícita, **não há comunicação**.
+Without explicit permission, communication is denied.
 
 ---
 
-## 5. Anti-spam não é filtro — é custo
+## 5. Anti-Spam Is Economic Friction
 
-Filtros falham.
-Listas negras falham.
-Reputação centralizada falha.
+SPEX uses asymmetric communication cost:
 
-O SPEX adota um modelo simples e eficaz:
+- verifiable proof-of-work
+- explicit limits per grant
 
-* **custo assimétrico para iniciar comunicação**
-* prova-de-trabalho verificável
-* limites explícitos por grant
-
-Enviar uma solicitação exige esforço real.
-Receber é barato.
-
-Spam deixa de ser um problema econômico viável.
+Initiation costs more than receiving, making abuse economically harder.
 
 ---
 
-## 6. Simplicidade no núcleo, flexibilidade nas bordas
+## 6. Small Trusted Core, Flexible Edges
 
-O SPEX não reinventa criptografia.
-Não cria algoritmos próprios.
-Não depende de modismos.
+SPEX does not invent cryptography.
+It composes proven primitives, canonical serialization, MLS, and pluggable transport.
 
-Ele combina:
-
-* primitives criptográficas bem estabelecidas
-* serialização canônica
-* modelos de grupo padronizados (MLS)
-* transporte plugável
-
-O núcleo é pequeno, auditável e estável.
-A complexidade vive nas bordas, não no coração do sistema.
+The core must remain small, auditable, and stable.
 
 ---
 
-## 7. O transporte é um detalhe — o contrato não
+## 7. Transport Can Change, Contract Cannot
 
-SPEX funciona:
-
-* ponto-a-ponto
-* sobre DHT
-* sobre bridges HTTP
-* em redes confiáveis ou hostis
-
-O transporte pode mudar.
-O contrato criptográfico **não**.
-
-Essa separação é deliberada:
-**a segurança não depende do caminho que a mensagem percorre**.
+SPEX can run over P2P, DHT, or HTTP bridges.
+Transport may vary; cryptographic contract invariants may not.
 
 ---
 
-## 8. Privacidade é controle, não anonimato absoluto
+## 8. Privacy Means Control
 
-O SPEX não promete invisibilidade mágica.
-Não promete anonimato total em qualquer cenário.
-
-Ele promete algo mais realista e útil:
-
-* **controle**
-* **minimização de metadados**
-* **limites claros**
-* **consentimento explícito**
-
-Privacidade não é ausência de regras.
-Privacidade é **saber exatamente quais regras estão em vigor**.
+SPEX does not promise universal anonymity.
+It provides control, metadata minimization, explicit consent, and clear boundaries.
 
 ---
 
-## 9. O SPEX não é para tudo — e isso é intencional
+## 9. SPEX Is Intentionally Specialized
 
-O SPEX não tenta:
-
-* substituir chats sociais
-* competir com mensageiros casuais
-* ser uma rede social
-* agradar todos os casos de uso
-
-Ele existe para:
-
-* comunicação séria
-* sistemas críticos
-* ambientes corporativos
-* integrações sensíveis
-* contextos onde erro custa caro
-
-Ferramentas especializadas são mais seguras que soluções genéricas.
+SPEX is built for serious communication in critical or sensitive contexts.
+It is not designed to be a generic social messaging platform.
 
 ---
 
-## 10. Código aberto, responsabilidade compartilhada
+## 10. Open Source with Shared Responsibility
 
-O SPEX é open source porque:
+SPEX is open source because auditability and transparency are security requirements.
 
-* segurança exige auditabilidade
-* protocolos fechados falham silenciosamente
-* confiança se constrói com transparência
-
-Mas código aberto não é ausência de responsabilidade.
-Quem usa SPEX assume o compromisso de:
-
-* respeitar suas invariantes
-* entender seu modelo de segurança
-* não enfraquecer o protocolo por conveniência
+Open source does not remove responsibility.
+Users and contributors must preserve invariants and avoid convenience-driven security regressions.
 
 ---
 
-## 11. Comunicação como contrato
+## 11. Communication as Contract
 
-No fim, o SPEX defende uma ideia simples:
+Core statement:
 
-> **Comunicação é um contrato criptográfico entre partes, não um fluxo informal de dados.**
+Communication is a cryptographic contract between parties, not an informal data stream.
 
-Quando tratamos comunicação com esse respeito:
-
-* reduzimos risco
-* aumentamos clareza
-* protegemos pessoas e sistemas
-* e criamos infraestrutura mais honesta
+This mindset reduces risk and improves operational clarity.
 
 ---
 
-## SPEX existe porque comunicação merece ser levada a sério.
+## Why SPEX Exists
+
+SPEX exists because communication deserves serious engineering.
+
+Institutional note:
+
+- SPEX was created in 2026 by Richard Ikeda.
+- It was built with extensive AI and testing tooling, plus technical engineering effort.
+- It began as a personal-use protocol and is open source for adoption and code auditing.
 
 **Secure.
 Permissioned.

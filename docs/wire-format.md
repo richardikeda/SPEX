@@ -9,35 +9,35 @@ Core cryptographic invariants are non-negotiable.
 All architecture and behavior described in this document must remain aligned with:
 **Secure. Permissioned. Explicit.**
 
-Esta especificação descreve os payloads CBOR usados no SPEX. Todos os mapas CBOR usam chaves
-inteiras e **serialização canonical (CTAP2)** para garantir ordenação determinística e assinaturas
-estáveis. As tabelas abaixo documentam os **IDs** e **tipos CBOR** por campo.
+This specification describes SPEX CBOR payloads.
+All CBOR maps use integer keys and canonical CTAP2 serialization to preserve deterministic hashes/signatures.
+Tables below document field IDs and CBOR types.
 
-## Convenções
+## Conventions
 
-- **Tipos CBOR**:
-  - `uint`: inteiro sem sinal.
-  - `bytes`: sequência de bytes.
-  - `bool`: `true`/`false`.
-  - `map`: mapa CBOR com chaves inteiras.
-  - `array`: array CBOR.
-- **Extensões**: campos `>=` do último ID reservado são livres para extensões customizadas.
-- **Base64**: os exemplos usam base64 padrão (RFC 4648) de bytes CBOR.
+- CBOR types:
+  - uint: unsigned integer
+  - bytes: byte string
+  - bool: true/false
+  - map: CBOR map with integer keys
+  - array: CBOR array
+- Extensions: fields >= last reserved ID are extension-safe.
+- Base64 examples use RFC 4648 encoding.
 
 ## ContactCard
 
-| Campo | ID (CBOR) | Tipo (CBOR) | Descrição |
+| Field | ID (CBOR) | Type (CBOR) | Description |
 | --- | --- | --- | --- |
-| `user_id` | 0 | bytes | Identificador do usuário (32 bytes). |
-| `verifying_key` | 1 | bytes | Chave pública Ed25519 (32 bytes). |
-| `device_id` | 2 | bytes | Identificador do dispositivo. |
-| `device_nonce` | 3 | bytes | Nonce do dispositivo. |
-| `issued_at` | 4 | uint | Timestamp UNIX (segundos). |
-| `invite` | 5 | map | `InviteToken` opcional. |
-| `signature` | 6 | bytes | Assinatura Ed25519 (opcional). |
-| `extensions` | >=7 | any | Extensões customizadas. |
+| `user_id` | 0 | bytes | User identifier (32 bytes). |
+| `verifying_key` | 1 | bytes | Ed25519 public key (32 bytes). |
+| `device_id` | 2 | bytes | Device identifier. |
+| `device_nonce` | 3 | bytes | Device nonce. |
+| `issued_at` | 4 | uint | UNIX timestamp (seconds). |
+| `invite` | 5 | map | Optional InviteToken. |
+| `signature` | 6 | bytes | Optional Ed25519 signature. |
+| `extensions` | >=7 | any | Custom extensions. |
 
-**Exemplo (valores usados no CBOR):**
+Example values used in CBOR:
 
 - `user_id`: `01..20` (32 bytes, hex `0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20`)
 - `verifying_key`: `21..40` (32 bytes, hex `2122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f40`)
@@ -61,14 +61,14 @@ pwBYIAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gAVggISIjJCUmJygpKissLS4vMDEyMzQ1
 
 ## InviteToken
 
-| Campo | ID (CBOR) | Tipo (CBOR) | Descrição |
+| Field | ID (CBOR) | Type (CBOR) | Description |
 | --- | --- | --- | --- |
-| `major` | 0 | uint | Versão major do protocolo. |
-| `minor` | 1 | uint | Versão minor do protocolo. |
-| `requires_puzzle` | 2 | bool | Indica se PoW é obrigatório. |
-| `extensions` | >=3 | any | Extensões customizadas. |
+| `major` | 0 | uint | Protocol major version. |
+| `minor` | 1 | uint | Protocol minor version. |
+| `requires_puzzle` | 2 | bool | Whether PoW is required. |
+| `extensions` | >=3 | any | Custom extensions. |
 
-**Exemplo (valores usados no CBOR):** `major=1`, `minor=0`, `requires_puzzle=true`.
+Example values used in CBOR: major=1, minor=0, requires_puzzle=true.
 
 **CBOR (hex):**
 
@@ -84,15 +84,15 @@ owABAQAC9Q==
 
 ## GrantToken
 
-| Campo | ID (CBOR) | Tipo (CBOR) | Descrição |
+| Field | ID (CBOR) | Type (CBOR) | Description |
 | --- | --- | --- | --- |
-| `user_id` | 0 | bytes | Usuário com permissão. |
-| `role` | 1 | uint | Papel/nível de acesso. |
-| `flags` | 2 | uint | Flags opcionais. |
-| `expires_at` | 3 | uint | Expiração (opcional). |
-| `extensions` | >=4 | any | Extensões customizadas. |
+| `user_id` | 0 | bytes | User with permission. |
+| `role` | 1 | uint | Role/access level. |
+| `flags` | 2 | uint | Optional flags. |
+| `expires_at` | 3 | uint | Optional expiration. |
+| `extensions` | >=4 | any | Custom extensions. |
 
-**Exemplo (valores usados no CBOR):**
+Example values used in CBOR:
 
 - `user_id`: `01..20` (32 bytes)
 - `role`: `1`
@@ -113,17 +113,17 @@ pABYIAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gAQECAAMaZVP/EA==
 
 ## ThreadConfig
 
-| Campo | ID (CBOR) | Tipo (CBOR) | Descrição |
+| Field | ID (CBOR) | Type (CBOR) | Description |
 | --- | --- | --- | --- |
-| `proto_major` | 0 | uint | Versão major. |
-| `proto_minor` | 1 | uint | Versão minor. |
-| `ciphersuite_id` | 2 | uint | Identificador da suíte. |
-| `flags` | 3 | uint | Flags da thread. |
-| `thread_id` | 4 | bytes | ID da thread. |
-| `grants` | 5 | array | Lista de `GrantToken`. |
-| `extensions` | >=6 | any | Extensões customizadas. |
+| `proto_major` | 0 | uint | Protocol major version. |
+| `proto_minor` | 1 | uint | Protocol minor version. |
+| `ciphersuite_id` | 2 | uint | Ciphersuite identifier. |
+| `flags` | 3 | uint | Thread flags. |
+| `thread_id` | 4 | bytes | Thread ID. |
+| `grants` | 5 | array | GrantToken list. |
+| `extensions` | >=6 | any | Custom extensions. |
 
-**Exemplo (valores usados no CBOR):**
+Example values used in CBOR:
 
 - `proto_major=1`, `proto_minor=0`, `ciphersuite_id=1`, `flags=0`
 - `thread_id`: `41..60` (32 bytes)
@@ -143,17 +143,17 @@ pgABAQACAQMABFggQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVpbXF1eX2AFgaQAWCABAgMEBQYHCAkK
 
 ## Envelope
 
-| Campo | ID (CBOR) | Tipo (CBOR) | Descrição |
+| Field | ID (CBOR) | Type (CBOR) | Description |
 | --- | --- | --- | --- |
-| `thread_id` | 0 | bytes | ID da thread. |
-| `epoch` | 1 | uint | Epoch MLS. |
-| `seq` | 2 | uint | Sequência do envelope. |
-| `sender_user_id` | 3 | bytes | ID do remetente. |
-| `ciphertext` | 4 | bytes | Payload cifrado. |
-| `signature` | 5 | bytes | Assinatura opcional. |
-| `extensions` | >=6 | any | Extensões customizadas. |
+| `thread_id` | 0 | bytes | Thread ID. |
+| `epoch` | 1 | uint | MLS epoch. |
+| `seq` | 2 | uint | Envelope sequence number. |
+| `sender_user_id` | 3 | bytes | Sender user ID. |
+| `ciphertext` | 4 | bytes | Encrypted payload. |
+| `signature` | 5 | bytes | Optional signature. |
+| `extensions` | >=6 | any | Custom extensions. |
 
-**Exemplo (valores usados no CBOR):**
+Example values used in CBOR:
 
 - `thread_id`: `61..80` (32 bytes)
 - `epoch`: `5`

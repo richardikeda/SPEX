@@ -14,6 +14,24 @@ https://semver.org/
 
 ---
 
+## [1.0.1] - 2026-04-07
+
+### Documentation and Governance
+- Migrated Portuguese documentation to English across core repository docs.
+- Added institutional metadata to public docs: project creation year (2026), author (Richard Ikeda), and open-source positioning.
+- Clarified that SPEX was initially personal-use and is published open source for adoption and code verification.
+
+### Open Source Readiness
+- Standardized governance and security messaging for public contributors and reviewers.
+- Consolidated references to release checklist, runbook, branch protection policy, and CI gates.
+- Added a single PT-BR guide for users covering project purpose, architecture rationale, usage, and API integration paths.
+
+### TODO and Backlog Hygiene
+- Removed completed historical items from TODO and kept only active pending work.
+- Moved completed task history into changelog-level concise records.
+
+---
+
 ## [1.0.0] - 2026-04-07
 
 ### Release Summary

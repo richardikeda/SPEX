@@ -1,4 +1,4 @@
-# Seguranca
+# Security
 
 ## Protocol Alignment (Normative)
 
@@ -9,94 +9,85 @@ Core cryptographic invariants are non-negotiable.
 All architecture and behavior described in this document must remain aligned with:
 **Secure. Permissioned. Explicit.**
 
-Este documento resume práticas obrigatórias e recomendações para integrações SPEX.
+This document summarizes mandatory practices and operational recommendations for SPEX integrations.
 
-## CBOR canônico (CTAP2)
+## Canonical CBOR (CTAP2)
 
-O SPEX exige **CBOR canonical (CTAP2)** para garantir que serialização e assinatura sejam
-**determinísticas**. Isso evita divergências de bytes entre implementações, melhora a
-interoperabilidade e impede que um atacante altere a representação do payload sem mudar
-os campos lógicos. Todos os cards, tokens e checkpoints exportados/importados devem ser
-serializados de forma canônica antes de assinar/verificar.
+SPEX requires canonical CBOR (CTAP2) for deterministic serialization and signature verification.
+This prevents byte-level ambiguity across implementations and reduces canonicalization attack surface.
 
-## Validação de cartões e mudança de chave
+## Card Validation and Key Change Handling
 
-Cards (ex.: `ContactCard`) devem passar por validações estritas:
+Cards must pass strict validation:
 
-- Verifique a assinatura (quando presente) com a chave pública correspondente.
-- Rejeite cards com campos inválidos, formatos não-canônicos ou timestamps incoerentes.
-- Trate **mudança de chave** como evento crítico: compare o fingerprint da chave já
-  registrada com a nova e exija confirmação explícita do usuário ou fluxo de revogação.
+- Verify signature when present.
+- Reject invalid fields, non-canonical encoding, or inconsistent timestamps.
+- Treat key changes as critical events requiring explicit user confirmation or revocation workflow.
 
-Mudanças inesperadas de chave podem indicar comprometimento ou ataque de substituição.
+Unexpected key changes may indicate compromise or substitution attack.
 
-## Request/grant e permissões
+## Request/Grant and Permission Controls
 
-- Sempre valide `RequestToken` antes de emitir um grant.
-- Enforce o nível mínimo de PoW quando `requires_puzzle` estiver ativo (memória ≥64 MiB,
-  iterações ≥3).
-- Restrinja roles/flags com base em políticas locais e evite permissões excessivas.
+- Always validate RequestToken before issuing grants.
+- Enforce minimum PoW when requires_puzzle is active (memory >= 64 MiB, iterations >= 3).
+- Restrict roles/flags under local least-privilege policy.
 
 
-## Persistência P2P e anti-eclipse
+## P2P Persistence and Anti-Eclipse Controls
 
-Para reduzir perda de estado e risco de eclipse no transporte P2P:
+To reduce state loss and eclipse risk:
 
-- Persista peers conhecidos, bootstrap e índices mínimos em snapshot determinístico com escrita atômica (`temp + rename`).
-- Trate snapshot corrompido como entrada não-confiável: retorne erro explícito ou faça fallback seguro para store vazio.
-- Aplique peer scoring com penalidades para payload inválido, timeout recorrente e resposta inconsistente.
-- Isole peers com score crítico via disconnect e ban temporário para limitar influência por origem.
+- Persist peer/bootstrap state with deterministic atomic snapshot writes.
+- Treat corrupted snapshots as untrusted input and recover with explicit warnings.
+- Use peer scoring penalties for invalid payloads, recurring timeouts, and inconsistent responses.
+- Apply temporary bans for peers crossing critical abuse thresholds.
 
-## TLS obrigatório
+## Mandatory TLS
 
-Transporte deve usar **TLS** (HTTPS) sempre que houver tráfego em rede (bridge, APIs ou
-qualquer canal externo). O objetivo é proteger metadados e reduzir riscos de interceptação
-ou modificação de payloads. TLS não substitui assinaturas, mas é obrigatório para reduzir
-vazamento de informações e ataques ativos na camada de transporte.
+Use TLS/HTTPS for all bridge and external API traffic.
+TLS protects metadata and transport integrity but does not replace protocol signature/context checks.
 
-## Expiração de grants
+## Grant Expiration
 
-Grants devem possuir expiração (`expires_at`) sempre que possível. Regras recomendadas:
+Grants should carry expires_at whenever possible:
 
-- Rejeite tokens expirados imediatamente.
-- Aplique janelas curtas para permissões temporárias.
-- Revogue ou reemita grants quando houver mudança de chave ou perda de confiança.
+- reject expired tokens immediately
+- prefer short-lived temporary permissions
+- reissue/revoke grants on key-change or trust-loss events
 
-Tokens sem expiração devem ser tratados como exceção e ter revisão periódica.
+Non-expiring grants should be exceptional and periodically reviewed.
 
-## Proteção de `~/.spex/state.json`
+## Protecting ~/.spex/state.json
 
-O estado local contém chaves, contatos e threads. Proteção recomendada:
+Local state contains keys, contacts, and thread metadata. Recommended controls:
 
-- Permissões restritas no arquivo e diretório (`chmod 600` para o arquivo e `chmod 700` para o diretório).
-- Criptografia do arquivo com chave do keychain do SO; caso não haja keychain, use `SPEX_STATE_PASSPHRASE`
-  para proteger o estado (o cliente não grava o arquivo sem proteção).
-- Backups seguros e armazenamento fora do alcance de outros usuários do sistema.
+- strict file/dir permissions
+- keychain-backed encryption or SPEX_STATE_PASSPHRASE fallback
+- secure backup handling and access isolation
 
-Em ambientes compartilhados, evite armazenar o arquivo em locais expostos.
+Avoid storing state in shared or exposed locations.
 
-## Revogação e recuperação via log de checkpoints
+## Revocation and Recovery via Checkpoint Log
 
-O log append-only de checkpoints permite **revogação e recuperação verificáveis**:
+The append-only checkpoint log supports verifiable revocation and recovery:
 
-- Publique checkpoints de chaves e declarações de revogação no log.
-- Distribua o log por canais redundantes (bridge/gossip) e verifique consistência (prefixo).
-- Use recovery keys registradas no log para recuperar identidades comprometidas.
+- publish key checkpoints and revocation records
+- distribute logs via redundant channels and verify prefix consistency
+- use registered recovery keys for compromised identities
 
-Clientes devem validar o root da Merkle tree e rejeitar logs com inconsistências, garantindo
-que revogações e recuperações sejam auditáveis.
+Clients should verify Merkle roots and reject inconsistent log histories.
 
 
-## Robustez adversarial (fuzz + property tests)
+## Adversarial Robustness (Fuzz + Property Tests)
 
-A superfície de entrada externa do SPEX deve ser validada com testes adversariais contínuos:
+Untrusted input boundaries must be continuously tested:
 
-- Execute fuzz targets para decoding/parsing crítico (CTAP2/CBOR, bridge HTTP e payloads P2P).
-- Mantenha property tests para invariantes de determinismo/idempotência em validadores de grant/PoW.
-- Cubra casos negativos obrigatórios: truncamento, tipos inesperados e encodings inválidos (base64/hash/assinatura).
-- Toda entrada não-confiável deve falhar com erro explícito e auditável, nunca via panic path.
+- run fuzz targets for critical parsing/decoding boundaries
+- enforce property tests for deterministic/idempotent validation behavior
+- include malformed/truncated/type-confusion negative tests
+- require explicit errors instead of panic paths for untrusted data
 
-Comandos de smoke recomendados antes de release:
+Recommended smoke commands before release:
 
 ```bash
 cargo test -p spex-transport p2p_ingest_property
@@ -109,41 +100,41 @@ for target_file in fuzz/fuzz_targets/*.rs; do
 done
 ```
 
-Cobertura adicional aplicada nesta fase:
+Additional robustness coverage in this phase:
 
-- Fuzz target `transport_manifest_gossip_parse` para parsing/recovery de manifests de gossip em fronteira não-confiável.
-- Testes adversariais reforçados para bridge (`adversarial_parsing`), transporte (`p2p_manifest_recovery`) e core (`ctap2_cbor_vectors`).
+- transport_manifest_gossip_parse fuzz target for untrusted gossip boundary parsing
+- reinforced adversarial tests for bridge, transport, and core vectors
 
-Política de fuzz smoke para release readiness:
+Fuzz smoke policy for release readiness:
 
-- O pipeline deve instalar `cargo-fuzz` explicitamente no job de robustez.
-- Todos os alvos em `fuzz/fuzz_targets/*.rs` devem rodar com limite determinístico (`-max_total_time=30` e `-seed=1`).
-- Qualquer crash/panic em fuzzing deve falhar o job imediatamente (exit code não-zero).
+- CI installs cargo-fuzz in robustness job
+- all fuzz targets run with deterministic time/seed settings
+- any crash/panic fails the job
 
 
-## Resposta a achados de advisory (cargo-audit / cargo-deny)
+## Advisory Response (cargo-audit / cargo-deny)
 
-Quando o pipeline sinalizar advisory, trate como incidente de segurança e siga um fluxo explícito:
+When advisories are detected, treat as security incidents:
 
-1. **Triagem imediata**
-   - Identifique o advisory (`RUSTSEC-xxxx-xxxx`), pacote afetado, versão vulnerável e severidade.
-   - Determine exposição real no SPEX (binário, feature flag, caminho de execução).
+1. Immediate triage
+   - identify advisory id/package/version/severity
+   - determine real execution-path exposure
 
-2. **Contenção**
-   - Bloqueie release enquanto o advisory estiver aberto no branch de release.
-   - Se necessário, desative feature opcional dependente do pacote vulnerável até correção.
+2. Containment
+   - block release while unresolved on release branch
+   - disable optional features when needed
 
-3. **Remediação**
-   - Priorize atualização para versão corrigida no `Cargo.lock`/`Cargo.toml`.
-   - Quando não houver patch upstream, aplique mitigação temporária documentada e registre risco residual.
-   - Exceções (`ignore`) em `deny.toml` só podem ser temporárias, justificadas e com prazo de remoção.
+3. Remediation
+   - prioritize upstream patched versions
+   - document temporary mitigation and residual risk if no patch exists
+   - keep deny.toml ignores temporary and justified
 
-4. **Validação**
-   - Reexecute `cargo audit` e `cargo deny check` localmente e no CI.
-   - Execute suites de regressão relevantes para confirmar ausência de quebra funcional.
+4. Validation
+   - rerun cargo audit and cargo deny check locally and in CI
+   - rerun relevant regression suites
 
-5. **Rastreabilidade e comunicação**
-   - Documente causa raiz, impacto, mitigação e hash do commit de correção.
-   - Registre follow-up para remover workarounds e revisar dependências correlatas.
+5. Traceability and communication
+   - document root cause, impact, mitigation, and fixing commit hash
+   - track follow-up to remove temporary workarounds
 
-Critério de saída: release somente com pipeline de supply chain em verde e sem advisory aberto sem exceção formal aprovada.
+Exit criterion: release only with green supply-chain pipeline and no unresolved advisories without formal approved exception.

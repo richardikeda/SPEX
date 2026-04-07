@@ -1,4 +1,4 @@
-# Operacoes: abuso, revogacao e recovery
+# Operations: Abuse, Revocation, and Recovery
 
 ## Protocol Alignment (Normative)
 
@@ -9,11 +9,11 @@ Core cryptographic invariants are non-negotiable.
 All architecture and behavior described in this document must remain aligned with:
 **Secure. Permissioned. Explicit.**
 
-Este guia cobre fluxos operacionais para ambientes heterogêneos com foco em auditabilidade e segurança.
+This guide covers operational flows for heterogeneous environments, focusing on auditability and security.
 
-## Exportação de logs de abuso
+## Abuse Log Export
 
-Use o comando abaixo para exportar eventos do banco SQLite da bridge em formato JSON Lines estável.
+Use this command to export bridge SQLite abuse events as stable JSON Lines.
 
 ```bash
 cargo run -p spex-cli -- log export-abuse \
@@ -26,51 +26,51 @@ cargo run -p spex-cli -- log export-abuse \
   --limit 1000
 ```
 
-Campos exportados:
-- `timestamp`
-- `identity_hash_hex` (hash SHA-256 da identidade; não exporta identidade em claro)
-- `ip_prefix` (já mascarado na persistência)
-- `request_kind`
-- `outcome`
-- `bytes`
+Exported fields:
+- timestamp
+- identity_hash_hex (SHA-256 hash, no raw identity)
+- ip_prefix (masked)
+- request_kind
+- outcome
+- bytes
 
-## Revogação de chave com trilha de auditoria
+## Key Revocation with Audit Trail
 
-1. Gere e registre uma recovery key:
+1. Generate and register a recovery key:
 
 ```bash
 cargo run -p spex-cli -- log create-recovery-key
 ```
 
-2. Revogue a chave comprometida com justificativa operacional:
+2. Revoke compromised key with operational reason:
 
 ```bash
 cargo run -p spex-cli -- log revoke-key --key-hex <HEX_KEY> --recovery-hex <RECOVERY_HEX> --reason "compromised"
 ```
 
-Regras aplicadas:
-- revogação exige identidade local autenticada;
-- chave alvo deve existir no histórico de checkpoints;
-- operação é idempotente (revogação repetida não duplica entrada);
-- `recovery-hex`, quando informado, precisa corresponder a recovery key válida/não expirada no log.
+Rules:
+- revocation requires authenticated local identity
+- target key must exist in checkpoint history
+- operation is idempotent
+- recovery-hex, when provided, must match valid non-expired recovery key entry
 
-## Recovery para integrações externas
+## Recovery for External Integrations
 
-Para interoperabilidade entre ambientes:
+For cross-environment interoperability:
 
-1. Exporte o log no ambiente de origem:
+1. Export log from source environment:
 
 ```bash
 cargo run -p spex-cli -- log export --path <CHECKPOINT_LOG.b64>
 ```
 
-2. Importe no ambiente de destino:
+2. Import in destination environment:
 
 ```bash
 cargo run -p spex-cli -- log import --path <CHECKPOINT_LOG.b64>
 ```
 
-3. Verifique consistência por gossip/prova de prefixo:
+3. Verify consistency (gossip/prefix proof):
 
 ```bash
 cargo run -p spex-cli -- log gossip-verify --path <CHECKPOINT_LOG.b64>

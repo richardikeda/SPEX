@@ -9,56 +9,48 @@ Core cryptographic invariants are non-negotiable.
 All architecture and behavior described in this document must remain aligned with:
 **Secure. Permissioned. Explicit.**
 
-Obrigado por considerar contribuir com o **SPEX (Secure Permissioned Exchange)**.
+Thank you for considering contributing to SPEX.
 
-O SPEX é um projeto focado em **segurança, correção e clareza**, não em velocidade ou quantidade de features. Contribuições são bem-vindas — desde que respeitem esses princípios.
+SPEX is a security-critical protocol project focused on correctness, explicit behavior, and auditability.
 
 ---
 
 ## Code of Conduct
 
-Este projeto segue um código de conduta simples:
-
-* seja respeitoso
-* seja técnico
-* discuta ideias, não pessoas
-* críticas são bem-vindas quando fundamentadas
-
-Comportamentos abusivos não serão tolerados.
+This project follows [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+Be respectful, evidence-driven, and technical.
 
 ---
 
 ## Project Philosophy
 
-Antes de contribuir, é importante entender **o que o SPEX é e não é**:
+- SPEX is a protocol, not just an application.
+- Security comes before convenience.
+- Core cryptographic invariants are non-negotiable.
+- Behavior must remain explicit and deterministic.
 
-* SPEX é um **protocolo**, não apenas uma aplicação
-* segurança vem antes de conveniência
-* mudanças no core exigem justificativa técnica clara
-* invariantes criptográficos **não são negociáveis**
-
-Contribuições que enfraqueçam segurança ou clareza **não serão aceitas**.
+Contributions that weaken security guarantees are not accepted.
 
 ---
 
 ## What to Contribute
 
-### ✅ Bem-vindo
+### Accepted Contributions
 
-* correções de bugs
-* melhorias de documentação
-* testes adicionais
-* melhorias de ergonomia que **não enfraqueçam segurança**
-* otimizações que preservem semântica
-* ferramentas auxiliares (CLI, SDKs, exemplos)
+- bug fixes
+- documentation improvements
+- additional tests
+- ergonomics improvements that do not reduce security
+- performance improvements that preserve semantics
+- tooling around protocol usage (CLI/SDK/examples)
 
-### ❌ Evite
+### Avoid
 
-* adicionar dependências sem justificativa
-* introduzir comportamento implícito ou “mágico”
-* relaxar validações de segurança
-* mudanças não documentadas em wire format
-* features orientadas a hype
+- adding dependencies without strong justification
+- implicit or magic behavior
+- relaxing security validation
+- undocumented wire format changes
+- hype-driven features without protocol value
 
 ---
 
@@ -66,9 +58,8 @@ Contribuições que enfraqueçam segurança ou clareza **não serão aceitas**.
 
 ### Requirements
 
-* Rust stable (última versão)
-* `cargo`
-* Linux ou macOS recomendado
+- stable Rust toolchain
+- cargo
 
 ### Build & Test
 
@@ -80,63 +71,63 @@ cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 ```
 
-PRs com CI quebrado **não serão aceitos**.
+PRs with failing CI are not accepted.
 
 ---
 
 ## Repository Structure
 
-Visão geral dos principais crates:
+Main crates:
 
 * `spex-core`
-  Primitivas criptográficas, tipos, validações e invariantes.
+  Cryptographic primitives, core types, validation, invariants.
 
 * `spex-mls`
-  Integração MLS e extensões SPEX.
+  MLS integration and SPEX extensions.
 
 * `spex-transport`
-  Transporte P2P, chunking e fallback HTTP.
+  P2P transport, chunking, HTTP fallback.
 
 * `spex-bridge`
-  Bridge HTTP não confiável com validações explícitas.
+  Untrusted HTTP bridge with explicit validation.
 
 * `spex-client`
-  SDK de alto nível para aplicações.
+  High-level SDK for applications.
 
 * `spex-cli`
-  Aplicação de referência.
+  Reference CLI application.
 
 ---
 
 ## Security-Sensitive Changes
 
-Mudanças que afetam:
+Changes that affect:
 
-* criptografia
-* serialização CBOR
-* hashing
-* validação de grants
-* MLS / ratchet
-* anti-abuso (PoW)
+- cryptography
+- CBOR serialization
+- hashing
+- grant validation
+- MLS / ratchet behavior
+- anti-abuse controls (PoW)
 
-devem:
+must:
 
-* ser explicitamente marcadas no PR
-* incluir justificativa técnica
-* incluir testes
-* atualizar documentação relevante
+- be explicitly identified in the PR
+- include technical rationale
+- include tests
+- update relevant documentation
 
-Essas mudanças passam por revisão mais rigorosa.
+These changes receive stricter review.
 
 ---
 
 ## Commit Guidelines
 
-* commits pequenos e focados
-* mensagens claras (imperativo)
-* evite commits “misc”, “wip”, “fix stuff”
+- keep commits small and focused
+- use clear imperative commit messages
+- avoid vague commit names like misc, wip, or fix stuff
 
-Exemplos:
+Examples:
 
 ```
 Add grant expiration validation
@@ -148,39 +139,39 @@ Document bridge inbox endpoint
 
 ## Pull Request Process
 
-1. Fork o repositório
-2. Crie uma branch descritiva:
+1. Fork the repository.
+2. Create a descriptive branch:
 
    ```
    feature/grant-capabilities
    fix/pow-validation
    docs/bridge-api
    ```
-3. Garanta que todos os testes passem
-4. Atualize documentação se necessário
-5. Abra o PR descrevendo:
+3. Ensure all tests pass.
+4. Update documentation where needed.
+5. Open a PR describing:
 
-   * o problema
-   * a solução
-   * impactos de segurança (se houver)
+  * the problem
+  * the solution
+  * security impact (if any)
 
 ---
 
 ## Documentation Requirements
 
-Se o PR:
+If your PR:
 
-* muda comportamento → atualizar docs
-* muda wire format → atualizar `docs/wire-format.md`
-* muda API → atualizar exemplos
+- changes behavior -> update docs
+- changes wire format -> update docs/wire-format.md
+- changes APIs -> update examples
 
-Documentação não é opcional.
+Documentation is mandatory.
 
 ---
 
 ## Release Readiness (v1.0)
 
-Toda contribuição que afete fechamento de release deve preservar os gates reproduzíveis abaixo:
+Any contribution affecting release closure must preserve these reproducible gates:
 
 ```bash
 cargo test --workspace --locked --verbose
@@ -191,40 +182,40 @@ cargo clippy --workspace --locked --all-targets --all-features -- -D warnings
 ./scripts/release_gate_negative_test.sh
 ```
 
-Esses gates são mandatórios para decisão de go/no-go e devem permanecer estáveis no CI.
+These gates are mandatory for go/no-go decisions and must stay stable in CI.
 
 ---
 
 ## Licensing
 
-Ao contribuir, você concorda que:
+By contributing, you agree that:
 
-* sua contribuição será licenciada sob **Mozilla Public License 2.0**
-* você tem direito legal de contribuir o código enviado
+- your contribution is licensed under Mozilla Public License 2.0
+- you have the legal right to contribute the submitted code
 
 ---
 
 ## Questions and Discussion
 
-Para dúvidas gerais:
+For general questions:
 
-* use issues
-* seja claro e técnico
-* inclua contexto
+- use issues
+- provide technical context
+- keep reports explicit and reproducible
 
-Para questões de segurança:
+For security reports:
 
-* **não abra issues públicas**
-* siga `SECURITY.md`
+- do not open public issues
+- follow SECURITY.md disclosure guidance
 
 ---
 
 ## Final Notes
 
-O SPEX não busca ser o maior projeto.
-Busca ser **correto, auditável e confiável**.
+SPEX does not aim to be the largest project.
+It aims to be correct, auditable, and trustworthy.
 
-Contribua com cuidado.
+Contribute carefully.
 
 ---
 

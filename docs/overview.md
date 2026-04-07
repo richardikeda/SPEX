@@ -1,4 +1,4 @@
-# Visao geral da arquitetura
+# Architecture Overview
 
 ## Protocol Alignment (Normative)
 
@@ -9,64 +9,54 @@ Core cryptographic invariants are non-negotiable.
 All architecture and behavior described in this document must remain aligned with:
 **Secure. Permissioned. Explicit.**
 
-O SPEX é organizado em camadas para garantir modularidade e interoperabilidade entre
-implementações. A separação por crates permite evoluir a especificação de dados e de
-transporte sem quebrar o wire format ou o fluxo de autenticação.
+SPEX is organized in layers to preserve modularity and interoperability.
+The crate split allows transport/runtime evolution without weakening wire-format or authentication guarantees.
 
-## Camadas principais
+## Main Layers
 
-1. **Core (tipos e formatos)**
-   - Define tipos canônicos (cards, tokens, envelopes, log) e regras de serialização.
-   - Garante CBOR canonical (CTAP2) para assinaturas determinísticas.
-2. **Segurança e identidade**
-   - Assinaturas Ed25519, hashes, prova de trabalho (PoW) e validações de grants.
-   - Log append-only com Merkle tree para checkpoints e revogações.
-3. **MLS e mensagens**
-   - Criação de threads, commits e cifragem baseada em MLS.
-4. **Transporte**
-   - Chunking por hash, DHT/Kademlia, gossip e inbox scanning.
-   - Bridge HTTP como fallback para descoberta e inbox.
-5. **Ferramentas**
-   - CLI e bibliotecas de integração para fluxo request/grant.
+1. Core (types and formats)
+   - Canonical types (cards, tokens, envelopes, checkpoints).
+   - Canonical CBOR/CTAP2 for deterministic signatures and hashes.
+2. Security and identity
+   - Ed25519 signatures, hashing, PoW validation, grant validation.
+   - Append-only checkpoint log with Merkle consistency checks.
+3. MLS and message layer
+   - Thread lifecycle, commits, group state safety, encrypted payload flow.
+4. Transport
+   - Chunking/manifests, DHT/Kademlia, gossip, inbox scanning.
+   - HTTP bridge fallback for delivery/retrieval.
+5. Tooling
+   - CLI and SDK flows for request/grant/thread/message operations.
 
-## Visão dos crates
+## Crate Map
 
-- **spex-core**: tipos de dados (cards, tokens, envelopes, log), CBOR canonical (CTAP2), hashes,
-  assinaturas, provas de trabalho e validações.
-- **spex-mls**: integração MLS (mls-rs) com APIs `MlsRsClient`/`MlsRsGroup` para TreeKEM completo, commits, updates, add/remove, ressincronização via external commit, validação de `cfg_hash`/`proto_suite` e extensões SPEX.
-- **spex-transport**: chunking, publicação/replicação DHT, gossip com recuperação de manifestos, reassemblagem com verificação de hash, random walks robustos e inbox scanning.
-- **spex-bridge**: bridge HTTP com armazenamento SQLite e validações de rate limit/PoW.
-- **spex-cli**: CLI de referência para identidades, cartões, fluxo request/grant e mensagens.
-- **spex-client**: biblioteca de alto nível para integrações.
+- spex-core: protocol types, canonical CBOR, crypto and validation primitives.
+- spex-mls: MLS integration, external-commit handling, epoch safety controls.
+- spex-transport: P2P transport runtime, chunk/manifests, fallback/recovery helpers.
+- spex-bridge: HTTP bridge with SQLite persistence and abuse controls.
+- spex-cli: reference operational interface.
+- spex-client: high-level SDK for application integrations.
 
-## Fluxo de handshake (request/grant)
+## Handshake Flow (Request/Grant)
 
-1. **Contato inicial**: o remetente compartilha um `ContactCard` (CBOR base64) ou recebe um
-   `InviteToken` embutido no card.
-2. **Request**: o remetente envia um `RequestToken` (JSON base64) ao destinatário.
-   - Se o `InviteToken` exigir PoW, o request inclui o puzzle resolvido.
-3. **Grant**: o destinatário valida o request, confirma identidade e emite um `GrantToken`
-   **assinado** (CBOR canonical base64).
-4. **Thread MLS**: o grant é usado para inicializar o `ThreadConfig`, permitindo criação da
-   thread MLS e envio de mensagens seguras.
+1. Initial contact: sender shares a ContactCard (CBOR base64) or an InviteToken.
+2. Request: sender submits a RequestToken (JSON base64).
+3. Grant: recipient validates request and issues signed GrantToken (canonical CBOR base64).
+4. MLS thread: grant is used in ThreadConfig to bootstrap secure group communication.
 
-Esse fluxo estabelece autorização mínima antes de criar grupos MLS ou publicar mensagens.
+This flow enforces explicit authorization before message exchange.
 
-## Persistência local
+## Local Persistence
 
-O CLI persiste chaves, contatos e threads em `~/.spex/state.json` (ou `SPEX_STATE_PATH`).
-O arquivo é criptografado com uma chave no keychain do SO; quando o keychain não está disponível,
-defina `SPEX_STATE_PASSPHRASE` para manter o estado protegido (o cliente não salva o arquivo sem
-proteção).
+CLI local state is stored in ~/.spex/state.json (or SPEX_STATE_PATH).
+State is encrypted using OS keychain material, or SPEX_STATE_PASSPHRASE fallback.
 
 ## Fingerprints
 
-Sempre que um card é importado, o CLI exibe o fingerprint da chave pública para verificação
-manual. Mudanças inesperadas de fingerprint devem ser tratadas como evento crítico e exigir
-confirmação explícita do usuário.
+When importing cards, verify public-key fingerprint continuity.
+Unexpected key changes should be treated as critical events.
 
-## Transporte e TLS
+## Transport and TLS
 
-Toda integração externa (bridge HTTP, APIs ou serviços terceiros) deve usar TLS. A criptografia
-em trânsito protege metadados e evita adulteração de payloads, complementando (mas não substituindo)
-as assinaturas e validações do SPEX.
+All external integrations must use TLS.
+Transport protection complements, but never replaces, protocol-level signature and context validation.
