@@ -3,8 +3,22 @@ db-path = "~/.cargo/advisory-db"
 db-urls = ["https://github.com/RustSec/advisory-db"]
 unmaintained = "workspace"
 yanked = "deny"
-# Temporary and explicit exception: serde_cbor is currently used across core flows.
-# Keep this scoped to the known unmaintained advisory while migration is executed.
+# --- Formal Risk Acceptance Record ---
+# Advisory   : RUSTSEC-2021-0127
+# Package    : serde_cbor 0.11.x
+# Risk       : Unmaintained crate; no security patches expected from upstream.
+# Exposure   : serde_cbor is used in spex-core (CTAP2 canonical CBOR encoding/decoding)
+#              and spex-client (state serialization). All decode paths validate canonical
+#              encoding before use; malformed inputs return explicit errors (no panic paths).
+# Mitigation : All untrusted CBOR input passes through ctap2_canonical_value_from_slice()
+#              which validates canonical form before accepting data. Fuzz targets cover
+#              the parse_cbor_payload boundary for arbitrary input.
+# Owner      : Richard Ikeda <maintainer>
+# Accepted   : 2026-04-07
+# Expires    : 2026-10-01 — exception must be reviewed or migration completed by this date.
+# Removal plan: Migrate to `ciborium` as the CBOR backend. Tracked as post-1.0 backlog.
+#              Migration requires updating cbor.rs (spex-core), hash.rs, and client state
+#              serialization, then verifying CTAP2 canonical encoding parity with test vectors.
 ignore = ["RUSTSEC-2021-0127"]
 
 [bans]

@@ -47,6 +47,20 @@ To reduce state loss and eclipse risk:
 Use TLS/HTTPS for all bridge and external API traffic.
 TLS protects metadata and transport integrity but does not replace protocol signature/context checks.
 
+The mandatory deployment model is **reverse-proxy TLS termination**:
+
+- The `spex-bridge` binary listens on a local plain-HTTP port (default `127.0.0.1:3000`).
+- A TLS-terminating reverse proxy (nginx, Caddy, HAProxy) handles all external HTTPS connections.
+- The bridge socket must **never** be directly exposed to the public internet over plain HTTP.
+- TLS 1.2 minimum; TLS 1.0 and 1.1 must be disabled at the proxy layer.
+- Certificates must be valid, unexpired, and trusted by a standard CA store.
+
+Full TLS deployment guide, configuration examples, and the operator validation checklist:
+**[docs/bridge-tls-deployment.md](bridge-tls-deployment.md)**
+
+Operators must run the validation checklist before any production deployment.
+Release evidence must include successful checklist output.
+
 ## Grant Expiration
 
 Grants should carry expires_at whenever possible:

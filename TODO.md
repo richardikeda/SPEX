@@ -1,54 +1,82 @@
-# SPEX TODO List
+# SPEX TODO List (v1.0.3)
 
 ## Scope
 
-This TODO tracks active pending work only.
-Completed items were moved into concise changelog entries.
+This TODO defines the remaining items that must be completed by the maintainer before
+a public release is declared. All three original v1.0 blockers have been resolved in code;
+the items below are either maintainer gate actions (cannot be automated) or post-1.0 backlog.
 
-## [TASK 1] Transport Runtime Production Hardening
+---
 
-Objective:
-- Improve long-running P2P resilience under churn and partial network failure.
-- Preserve deterministic behavior and explicit error paths.
+## [RELEASE GATE] Create and Push Git Version Tags
 
-Pending work:
-- Longer-duration churn and soak testing.
-- Expanded anti-eclipse telemetry and alert thresholds.
-- Additional deterministic restart/recovery scenarios.
+Why this blocks public release:
+- No version tags exist in the repository (`git tag --list` returns empty).
+- Release traceability requires that declared versions map to specific commits.
+- Users and tools that depend on tagged releases cannot pin to a version without tags.
 
-Acceptance criteria:
-- No panic paths under malformed/untrusted input.
-- Stable degraded/critical classification across repeated runs.
-- Clear documented operator actions for critical transport alerts.
+Required action (maintainer):
+```bash
+git tag v1.0.0 <sha-for-1.0.0>
+git tag v1.0.1 <sha-for-1.0.1>
+git tag v1.0.2 <sha-for-1.0.2>
+git tag v1.0.3 HEAD
+git push origin v1.0.0 v1.0.1 v1.0.2 v1.0.3
+```
 
-## [TASK 2] Advanced MLS Interop and Failure Matrix Expansion
-
-Objective:
-- Expand MLS safety coverage for replay, reorder, epoch-gap, and recovery mismatch scenarios.
-
-Pending work:
-- Mixed-topology recovery edge scenarios.
-- Cross-implementation MLS compatibility matrix definition.
+Identify the correct commit SHAs using `git log --oneline` and matching the commit dates
+in `CHANGELOG.md` entries.
 
 Acceptance criteria:
-- Deterministic rejection semantics for invalid epoch/order flows.
-- Explicit compatibility and fallback documentation.
+- `git tag --list` returns at minimum `v1.0.3`.
+- `CHANGELOG.md` "Published Versions" section matches the tags present in the repository.
 
-## [TASK 3] Adversarial Robustness Campaign (Fuzz + Property)
+---
 
-Objective:
-- Expand parser and boundary robustness for core, bridge, and transport.
+## [RELEASE GATE] TLS Validation Checklist — Generate Release Evidence
 
-Pending work:
-- Stateful fuzz sequences across lifecycle transitions.
-- Differential parser checks for malformed edge classes.
+Why this blocks public release:
+- `docs/security.md` requires that the TLS validation checklist is run before any production
+  deployment and that release evidence includes successful checklist output.
+- The checklist requires a live deployment to verify (certificate, protocol, redirect,
+  plain-HTTP rejection).
+
+Required action (maintainer):
+- Deploy the bridge behind a TLS-terminating reverse proxy (see `docs/bridge-tls-deployment.md`).
+- Run each checklist step in that document and capture the output.
+- Include the output in the release notes or CI artifacts as release evidence.
 
 Acceptance criteria:
-- No crash/panic in critical parsing boundaries during smoke campaigns.
-- Explicit error returns for malformed/truncated/invalid type inputs.
+- All six checklist steps in `docs/bridge-tls-deployment.md` produce expected output.
+- Evidence is attached to the v1.0.3 release.
 
-## Additional Product and Integration Backlog
+---
 
-- Stabilize SDK/API compatibility policy and version matrix.
-- Expand integration examples for external API consumers.
-- Automate release-evidence packaging for go/no-go records.
+## [POST-1.0 BACKLOG] Migrate serde_cbor to ciborium
+
+Why it is tracked:
+- `serde_cbor` (RUSTSEC-2021-0127) is unmaintained. A formal risk-acceptance record with
+  expiration date 2026-10-01 is in `deny.toml`.
+- Migration must be completed or the exception renewed before 2026-10-01.
+
+Migration scope:
+- `spex-core/src/cbor.rs` — replace `serde_cbor` with `ciborium` for CTAP2 encoding/decoding.
+- `spex-core/src/hash.rs` — update hash helpers that depend on CBOR value types.
+- `crates/spex-client/` — state serialization paths using `serde_cbor`.
+- Verify CTAP2 canonical encoding parity with existing test vectors before merging.
+
+Acceptance criteria:
+- `serde_cbor` removed from all `Cargo.toml` files.
+- `RUSTSEC-2021-0127` ignore removed from `deny.toml`.
+- All existing CBOR tests pass with `ciborium` backend.
+- `cargo deny check` returns clean with no advisory exceptions.
+
+---
+
+## Post-1.0 Backlog (Not Blocking v1.0 Closure)
+
+- Longer-duration transport churn/soak campaigns and expanded anti-eclipse thresholds.
+- Advanced MLS cross-implementation interop matrix expansion.
+- Stateful and differential fuzz campaign expansion beyond release smoke baseline.
+- Broader CI matrix expansion (for example, Windows/macOS full test execution).
+- Observability exporter standardization and dashboard packaging.

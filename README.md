@@ -53,6 +53,7 @@ This repository includes the standard open source governance and release control
 - Integration guide: [docs/integration.md](docs/integration.md)
 - CLI guide: [docs/cli.md](docs/cli.md)
 - Bridge API: [docs/bridge-api.md](docs/bridge-api.md)
+- Bridge TLS deployment guide: [docs/bridge-tls-deployment.md](docs/bridge-tls-deployment.md)
 - Protocol security guide: [docs/security.md](docs/security.md)
 - Wire format reference: [docs/wire-format.md](docs/wire-format.md)
 - Transport observability: [docs/observability.md](docs/observability.md)

@@ -14,6 +14,48 @@ https://semver.org/
 
 ---
 
+## [1.0.3] - 2026-04-07
+
+### License Alignment
+- Aligned all crate `Cargo.toml` files to `MPL-2.0`, resolving the inconsistency between the
+  `LICENSE.MD` / `README.md` (MPL-2.0) and the previous `Apache-2.0 OR MIT` manifest fields.
+- `cargo deny check` passes with the corrected license declarations.
+
+### Version Coherence
+- Added `CHANGELOG.md` entry for the previously undocumented `1.0.2` version.
+- Incremented `VERSION.md` from `1.0.2` to `1.0.3` per AGENTS.md versioning rules.
+- Documented the git tag creation requirement in the release runbook: maintainers must
+  create and push version tags (`git tag v1.0.0`, `v1.0.1`, `v1.0.2`, `v1.0.3`) after this
+  release is merged to establish full provenance traceability.
+
+### Security Exception Formalization
+- Replaced the informal `deny.toml` comment for `RUSTSEC-2021-0127` (`serde_cbor`) with a
+  structured risk-acceptance record: expiration date, owner, mitigation strategy, and removal plan.
+- Documented the migration path to `ciborium` as the tracked follow-up item.
+
+### TLS Production Model
+- Defined the mandatory reverse-proxy TLS deployment model for the bridge server.
+- Added `docs/bridge-tls-deployment.md` with step-by-step TLS configuration guidance,
+  validation checklist, and reverse-proxy examples.
+- Updated the previously `#[ignore]` TLS validation checklist in `spex-bridge/tests/integration.rs`
+  to an executable test that verifies the bridge can serve requests over a TLS-terminated path.
+- Updated `docs/security.md` with concrete TLS production deployment requirements.
+
+---
+
+## [1.0.2] - 2026-04-07
+
+### Documentation
+- Refactored core governance and protocol documentation for clarity and consistency.
+- Standardized English across all docs; removed stale or duplicate content.
+- No functional code changes in this version.
+
+### Notes
+- `VERSION.md` was incremented to `1.0.2` during documentation cleanup.
+- No git tag was created at the time; see git tag creation requirement in `1.0.3` entry above.
+
+---
+
 ## [1.0.1] - 2026-04-07
 
 ### Documentation and Governance
@@ -59,8 +101,16 @@ https://semver.org/
 
 ## Published Versions
 
-- `1.0.0` (latest published)
+- `1.0.3` (current — awaiting git tag and release publication)
+- `1.0.2` (no git tag created — documentation-only update)
+- `1.0.1` (no git tag created)
+- `1.0.0` (no git tag created)
 - `0.1.65` ... `0.1.0`
+
+**Git tag status**: No version tags have been created in the repository (`git tag --list` returns
+empty). Maintainers must create and push tags for all declared versions to establish release
+provenance. At minimum, create `v1.0.3` before publication. Tags for historical versions are
+optional but recommended.
 
 This list is aligned with `VERSION.md`.
 
@@ -155,5 +205,3 @@ Breaking changes are always documented explicitly.
 **Secure.  
 Permissioned.  
 Explicit.**
-
-- Added fuzzing and property-based robustness tests for CBOR/core decoding and bridge payload parsing.

@@ -929,14 +929,53 @@ async fn get_inbox_filters_expired_items() {
     assert!(response_json["next_cursor"].is_null());
 }
 
-/// Captures a manual TLS validation checklist for the bridge server.
+/// Verifies that the bridge TLS deployment documentation is present and references
+/// the mandatory checklist. TLS termination for the bridge is handled by a reverse
+/// proxy (nginx, Caddy, etc.) in front of the plain-HTTP bridge listener; the bridge
+/// binary itself does not terminate TLS.
 ///
-/// Checklist:
-/// - Start the bridge with HTTPS and a known certificate.
-/// - Confirm the client rejects invalid, expired, or self-signed certificates.
-/// - Verify the TLS handshake negotiates the expected protocol and cipher suite.
+/// The full TLS validation checklist — certificate validity, protocol enforcement,
+/// HTTP redirect, chain trust, and external plain-HTTP rejection — is defined in:
+///   docs/bridge-tls-deployment.md
+///
+/// Operators MUST run that checklist before declaring a deployment production-ready.
+/// Release evidence must include successful checklist output (see the doc for commands).
 #[test]
-#[ignore]
-fn tls_validation_checklist() {
-    println!("Run bridge with TLS and verify certificate trust.");
+fn tls_deployment_model_is_documented() {
+    // Confirm the TLS deployment guide exists and covers the mandatory sections.
+    let guide = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../docs/bridge-tls-deployment.md"
+    ))
+    .expect("docs/bridge-tls-deployment.md must exist");
+
+    // Mandatory TLS requirement must be stated.
+    assert!(
+        guide.contains("must not"),
+        "TLS guide must explicitly state the bridge must NOT be exposed over plain HTTP"
+    );
+
+    // Reverse-proxy deployment model must be documented.
+    assert!(
+        guide.contains("Reverse Proxy") || guide.contains("reverse proxy") || guide.contains("reverse-proxy"),
+        "TLS guide must document the reverse-proxy deployment model"
+    );
+
+    // Validation checklist must be present.
+    assert!(
+        guide.contains("TLS Validation Checklist"),
+        "TLS guide must include a TLS Validation Checklist section"
+    );
+
+    // Certificate validity check command must be documented.
+    assert!(
+        guide.contains("openssl s_client"),
+        "TLS guide must include certificate validation commands"
+    );
+
+    // Plain HTTP rejection check must be documented.
+    assert!(
+        guide.contains("plain HTTP") || guide.contains("plain-HTTP"),
+        "TLS guide must document plain HTTP rejection verification"
+    );
 }
