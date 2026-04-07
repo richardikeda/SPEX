@@ -2,6 +2,23 @@
 
 ## Visão geral
 
+## Posicionamento oficial (v1.0)
+
+SPEX é um protocolo de transporte e mensageria com criptografia fim a fim (E2E), baseado em MLS, e agnóstico de rede (`HTTP`, `P2P`, `WebSocket`).
+O servidor de entrega opera com conhecimento zero sobre o conteúdo: processa apenas envelopes cifrados e metadados mínimos de roteamento/validação.
+
+Casos de uso prioritários:
+- Mensageria segura para aplicações corporativas e colaborativas.
+- Telemetria crítica em ambientes onde o backend não deve ler payloads.
+- Compartilhamento de segredos e credenciais entre membros autorizados de um grupo.
+
+Escopo congelado da v1.0:
+- Identidade local.
+- Criação de grupo.
+- Adição de membros.
+- Envio e consumo de mensagens/payloads cifrados.
+- Validação de autorização, assinatura e invariantes de epoch/cfg_hash.
+
 **Objetivo**: fornecer uma base aberta e modular para mensagens seguras e interoperáveis, com foco em
 criptografia de ponta a ponta, auditabilidade e integridade dos dados.
 

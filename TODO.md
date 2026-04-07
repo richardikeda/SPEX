@@ -31,6 +31,18 @@ Testes obrigatórios:
 Critério de conclusão:
 - Escopo aprovado e documentado sem ambiguidade.
 
+Status de execução da fase:
+- ✅ Fase 0 concluída: declaração oficial consolidada em `README.md` e escopo v1.0 congelado.
+- ✅ Itens não essenciais ficam direcionados para backlog pós-v1.
+
+Evidência de testes da fase:
+- ✅ Regressão de fluxo feliz: `cargo test -p spex-cli --test planned_cli_flow test_cli_message_send -- --exact`.
+- ✅ Negativo de autorização: `cargo test -p spex-client --test security_replay_tamper non_member_sender_is_rejected_before_decryption -- --nocapture`.
+
+Backlog pós-v1 (fora do escopo de fechamento v1.0):
+- Evoluções de UX e integrações opcionais não necessárias ao fluxo essencial E2E.
+- Expansões de features que não impactam diretamente identidade -> grupo -> membro -> envio -> consumo.
+
 ### Fase 1 - Interface de integração SPEX (SDK/Bindings)
 
 Objetivo:

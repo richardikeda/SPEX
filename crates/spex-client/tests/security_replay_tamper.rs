@@ -278,3 +278,28 @@ fn context_mixing_rejected_by_thread_cfg_hash_and_epoch_invariants() {
         .expect_err("epoch mismatch must fail");
     assert!(matches!(epoch_err, ClientError::Crypto(_)));
 }
+
+/// Ensures envelopes forged with a sender outside the thread membership are rejected.
+#[test]
+fn non_member_sender_is_rejected_before_decryption() {
+    let (mut sender_state, recipient_state, thread_id) = setup_sender_and_recipient();
+    let sender_identity = sender_state.identity.clone().expect("sender identity");
+    let sender_thread = sender_state
+        .threads
+        .get_mut(&thread_id)
+        .expect("sender thread state");
+    let (mut envelope, _manifest, _chunks) =
+        spex_client::send_thread_message(&sender_identity, sender_thread, b"membership check")
+            .expect("send thread message");
+
+    let outsider = spex_client::create_identity();
+    envelope.sender_user_id = hex::decode(&outsider.user_id_hex).expect("outsider sender id");
+
+    let recipient_thread = recipient_state
+        .threads
+        .get(&thread_id)
+        .expect("recipient thread");
+    let err = decrypt_thread_envelope(&recipient_state, recipient_thread, &envelope)
+        .expect_err("non-member sender must fail");
+    assert!(matches!(err, ClientError::UnauthorizedSender));
+}
