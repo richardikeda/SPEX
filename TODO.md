@@ -298,6 +298,14 @@ Versioning:
 
 ## [TASK 2] Conformidade MLS avançada (epochs, commits e ressincronização)
 
+Status:
+- ✅ Concluída com reforço de rejeição determinística para reorder/replay/out-of-order e verificação explícita de metadados de erro (`expected_epoch`/`received_epoch`).
+
+Evidência de testes (TASK 2):
+- `cargo test -p spex-mls --test mls_advanced_negative -- --nocapture`
+- `cargo test -p spex-mls --test planned_concurrent_updates rejects_stale_replay_after_successful_resync -- --nocapture`
+- `cargo test -p spex-mls --test epoch_recovery_properties -- --nocapture`
+
 Objective:
 - Completar a suíte MLS com cenários avançados de ordenação/permutação de commits, epochs fora de ordem e recuperação parcial.
 - Elevar a confiabilidade de interoperabilidade em cenários adversariais.

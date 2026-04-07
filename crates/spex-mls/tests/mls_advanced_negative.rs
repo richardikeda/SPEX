@@ -18,6 +18,17 @@ fn seeded_group() -> Group {
     group
 }
 
+/// Asserts out-of-order commit metadata is explicit and deterministic.
+fn assert_out_of_order(err: MlsError, expected_epoch: u64, received_epoch: u64) {
+    match err {
+        MlsError::OutOfOrderCommit(details) => {
+            assert_eq!(details.expected_epoch, expected_epoch);
+            assert_eq!(details.received_epoch, received_epoch);
+        }
+        other => panic!("unexpected error variant: {other:?}"),
+    }
+}
+
 /// Rejects re-ordered delivery where epoch N+2 arrives before epoch N+1.
 #[test]
 fn rejects_reordered_commit_delivery_without_recovery() {
@@ -27,7 +38,7 @@ fn rejects_reordered_commit_delivery_without_recovery() {
     let err = group
         .apply_commit(Commit::new(3))
         .expect_err("epoch 3 without epoch 2 must be rejected");
-    assert!(matches!(err, MlsError::OutOfOrderCommit(_)));
+    assert_out_of_order(err, 2, 3);
     assert_eq!(group.epoch(), 1);
 }
 
@@ -44,7 +55,7 @@ fn rejects_replayed_commit_deterministically() {
     let err = group
         .apply_commit(commit_epoch_2)
         .expect_err("replayed epoch 2 commit must be rejected as stale");
-    assert!(matches!(err, MlsError::OutOfOrderCommit(_)));
+    assert_out_of_order(err, 3, 2);
     assert_eq!(group.epoch(), 2);
 }
 
@@ -57,7 +68,7 @@ fn rejects_stale_epoch_commit_out_of_order() {
     let err = group
         .apply_commit(Commit::new(1))
         .expect_err("commit at current epoch must be rejected");
-    assert!(matches!(err, MlsError::OutOfOrderCommit(_)));
+    assert_out_of_order(err, 2, 1);
     assert_eq!(group.epoch(), 1);
 }
 
@@ -73,6 +84,19 @@ fn rejects_partial_recovery_for_missing_epoch_chain() {
     let err = group
         .apply_commit_with_recovery(target, missing)
         .expect_err("partial recovery must be rejected");
-    assert!(matches!(err, MlsError::OutOfOrderCommit(_)));
+    assert_out_of_order(err, 2, 4);
+    assert_eq!(group.epoch(), initial_epoch);
+}
+
+/// Rejects non-contiguous epoch jumps and reports expected/received metadata explicitly.
+#[test]
+fn rejects_large_epoch_gap_with_explicit_order_metadata() {
+    let mut group = seeded_group();
+    let initial_epoch = group.epoch();
+
+    let err = group
+        .apply_commit(Commit::new(7))
+        .expect_err("epoch gap without recovery must be rejected");
+    assert_out_of_order(err, 2, 7);
     assert_eq!(group.epoch(), initial_epoch);
 }

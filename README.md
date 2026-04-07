@@ -59,7 +59,7 @@ Implementação inicial em andamento com os seguintes componentes e nível atual
 - **Hardening/observabilidade do runtime P2P**: reduzir latências operacionais, ampliar reputação anti-eclipse e métricas/tracing de publish/recovery/fallback.
   - Referências: [TODO.md](TODO.md), testes de transporte em `crates/spex-transport/tests/p2p_manifest_delivery.rs`.
 - **Conformidade MLS avançada**: suíte ampliada para reorder/replay/epoch gap, ressincronização determinística e robustez de parsing.
-  - Referências: [docs/integration.md](docs/integration.md), testes em `crates/spex-mls/tests/planned_concurrent_updates.rs` e `crates/spex-mls/tests/epoch_recovery_properties.rs`.
+  - Referências: [docs/integration.md](docs/integration.md), [docs/mls-advanced-scenarios-matrix.md](docs/mls-advanced-scenarios-matrix.md), testes em `crates/spex-mls/tests/planned_concurrent_updates.rs`, `crates/spex-mls/tests/mls_advanced_negative.rs` e `crates/spex-mls/tests/epoch_recovery_properties.rs`.
 
 ## Documentação
 

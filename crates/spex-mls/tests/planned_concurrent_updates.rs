@@ -264,3 +264,49 @@ fn rejects_partial_resync_recovery_with_missing_epochs() {
     assert!(matches!(err, MlsRsError::OutOfOrderCommit(_)));
     assert_eq!(bob_group.epoch(), 1);
 }
+
+/// Rejects stale replay after successful resync and keeps epoch stable.
+#[test]
+fn rejects_stale_replay_after_successful_resync() {
+    let proto_suite = test_proto_suite();
+    let config = GroupConfig::new(proto_suite, 0, 1, vec![0x73; 32]);
+
+    let alice = MlsRsClient::new(proto_suite, b"alice".to_vec()).expect("alice client");
+    let bob = MlsRsClient::new(proto_suite, b"bob".to_vec()).expect("bob client");
+    let carol = MlsRsClient::new(proto_suite, b"carol".to_vec()).expect("carol client");
+
+    let mut alice_group = alice.create_group(config).expect("create group");
+    let add_bob = alice_group.add_member(&bob).expect("add bob");
+    let mut bob_group = bob
+        .join_group(&add_bob.welcome_messages[0], add_bob.ratchet_tree.clone())
+        .expect("bob join");
+
+    let add_carol = alice_group.add_member(&carol).expect("add carol");
+    let update = alice_group.self_update().expect("alice update");
+
+    bob_group
+        .process_external_commit_with_resync(
+            explicit_external(3, &update.commit_message),
+            |from, to| {
+                assert_eq!((from, to), (2, 3));
+                Ok(vec![explicit_external(2, &add_carol.commit_message)])
+            },
+        )
+        .expect("resync applies epoch 2 before epoch 3");
+    assert_eq!(bob_group.epoch(), 3);
+
+    let stale = bob_group
+        .process_external_commit_with_resync(explicit_external(3, &update.commit_message), |_, _| {
+            panic!("fetch_missing must not be called for stale/current replay")
+        })
+        .expect_err("stale replay must be rejected after resync");
+
+    match stale {
+        MlsRsError::OutOfOrderCommit(details) => {
+            assert_eq!(details.expected_epoch, 4);
+            assert_eq!(details.received_epoch, 3);
+        }
+        other => panic!("unexpected error: {other:?}"),
+    }
+    assert_eq!(bob_group.epoch(), 3);
+}

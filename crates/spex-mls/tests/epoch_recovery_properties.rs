@@ -59,3 +59,17 @@ proptest! {
         prop_assert_eq!(group.epoch(), initial_epoch);
     }
 }
+
+// Property: stale/current replay attempts must fail and keep the local epoch unchanged.
+proptest! {
+    #[test]
+    fn stale_or_current_replay_does_not_advance_epoch(offset in 0u64..4u64) {
+        let mut group = seeded_group();
+        let initial_epoch = group.epoch();
+        let replay_epoch = initial_epoch.saturating_sub(offset);
+
+        let result = group.apply_commit(Commit::new(replay_epoch));
+        prop_assert!(result.is_err());
+        prop_assert_eq!(group.epoch(), initial_epoch);
+    }
+}
