@@ -1,4 +1,5 @@
 use serde_cbor::Value;
+use spex_core::cbor::ctap2_canonical_value_from_slice;
 use spex_core::test_vectors;
 use spex_core::types::{ContactCard, Ctap2Cbor, GrantToken, InviteToken, ThreadConfig};
 use std::collections::BTreeMap;
@@ -135,4 +136,24 @@ fn tv2_contact_card_optional_fields_and_extension_ordering() {
         extension_value,
         Value::Bytes(hex::decode("deadbeefcafebabe").unwrap())
     );
+}
+
+#[test]
+// Ensures truncated thread config CBOR fails with explicit decode errors (no panic path).
+fn rejects_truncated_thread_config_ctap2_decode() {
+    let config = build_tv1_config();
+    let encoded = config.to_ctap2_canonical_bytes().expect("encode");
+    let truncated = &encoded[..encoded.len().saturating_sub(1)];
+    let decoded = ctap2_canonical_value_from_slice(truncated);
+    assert!(decoded.is_err());
+}
+
+#[test]
+// Ensures malformed card payloads fail decode deterministically without panics.
+fn rejects_malformed_contact_card_ctap2_decode() {
+    let card = build_tv2_card();
+    let mut encoded = card.to_ctap2_canonical_bytes().expect("encode");
+    encoded.push(0xFF);
+    let decoded = ContactCard::decode_ctap2(&encoded);
+    assert!(decoded.is_err());
 }

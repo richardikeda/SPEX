@@ -72,4 +72,11 @@ test = false
 doc = false
 bench = false
 
+[[bin]]
+name = "transport_manifest_gossip_parse"
+path = "fuzz_targets/transport_manifest_gossip_parse.rs"
+test = false
+doc = false
+bench = false
+
 [workspace]

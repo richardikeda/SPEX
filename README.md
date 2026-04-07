@@ -60,6 +60,8 @@ Implementação inicial em andamento com os seguintes componentes e nível atual
   - Referências: [TODO.md](TODO.md), testes de transporte em `crates/spex-transport/tests/p2p_manifest_delivery.rs`.
 - **Conformidade MLS avançada**: suíte ampliada para reorder/replay/epoch gap, ressincronização determinística e robustez de parsing.
   - Referências: [docs/integration.md](docs/integration.md), [docs/mls-advanced-scenarios-matrix.md](docs/mls-advanced-scenarios-matrix.md), testes em `crates/spex-mls/tests/planned_concurrent_updates.rs`, `crates/spex-mls/tests/mls_advanced_negative.rs` e `crates/spex-mls/tests/epoch_recovery_properties.rs`.
+- **Robustez adversarial (fuzz + property)**: cobertura expandida para parsing de bridge/transport/core com casos malformados, truncados e tipos inesperados sem panic path.
+  - Referências: [docs/security.md](docs/security.md), `fuzz/fuzz_targets/transport_manifest_gossip_parse.rs`, `crates/spex-bridge/tests/adversarial_parsing.rs`, `crates/spex-transport/tests/p2p_manifest_recovery.rs`, `spex-core/tests/ctap2_cbor_vectors.rs`.
 
 ## Documentação
 

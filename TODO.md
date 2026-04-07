@@ -3,12 +3,11 @@
 ## Status de fechamento v1.0 (revisado)
 
 - ✅ `TASK 4` (readiness de release) foi concluída nesta execução com checklist, runbook e gates de CI/documentação.
-- 🔒 Itens ainda pendentes para fechamento completo da v1.0:
-  - `TASK 1` Hardening final do runtime P2P + observabilidade operacional.
-  - `TASK 2` Conformidade MLS avançada (epochs, commits e ressincronização).
-  - `TASK 3` Expansão de robustez adversarial (fuzz + property tests em superfícies críticas).
+- ✅ `TASK 1` Hardening final do runtime P2P + observabilidade operacional concluída.
+- ✅ `TASK 2` Conformidade MLS avançada (epochs, commits e ressincronização) concluída.
+- ✅ `TASK 3` Expansão de robustez adversarial (fuzz + property tests em superfícies críticas) concluída.
 
-A publicação definitiva da v1.0 permanece bloqueada até conclusão validada de `TASK 1-3`.
+Sem bloqueadores técnicos remanescentes de `TASK 1-3` para fechamento da v1.0.
 
 ## Roadmap de execução (SPEX only, tarefa por tarefa)
 
@@ -349,6 +348,15 @@ Versioning:
 ---
 
 ## [TASK 3] Expansão de robustez adversarial (fuzz + property tests em superfícies críticas)
+
+Status:
+- ✅ Concluída com novo alvo de fuzz para parsing/recovery de manifest P2P, expansão de property tests em bridge e negativos explícitos em core/transport.
+
+Evidência de testes (TASK 3):
+- `cargo test -p spex-bridge --test adversarial_parsing -- --nocapture`
+- `cargo test -p spex-transport --test p2p_manifest_recovery -- --nocapture`
+- `cargo test -p spex-core --test ctap2_cbor_vectors -- --nocapture`
+- `cargo +nightly fuzz run transport_manifest_gossip_parse --fuzz-dir fuzz -- -max_total_time=15 -seed=1` (smoke)
 
 Objective:
 - Fechar lacunas de robustez em parsing/decoding para superfícies externas (HTTP bridge + transporte P2P).

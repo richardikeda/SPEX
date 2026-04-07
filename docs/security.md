@@ -101,11 +101,18 @@ Comandos de smoke recomendados antes de release:
 ```bash
 cargo test -p spex-transport p2p_ingest_property
 cargo test -p spex-bridge adversarial_parsing
+cargo test -p spex-core --test ctap2_cbor_vectors -- --nocapture
+cargo test -p spex-transport --test p2p_manifest_recovery -- --nocapture
 for target_file in fuzz/fuzz_targets/*.rs; do
   target_name="$(basename "${target_file}" .rs)"
   cargo +nightly fuzz run "${target_name}" --fuzz-dir fuzz -- -max_total_time=30 -seed=1
 done
 ```
+
+Cobertura adicional aplicada nesta fase:
+
+- Fuzz target `transport_manifest_gossip_parse` para parsing/recovery de manifests de gossip em fronteira não-confiável.
+- Testes adversariais reforçados para bridge (`adversarial_parsing`), transporte (`p2p_manifest_recovery`) e core (`ctap2_cbor_vectors`).
 
 Política de fuzz smoke para release readiness:
 

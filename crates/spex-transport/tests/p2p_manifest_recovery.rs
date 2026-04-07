@@ -4,8 +4,9 @@ use libp2p::identity::Keypair;
 use spex_transport::chunking::{chunk_data, ChunkingConfig};
 use spex_transport::transport::ChunkDescriptor;
 use spex_transport::{
-    reassemble_correlation_id, reassemble_payload_from_store, Chunk, ChunkManifest,
-    P2pNodeConfig, P2pTransport, TransportConfig, TransportError,
+    parse_manifest_from_gossip, reassemble_correlation_id, reassemble_payload_from_store,
+    recover_manifest_from_gossip, Chunk, ChunkManifest, P2pNodeConfig, P2pTransport,
+    TransportConfig, TransportError,
 };
 
 /// Builds a chunk manifest from a set of chunks and payload length.
@@ -307,4 +308,21 @@ fn reassemble_correlation_is_deterministic_for_manifest_shape() {
 
     assert_eq!(first, second);
     assert_ne!(first, third);
+}
+
+/// Ensures malformed gossip payload decoding returns explicit serialization errors.
+#[test]
+fn malformed_manifest_payload_returns_explicit_error() {
+    let err = parse_manifest_from_gossip(b"{not-json")
+        .expect_err("malformed json payload must fail parsing");
+    assert!(matches!(err, TransportError::Serialization(_)));
+}
+
+/// Ensures manifest recovery ignores malformed payloads and returns explicit invalid-manifest when none are valid.
+#[test]
+fn manifest_recovery_returns_explicit_error_when_all_payloads_invalid() {
+    let payloads = vec![b"{bad-json".to_vec(), b"{\"chunks\":[],\"total_len\":1}".to_vec()];
+    let err = recover_manifest_from_gossip(&payloads)
+        .expect_err("recovery must fail when all candidate payloads are invalid");
+    assert!(matches!(err, TransportError::InvalidManifest(_)));
 }

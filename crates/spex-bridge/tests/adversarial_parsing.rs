@@ -1,4 +1,5 @@
 use spex_bridge::{parse_inbox_store_request_bytes, parse_storage_request_bytes};
+use proptest::prelude::*;
 
 /// Returns a deterministic baseline-valid payload used for adversarial parser mutations.
 fn valid_payload_json() -> String {
@@ -60,4 +61,35 @@ fn rejects_invalid_base64_required_field() {
     let encoded = serde_json::to_vec(&payload).expect("json encoding should succeed");
     assert!(parse_storage_request_bytes(&encoded).is_err());
     assert!(parse_inbox_store_request_bytes(&encoded).is_err());
+}
+
+/// Ensures invalid payload parsing remains deterministic for repeated decoding attempts.
+#[test]
+fn invalid_payload_error_is_deterministic() {
+    let mut payload: serde_json::Value =
+        serde_json::from_str(&valid_payload_json()).expect("baseline payload should parse");
+    payload["puzzle"]["recipient_key"] = serde_json::Value::String("###invalid###".to_string());
+    let encoded = serde_json::to_vec(&payload).expect("json encoding should succeed");
+
+    let first = parse_storage_request_bytes(&encoded)
+        .expect_err("invalid payload must fail")
+        .to_string();
+    let second = parse_storage_request_bytes(&encoded)
+        .expect_err("invalid payload must fail")
+        .to_string();
+    assert_eq!(first, second);
+}
+
+proptest! {
+    /// Ensures arbitrary untrusted bytes never panic bridge storage parser boundaries.
+    #[test]
+    fn storage_parser_never_panics_on_untrusted_bytes(input in proptest::collection::vec(any::<u8>(), 0..4096)) {
+        let _ = parse_storage_request_bytes(&input);
+    }
+
+    /// Ensures arbitrary untrusted bytes never panic bridge inbox parser boundaries.
+    #[test]
+    fn inbox_parser_never_panics_on_untrusted_bytes(input in proptest::collection::vec(any::<u8>(), 0..4096)) {
+        let _ = parse_inbox_store_request_bytes(&input);
+    }
 }
