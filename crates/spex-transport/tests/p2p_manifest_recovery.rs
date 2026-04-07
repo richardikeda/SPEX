@@ -5,7 +5,7 @@ use spex_transport::chunking::{chunk_data, ChunkingConfig};
 use spex_transport::transport::ChunkDescriptor;
 use spex_transport::{
     reassemble_payload_from_store, Chunk, ChunkManifest, P2pNodeConfig, P2pTransport,
-    TransportConfig,
+    TransportConfig, TransportError,
 };
 
 /// Builds a chunk manifest from a set of chunks and payload length.
@@ -262,4 +262,31 @@ async fn two_nodes_reject_corrupt_chunks() {
     let recovered =
         recovered.or_else(|_| reassemble_payload_from_store(&manifest, &store, &transport_config));
     assert!(recovered.is_err());
+}
+
+/// Ensures partial manifests are rejected with deterministic explicit error.
+#[test]
+fn reassemble_rejects_partial_manifest_with_explicit_error() {
+    let payload = b"partial manifest deterministic failure";
+    let config = TransportConfig {
+        chunking: ChunkingConfig {
+            chunk_size: 8,
+            ..ChunkingConfig::default()
+        },
+        ..TransportConfig::default()
+    };
+    let chunks = chunk_data(&config.chunking, payload);
+    let manifest = build_manifest_from_chunks(&chunks, payload.len());
+    let partial_manifest = ChunkManifest {
+        chunks: manifest.chunks[..manifest.chunks.len().saturating_sub(1)].to_vec(),
+        total_len: manifest.total_len,
+    };
+    let store: std::collections::HashMap<Vec<u8>, Vec<u8>> = chunks
+        .iter()
+        .map(|chunk| (chunk.hash.clone(), chunk.data.clone()))
+        .collect();
+
+    let err =
+        reassemble_payload_from_store(&partial_manifest, &store, &config).expect_err("must fail");
+    assert!(matches!(err, TransportError::PayloadLengthMismatch { .. }));
 }

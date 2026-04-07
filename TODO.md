@@ -202,6 +202,15 @@ Evidência de testes (TASK 1.1):
 
 ### [TASK 1.2] Recovery/Snapshot
 
+Status:
+- ✅ Concluída com status explícito de recovery/snapshot, contadores de restauração e quarentena determinística para snapshot corrompido.
+
+Evidência de testes (TASK 1.2):
+- `cargo test -p spex-transport --test planned_p2p_persistence test_snapshot_integrity_status_reports_restored_counts -- --nocapture`
+- `cargo test -p spex-transport --test planned_p2p_persistence test_corrupted_snapshot_is_quarantined_with_explicit_warning -- --nocapture`
+- `cargo test -p spex-transport --test p2p_manifest_recovery reassemble_rejects_partial_manifest_with_explicit_error -- --nocapture`
+- `cargo test -p spex-transport --test p2p_ingest_validation rejects_malformed_base64_payload_with_explicit_error -- --nocapture`
+
 - Arquivos-alvo (`crates/spex-transport/src/*`):
   - `crates/spex-transport/src/inbox.rs`
   - `crates/spex-transport/src/ingest.rs`

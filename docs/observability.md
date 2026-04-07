@@ -106,12 +106,26 @@ Troubleshooting (intermitente vs abuso recorrente):
 
 ### Subtarefa 1.2 — Recovery/Snapshot
 
-- Atualização obrigatória ao concluir:
-  - sinais de integridade de snapshot e resultado de validação no boot;
-  - contadores de quarentena para estado parcial/corrompido;
-  - fluxo de diagnóstico para recovery após restart.
-- Critério de aceite documental:
-  - runbook com decisão explícita entre retry, isolamento e recuperação limpa.
+Sinais implementados de integridade e recuperação:
+- `snapshot_recovery_status().load_state` com estados explícitos:
+  - `NotConfigured` (sem persistência configurada),
+  - `Missing` (arquivo ausente),
+  - `Loaded` (snapshot íntegro restaurado),
+  - `QuarantinedRecovered` (snapshot corrompido isolado e fallback limpo aplicado).
+- Contadores de restauração:
+  - `restored_known_peers`, `restored_manifests`, `restored_index_keys`.
+- Contadores de isolamento/quarentena:
+  - `quarantined_snapshots`, `last_quarantined_path`.
+
+Comportamento de erro determinístico:
+- Snapshot parcial/corrompido é movido para quarentena (`*.corrupt-<unix>.json`) e o runtime inicia com snapshot vazio seguro.
+- A inicialização retorna warning explícito em `persistence_warnings()` com mensagem determinística de corrupção.
+
+Runbook de decisão (restart/recovery):
+1. Verificar `snapshot_recovery_status().load_state`.
+2. Se `Loaded`: seguir operação normal e comparar contadores restaurados com baseline esperado.
+3. Se `QuarantinedRecovered`: preservar arquivo em quarentena para análise forense e operar em modo degradado até re-hidratação.
+4. Se `Missing`/`NotConfigured`: iniciar bootstrap padrão e validar convergência de peers/manifests antes de promover para healthy.
 
 ### Subtarefa 1.3 — Churn testing
 

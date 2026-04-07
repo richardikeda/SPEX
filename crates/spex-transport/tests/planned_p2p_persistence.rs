@@ -5,7 +5,7 @@ use libp2p::identity::Keypair;
 use libp2p::PeerId;
 use spex_transport::{
     decode_bootstrap_snapshot, encode_bootstrap_snapshot, P2pNodeConfig, P2pTransport,
-    PersistedBootstrapState, PersistedPeer, TransportConfig,
+    PersistedBootstrapState, PersistedPeer, SnapshotLoadState, TransportConfig,
 };
 
 /// Drives two nodes together so both sides can process connection handshakes.
@@ -93,6 +93,51 @@ async fn test_peer_persistence_across_restarts() {
 
     drive_pair_until_connected(&mut node_a, &mut restarted, Duration::from_secs(6)).await;
     assert!(restarted.known_peer_count() > 0);
+    let status = restarted.snapshot_recovery_status();
+    assert_eq!(status.load_state, SnapshotLoadState::Loaded);
+    assert!(status.restored_known_peers > 0);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_snapshot_integrity_status_reports_restored_counts() {
+    // Verifies restart recovery reports explicit restored counters for deterministic diagnostics.
+    let snapshot_path = unique_snapshot_path("integrity-status");
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("clock")
+        .as_secs();
+    let snapshot = PersistedBootstrapState {
+        known_peers: vec![PersistedPeer {
+            peer_id: PeerId::random().to_string(),
+            addresses: vec![],
+            last_seen_unix_seconds: now,
+            origin_tag: "seed".to_string(),
+        }],
+        bootstrap_addrs: vec![],
+        manifests: vec![],
+        index_keys: vec!["abc123".to_string()],
+        peer_reputation: vec![],
+    };
+    let bytes = encode_bootstrap_snapshot(&snapshot).expect("encode snapshot");
+    std::fs::write(&snapshot_path, bytes).expect("write snapshot");
+
+    let node = P2pTransport::new(
+        Keypair::generate_ed25519(),
+        TransportConfig::default(),
+        P2pNodeConfig {
+            listen_addrs: vec!["/ip4/127.0.0.1/tcp/0".parse().expect("listen")],
+            persistence_path: Some(snapshot_path),
+            ..P2pNodeConfig::default()
+        },
+    )
+    .await
+    .expect("node");
+
+    let status = node.snapshot_recovery_status();
+    assert_eq!(status.load_state, SnapshotLoadState::Loaded);
+    assert_eq!(status.restored_known_peers, 1);
+    assert_eq!(status.restored_index_keys, 1);
+    assert_eq!(status.quarantined_snapshots, 0);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -194,6 +239,10 @@ async fn test_corrupted_snapshot_is_quarantined_with_explicit_warning() {
     .expect("node should start with safe fallback");
 
     assert!(!node.persistence_warnings().is_empty());
+    let status = node.snapshot_recovery_status();
+    assert_eq!(status.load_state, SnapshotLoadState::QuarantinedRecovered);
+    assert_eq!(status.quarantined_snapshots, 1);
+    assert!(status.last_quarantined_path.is_some());
     let parent = snapshot_path.parent().expect("parent");
     let has_quarantine = std::fs::read_dir(parent)
         .expect("read dir")

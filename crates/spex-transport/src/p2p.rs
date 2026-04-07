@@ -77,6 +77,40 @@ pub struct PeerReputationSnapshot {
     pub state: PeerReputationState,
 }
 
+/// Snapshot load outcome used for deterministic recovery diagnostics.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SnapshotLoadState {
+    NotConfigured,
+    Missing,
+    Loaded,
+    QuarantinedRecovered,
+}
+
+/// Captures snapshot recovery integrity state for startup and restart flows.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SnapshotRecoveryStatus {
+    pub load_state: SnapshotLoadState,
+    pub restored_known_peers: usize,
+    pub restored_manifests: usize,
+    pub restored_index_keys: usize,
+    pub quarantined_snapshots: u64,
+    pub last_quarantined_path: Option<String>,
+}
+
+impl Default for SnapshotRecoveryStatus {
+    /// Returns a neutral startup status before any persistence decision is evaluated.
+    fn default() -> Self {
+        Self {
+            load_state: SnapshotLoadState::NotConfigured,
+            restored_known_peers: 0,
+            restored_manifests: 0,
+            restored_index_keys: 0,
+            quarantined_snapshots: 0,
+            last_quarantined_path: None,
+        }
+    }
+}
+
 /// Deployment profile with explicit timeout defaults for publish/query/recovery flows.
 #[derive(Clone, Copy, Debug)]
 pub enum P2pRuntimeProfile {
@@ -313,6 +347,7 @@ pub struct P2pTransport {
     known_index_keys: HashSet<String>,
     peer_scores: HashMap<PeerId, PeerScore>,
     persistence_warnings: Vec<String>,
+    snapshot_recovery_status: SnapshotRecoveryStatus,
     metrics: Arc<Mutex<P2pMetrics>>,
 }
 
@@ -340,6 +375,7 @@ impl P2pTransport {
             known_index_keys: HashSet::new(),
             peer_scores: HashMap::new(),
             persistence_warnings: Vec::new(),
+            snapshot_recovery_status: SnapshotRecoveryStatus::default(),
             metrics: Arc::new(Mutex::new(P2pMetrics::default())),
         };
         if let Err(err) = transport.load_persisted_state() {
@@ -422,6 +458,11 @@ impl P2pTransport {
     /// Returns persistence warnings collected during startup-safe recovery paths.
     pub fn persistence_warnings(&self) -> &[String] {
         &self.persistence_warnings
+    }
+
+    /// Returns startup recovery integrity status for the persistence snapshot.
+    pub fn snapshot_recovery_status(&self) -> &SnapshotRecoveryStatus {
+        &self.snapshot_recovery_status
     }
 
     /// Returns timeout tuning computed from profile defaults and observed connectivity.
@@ -1179,21 +1220,37 @@ impl P2pTransport {
     /// Loads persisted state from disk and quarantines corrupted snapshots before fallback.
     fn load_persisted_state(&mut self) -> Result<(), TransportError> {
         let Some(path) = &self.node_config.persistence_path else {
+            self.snapshot_recovery_status.load_state = SnapshotLoadState::NotConfigured;
             return Ok(());
         };
         if !path.exists() {
+            self.snapshot_recovery_status.load_state = SnapshotLoadState::Missing;
             return Ok(());
         }
         let snapshot = match read_bootstrap_snapshot(path) {
             Ok(snapshot) => snapshot,
             Err(err) => {
-                self.quarantine_corrupted_snapshot(path)?;
+                let quarantined = self.quarantine_corrupted_snapshot(path)?;
                 write_bootstrap_snapshot_atomic(path, &PersistedBootstrapState::empty())?;
+                self.snapshot_recovery_status.load_state = SnapshotLoadState::QuarantinedRecovered;
+                self.snapshot_recovery_status.quarantined_snapshots = self
+                    .snapshot_recovery_status
+                    .quarantined_snapshots
+                    .saturating_add(1);
+                self.snapshot_recovery_status.last_quarantined_path =
+                    Some(quarantined.display().to_string());
+                self.snapshot_recovery_status.restored_known_peers = 0;
+                self.snapshot_recovery_status.restored_manifests = 0;
+                self.snapshot_recovery_status.restored_index_keys = 0;
                 return Err(TransportError::InvalidPayload(format!(
                     "corrupted persisted state detected and quarantined: {err}"
                 )));
             }
         };
+        self.snapshot_recovery_status.load_state = SnapshotLoadState::Loaded;
+        self.snapshot_recovery_status.restored_known_peers = snapshot.known_peers.len();
+        self.snapshot_recovery_status.restored_manifests = snapshot.manifests.len();
+        self.snapshot_recovery_status.restored_index_keys = snapshot.index_keys.len();
         self.known_manifests = snapshot.manifests;
         self.known_index_keys = snapshot.index_keys.into_iter().collect();
         for peer in snapshot.known_peers {
@@ -1239,12 +1296,13 @@ impl P2pTransport {
     }
 
     /// Moves a corrupted snapshot away from active path so recovery can continue safely.
-    fn quarantine_corrupted_snapshot(&self, path: &PathBuf) -> Result<(), TransportError> {
+    fn quarantine_corrupted_snapshot(&self, path: &PathBuf) -> Result<PathBuf, TransportError> {
         let unix = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_or(0, |duration| duration.as_secs());
         let quarantined = path.with_extension(format!("corrupt-{unix}.json"));
-        fs::rename(path, quarantined).map_err(|err| TransportError::Libp2p(err.to_string()))
+        fs::rename(path, &quarantined).map_err(|err| TransportError::Libp2p(err.to_string()))?;
+        Ok(quarantined)
     }
 
     /// Returns bootstrap addresses loaded from persistent snapshots for rehydration.

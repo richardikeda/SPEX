@@ -88,3 +88,18 @@ fn rejects_weak_pow_in_p2p_ingest() {
     let result = validate_p2p_puzzle_payload(&payload);
     assert!(matches!(result, Err(TransportError::PowTooWeak)));
 }
+
+/// Ensures malformed base64 payloads return explicit deterministic invalid-payload errors.
+#[test]
+fn rejects_malformed_base64_payload_with_explicit_error() {
+    let payload = P2pGrantPayload {
+        user_id: "@@not-base64@@".to_string(),
+        role: 1,
+        flags: None,
+        expires_at: None,
+        verifying_key: "@@not-base64@@".to_string(),
+        signature: "@@not-base64@@".to_string(),
+    };
+    let result = validate_p2p_grant_payload(1_700_000_000, &payload);
+    assert!(matches!(result, Err(TransportError::InvalidPayload(_))));
+}
