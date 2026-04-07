@@ -17,16 +17,17 @@ pub use chunking::{chunk_data, reassemble_chunks, Chunk, ChunkingConfig};
 pub use error::TransportError;
 pub use inbox::{resolve_inbox_with_fallback, BridgeClient, InboxScanRequest, InboxScanResponse};
 pub use ingest::{
-    validate_p2p_grant_payload, validate_p2p_puzzle_payload, P2pGrantPayload, P2pPuzzlePayload,
-    PowParamsPayload,
+    ingest_validation_correlation_id, validate_p2p_grant_payload, validate_p2p_puzzle_payload,
+    P2pGrantPayload, P2pPuzzlePayload, PowParamsPayload,
 };
 pub use p2p::{
     inbox_gossip_topic, P2pMetricsSnapshot, P2pNodeConfig, P2pRuntimeProfile, P2pTransport,
     PeerReputationSnapshot, PeerReputationState, SnapshotLoadState, SnapshotRecoveryStatus,
 };
 pub use telemetry::{
-    derive_minimal_correlation_id, derive_operation_correlation_id, NetworkHealthIndicators,
-    NetworkHealthStatus, NetworkHealthThresholds,
+    derive_minimal_correlation_id, derive_operation_correlation,
+    derive_operation_correlation_id, NetworkHealthIndicators, NetworkHealthStatus,
+    NetworkHealthThresholds, OperationCorrelation,
 };
 pub use transport::manifest_payload;
 pub use transport::{
@@ -35,7 +36,8 @@ pub use transport::{
     random_walk_with_key, read_bootstrap_snapshot, reassemble_chunks_with_manifest,
     reassemble_payload_from_store, reconstruct_envelope, recover_chunks_from_store,
     recover_manifest_from_gossip, renew_chunk_ttl, replicate_manifest,
-    robust_random_walk_with_seed, robust_random_walk_with_sources, start_manifest_chunk_queries,
-    write_bootstrap_snapshot_atomic, BuildTransport, ChunkManifest, PersistedBootstrapState,
-    PersistedPeer, PersistedPeerReputation, TransportComponents, TransportConfig,
+    robust_random_walk_with_seed, robust_random_walk_with_sources, reassemble_correlation_id,
+    start_manifest_chunk_queries, write_bootstrap_snapshot_atomic, BuildTransport, ChunkManifest,
+    PersistedBootstrapState, PersistedPeer, PersistedPeerReputation, TransportComponents,
+    TransportConfig,
 };

@@ -8,6 +8,7 @@ use spex_core::{
 };
 
 use crate::error::TransportError;
+use crate::telemetry::derive_operation_correlation;
 
 /// PoW parameters serialized for P2P ingestion payloads.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
@@ -96,6 +97,11 @@ pub fn validate_p2p_puzzle_payload(payload: &P2pPuzzlePayload) -> Result<(), Tra
         PowParams::minimum(),
     )
     .map_err(map_validation_error)
+}
+
+/// Derives deterministic correlation for ingest validation without exposing raw payload bytes.
+pub fn ingest_validation_correlation_id(payload_hint: Option<&[u8]>) -> String {
+    derive_operation_correlation("ingest", payload_hint).correlation_id
 }
 
 /// Converts a shared validation error into a transport-layer error.

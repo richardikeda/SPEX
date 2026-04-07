@@ -155,9 +155,32 @@ Matriz de sintomas versus ação corretiva:
 
 ### Subtarefa 1.4 — Observabilidade
 
-- Atualização obrigatória ao concluir:
-  - catálogo final de métricas/traces por operação (`publish`, `recovery`, `fallback`, `ingest`, `reassemble`);
-  - política de correlação determinística com fallback para metadado ausente;
-  - checklist de campos obrigatórios para auditoria operacional.
-- Critério de aceite documental:
-  - seção de readiness com critérios objetivos para liberar operação contínua em produção.
+Catálogo final por operação:
+- `publish`:
+  - contadores: `publish_attempts`, `publish_retries`, `publish_timeout`, `publish_success`;
+  - latência: `publish_latency_ms`;
+  - correlação: `derive_operation_correlation("publish", context)` com fallback explícito quando contexto ausente.
+- `recovery`:
+  - contadores: `recovery_attempts`, `recovery_retries`, `recovery_timeout`, `recovery_success`;
+  - latência: `recovery_latency_ms`;
+  - sinais de integridade: parse de manifest, verificação de chunk e reassemble com erro explícito.
+- `fallback`:
+  - contadores globais: `fallback_attempts`, `fallback_success`, `fallback_failure`;
+  - ratio operacional: `fallback_failure_ratio_bps` em `network_health_indicators(...)`.
+- `ingest`:
+  - validação determinística de payload (`grant`/`puzzle`) com erro explícito e sem panic;
+  - correlação: `ingest_validation_correlation_id(...)` sem uso de payload bruto.
+- `reassemble`:
+  - correlação por formato: `reassemble_correlation_id(manifest)` baseado em forma do manifest (`total_len` + quantidade de chunks), sem bytes sensíveis.
+
+Política de correlação determinística:
+1. Contexto disponível e não vazio: usar `derive_operation_correlation_id(operation, context)`.
+2. Contexto ausente/vazio: usar fallback determinístico `derive_minimal_correlation_id(operation)`.
+3. Toda aplicação de fallback deve ser auditável via `used_minimal_context` na estrutura de correlação.
+
+Checklist operacional de readiness:
+1. Taxa de timeout (`timeout_ratio_bps`) dentro dos limiares de `NetworkHealthThresholds`.
+2. `fallback_failure_ratio_bps` abaixo do limite configurado para produção.
+3. Ausência de `critical` sustentado em janelas contínuas de observação.
+4. Erros de ingest/reassemble permanecem explícitos, determinísticos e sem panic paths.
+5. IDs de correlação permanecem estáveis para o mesmo contexto e diferentes entre contextos distintos.

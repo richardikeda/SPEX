@@ -23,8 +23,8 @@ use rand::Rng;
 use tracing::{info, warn};
 
 use crate::telemetry::{
-    derive_minimal_correlation_id, derive_operation_correlation_id, NetworkHealthIndicators,
-    NetworkHealthStatus, NetworkHealthThresholds,
+    derive_operation_correlation, NetworkHealthIndicators, NetworkHealthStatus,
+    NetworkHealthThresholds,
 };
 
 use spex_core::hash::{hash_bytes, HashId};
@@ -574,11 +574,8 @@ impl P2pTransport {
         self.drive_swarm(publish_wait, &mut ignored, |_, _| {})
             .await;
         for inbox_key in inbox_keys {
-            let correlation_id = if inbox_key.is_empty() {
-                derive_minimal_correlation_id("publish")
-            } else {
-                derive_operation_correlation_id("publish", inbox_key)
-            };
+            let correlation = derive_operation_correlation("publish", Some(inbox_key));
+            let correlation_id = correlation.correlation_id;
             let connect_deadline = Instant::now() + publish_wait;
             while self.swarm.connected_peers().next().is_none() && Instant::now() < connect_deadline
             {
@@ -607,6 +604,9 @@ impl P2pTransport {
                 let _ = self.swarm.behaviour_mut().gossipsub.subscribe(&topic);
                 self.drive_swarm(Duration::from_millis(200), &mut ignored, |_, _| {})
                     .await;
+            }
+            if correlation.used_minimal_context {
+                warn!(target: "spex_transport::p2p", operation="publish_manifest", correlation_id=%correlation_id, used_minimal_context=true, "publish correlation fallback applied");
             }
             let mut attempts = 0;
             loop {
@@ -691,11 +691,8 @@ impl P2pTransport {
 
         let operation_start = Instant::now();
         self.record_attempt("recovery");
-        let correlation_id = if inbox_key.is_empty() {
-            derive_minimal_correlation_id("recovery")
-        } else {
-            derive_operation_correlation_id("recovery", inbox_key)
-        };
+        let correlation = derive_operation_correlation("recovery", Some(inbox_key));
+        let correlation_id = correlation.correlation_id;
         let retry = self.node_config.adaptive_retry();
         let mut payloads = Vec::new();
         let mut resubscribe_at = Instant::now();
@@ -703,6 +700,9 @@ impl P2pTransport {
         let (_, _, manifest_wait) = self.tuned_timeouts();
         let effective_wait = wait.min(manifest_wait).max(Duration::from_millis(500));
         let deadline = Instant::now() + effective_wait;
+        if correlation.used_minimal_context {
+            warn!(target: "spex_transport::p2p", operation="recovery_inbox", correlation_id=%correlation_id, used_minimal_context=true, "recovery correlation fallback applied");
+        }
         while Instant::now() < deadline {
             if Instant::now() >= resubscribe_at {
                 let _ = self.swarm.behaviour_mut().gossipsub.subscribe(&topic);

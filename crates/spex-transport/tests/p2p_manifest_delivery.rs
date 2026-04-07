@@ -4,7 +4,8 @@ use libp2p::{identity::Keypair, PeerId};
 use spex_transport::chunking::{chunk_data, ChunkingConfig};
 use spex_transport::transport::ChunkDescriptor;
 use spex_transport::{
-    Chunk, ChunkManifest, P2pNodeConfig, P2pTransport, PeerReputationState, TransportConfig,
+    derive_operation_correlation, Chunk, ChunkManifest, P2pNodeConfig, P2pTransport,
+    PeerReputationState, TransportConfig,
 };
 
 /// Builds a chunk manifest from chunk data and payload length.
@@ -141,4 +142,18 @@ async fn recurring_invalid_payload_escalates_to_ban() {
     assert_eq!(second.invalid_payload_penalties, 2);
     assert_eq!(second.state, PeerReputationState::Banned);
     assert!(node.is_peer_banned(&peer));
+}
+
+/// Verifies publish observability falls back deterministically when inbox context is missing.
+#[test]
+fn publish_correlation_fallback_is_deterministic_without_inbox_context() {
+    let fallback = derive_operation_correlation("publish", None);
+    let empty = derive_operation_correlation("publish", Some(&[]));
+    let with_context = derive_operation_correlation("publish", Some(b"inbox-key"));
+
+    assert!(fallback.used_minimal_context);
+    assert!(empty.used_minimal_context);
+    assert!(!with_context.used_minimal_context);
+    assert_eq!(fallback.correlation_id, empty.correlation_id);
+    assert_ne!(fallback.correlation_id, with_context.correlation_id);
 }

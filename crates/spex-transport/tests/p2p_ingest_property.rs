@@ -1,6 +1,7 @@
 use proptest::prelude::*;
 use spex_transport::{
-    validate_p2p_grant_payload, validate_p2p_puzzle_payload, P2pGrantPayload, P2pPuzzlePayload,
+    ingest_validation_correlation_id, validate_p2p_grant_payload, validate_p2p_puzzle_payload,
+    P2pGrantPayload, P2pPuzzlePayload,
 };
 
 proptest! {
@@ -31,5 +32,13 @@ proptest! {
                 prop_assert_eq!(first_err.to_string(), second_err.to_string());
             }
         }
+    }
+
+    /// Ensures ingest correlation helper remains deterministic for equal context hints.
+    #[test]
+    fn ingest_correlation_is_deterministic(input in proptest::collection::vec(any::<u8>(), 0..1024)) {
+        let first = ingest_validation_correlation_id(Some(&input));
+        let second = ingest_validation_correlation_id(Some(&input));
+        prop_assert_eq!(first, second);
     }
 }

@@ -6,8 +6,8 @@ use spex_core::{
     types::GrantToken,
 };
 use spex_transport::{
-    validate_p2p_grant_payload, validate_p2p_puzzle_payload, P2pGrantPayload, P2pPuzzlePayload,
-    PowParamsPayload, TransportError,
+    ingest_validation_correlation_id, validate_p2p_grant_payload, validate_p2p_puzzle_payload,
+    P2pGrantPayload, P2pPuzzlePayload, PowParamsPayload, TransportError,
 };
 
 /// Builds a deterministic signing key for P2P ingest validation tests.
@@ -102,4 +102,15 @@ fn rejects_malformed_base64_payload_with_explicit_error() {
     };
     let result = validate_p2p_grant_payload(1_700_000_000, &payload);
     assert!(matches!(result, Err(TransportError::InvalidPayload(_))));
+}
+
+/// Ensures ingest correlation fallback is deterministic when contextual bytes are unavailable.
+#[test]
+fn ingest_correlation_fallback_is_deterministic() {
+    let missing = ingest_validation_correlation_id(None);
+    let empty = ingest_validation_correlation_id(Some(&[]));
+    let with_hint = ingest_validation_correlation_id(Some(b"grant"));
+
+    assert_eq!(missing, empty);
+    assert_ne!(missing, with_hint);
 }

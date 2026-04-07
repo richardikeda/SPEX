@@ -40,6 +40,13 @@ pub struct NetworkHealthIndicators {
     pub status: NetworkHealthStatus,
 }
 
+/// Correlation output that explicitly indicates whether minimal-context fallback was used.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct OperationCorrelation {
+    pub correlation_id: String,
+    pub used_minimal_context: bool,
+}
+
 /// Builds a deterministic correlation identifier from operation class and context bytes.
 pub fn derive_operation_correlation_id(operation: &str, context: &[u8]) -> String {
     let mut material = Vec::with_capacity(operation.len() + context.len() + 10);
@@ -54,6 +61,20 @@ pub fn derive_operation_correlation_id(operation: &str, context: &[u8]) -> Strin
 /// Builds a deterministic correlation identifier for incomplete telemetry contexts.
 pub fn derive_minimal_correlation_id(operation: &str) -> String {
     derive_operation_correlation_id(operation, b"missing-context")
+}
+
+/// Builds operation correlation output and marks whether minimal fallback context was used.
+pub fn derive_operation_correlation(operation: &str, context: Option<&[u8]>) -> OperationCorrelation {
+    match context {
+        Some(bytes) if !bytes.is_empty() => OperationCorrelation {
+            correlation_id: derive_operation_correlation_id(operation, bytes),
+            used_minimal_context: false,
+        },
+        _ => OperationCorrelation {
+            correlation_id: derive_minimal_correlation_id(operation),
+            used_minimal_context: true,
+        },
+    }
 }
 
 #[cfg(test)]
@@ -76,5 +97,19 @@ mod tests {
         let missing = derive_minimal_correlation_id("recovery");
         let explicit = derive_operation_correlation_id("recovery", b"missing-context");
         assert_eq!(missing, explicit);
+    }
+
+    /// Verifies optional context selection is deterministic and reports fallback usage.
+    #[test]
+    fn test_derive_operation_correlation_reports_fallback_usage() {
+        let fallback = derive_operation_correlation("publish", None);
+        let empty = derive_operation_correlation("publish", Some(&[]));
+        let contextual = derive_operation_correlation("publish", Some(b"inbox-key"));
+
+        assert!(fallback.used_minimal_context);
+        assert!(empty.used_minimal_context);
+        assert!(!contextual.used_minimal_context);
+        assert_eq!(fallback.correlation_id, empty.correlation_id);
+        assert_ne!(fallback.correlation_id, contextual.correlation_id);
     }
 }

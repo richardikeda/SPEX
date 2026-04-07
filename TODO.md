@@ -255,6 +255,15 @@ Evidência de testes (TASK 1.3):
 
 ### [TASK 1.4] Observabilidade
 
+Status:
+- ✅ Concluída com catálogo operacional final por operação, correlação determinística com fallback explícito e checklist objetivo de readiness.
+
+Evidência de testes (TASK 1.4):
+- `cargo test -p spex-transport --test p2p_manifest_delivery publish_correlation_fallback_is_deterministic_without_inbox_context -- --nocapture`
+- `cargo test -p spex-transport --test p2p_manifest_recovery reassemble_correlation_is_deterministic_for_manifest_shape -- --nocapture`
+- `cargo test -p spex-transport --test p2p_ingest_property ingest_correlation_is_deterministic -- --nocapture`
+- `cargo test -p spex-transport --test p2p_ingest_validation ingest_correlation_fallback_is_deterministic -- --nocapture`
+
 - Arquivos-alvo (`crates/spex-transport/src/*`):
   - `crates/spex-transport/src/telemetry.rs`
   - `crates/spex-transport/src/p2p.rs`

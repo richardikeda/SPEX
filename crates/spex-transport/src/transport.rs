@@ -23,6 +23,7 @@ use spex_core::types::Envelope;
 
 use crate::chunking::{chunk_data, Chunk, ChunkingConfig};
 use crate::error::TransportError;
+use crate::telemetry::derive_operation_correlation;
 
 #[derive(Clone, Debug)]
 pub struct TransportConfig {
@@ -425,6 +426,14 @@ pub fn reassemble_payload_from_store(
 ) -> Result<Vec<u8>, TransportError> {
     let chunks = recover_chunks_from_store(manifest, store, config)?;
     reassemble_chunks_with_manifest(manifest, &chunks, config)
+}
+
+/// Builds deterministic reassemble correlation from manifest shape without chunk payload bytes.
+pub fn reassemble_correlation_id(manifest: &ChunkManifest) -> String {
+    let mut context = Vec::with_capacity(16);
+    context.extend_from_slice(&(manifest.total_len as u64).to_be_bytes());
+    context.extend_from_slice(&(manifest.chunks.len() as u64).to_be_bytes());
+    derive_operation_correlation("reassemble", Some(&context)).correlation_id
 }
 
 /// Reassembles chunks into an Envelope, validating hashes and manifest length.

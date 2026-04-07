@@ -4,8 +4,8 @@ use libp2p::identity::Keypair;
 use spex_transport::chunking::{chunk_data, ChunkingConfig};
 use spex_transport::transport::ChunkDescriptor;
 use spex_transport::{
-    reassemble_payload_from_store, Chunk, ChunkManifest, P2pNodeConfig, P2pTransport,
-    TransportConfig, TransportError,
+    reassemble_correlation_id, reassemble_payload_from_store, Chunk, ChunkManifest,
+    P2pNodeConfig, P2pTransport, TransportConfig, TransportError,
 };
 
 /// Builds a chunk manifest from a set of chunks and payload length.
@@ -289,4 +289,22 @@ fn reassemble_rejects_partial_manifest_with_explicit_error() {
     let err =
         reassemble_payload_from_store(&partial_manifest, &store, &config).expect_err("must fail");
     assert!(matches!(err, TransportError::PayloadLengthMismatch { .. }));
+}
+
+/// Ensures reassemble observability correlation is deterministic and manifest-shape scoped.
+#[test]
+fn reassemble_correlation_is_deterministic_for_manifest_shape() {
+    let payload = b"telemetry reassemble correlation";
+    let config = TransportConfig::default();
+    let chunks = chunk_data(&config.chunking, payload);
+    let manifest = build_manifest_from_chunks(&chunks, payload.len());
+    let mut altered = manifest.clone();
+    altered.total_len = altered.total_len.saturating_add(1);
+
+    let first = reassemble_correlation_id(&manifest);
+    let second = reassemble_correlation_id(&manifest);
+    let third = reassemble_correlation_id(&altered);
+
+    assert_eq!(first, second);
+    assert_ne!(first, third);
 }
