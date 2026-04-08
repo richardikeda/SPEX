@@ -2,47 +2,33 @@
 
 ## Scope
 
-All v1.0 blockers and post-1.0 backlog items have been resolved.
-The only remaining actions require maintainer authorization (git push, live TLS deployment).
+All v1.0 code blockers are resolved. The items below require maintainer action
+before or at the time of public deployment.
 
 ---
 
 ## [RELEASE GATE] Push Git Version Tags to Origin
 
-Local tags have been created (`git tag --list` returns v1.0.0, v1.0.1, v1.0.2, v1.0.3, v1.0.4).
-They must be pushed to the remote repository to establish public release provenance.
+Local tags exist: `v1.0.0`, `v1.0.1`, `v1.0.2`, `v1.0.3`, `v1.0.4`.
+Only `v1.0.1` is currently on the remote.
 
 Required action (maintainer):
 ```bash
-git push origin v1.0.0 v1.0.1 v1.0.2 v1.0.3 v1.0.4
+git push origin v1.0.0 v1.0.2 v1.0.3 v1.0.4
 ```
 
 Acceptance criteria:
-- Tags are visible on the remote (e.g., GitHub releases / tags page).
-- `CHANGELOG.md` "Published Versions" section lists v1.0.4 as current.
+- All tags visible on the remote (GitHub releases / tags page).
+- `CHANGELOG.md` "Published Versions" section matches.
 
 ---
 
-## [RELEASE GATE] Run TLS Validation and Attach Evidence
+## Post-Release Backlog (Not Blocking)
 
-Automates the checklist from `docs/bridge-tls-deployment.md`.
-
-Required action (maintainer):
-```bash
-./scripts/tls_validation.sh <your-bridge-host>
-# Attach tls-validation-evidence.txt to the v1.0.4 release.
-```
-
-Acceptance criteria:
-- Script exits 0 (all checks pass).
-- Evidence file is attached to the release notes.
-
----
-
-## Post-1.0 Backlog (Not Blocking Release)
-
+- Run `./scripts/tls_validation.sh <bridge-host>` before first production deployment
+  and attach `tls-validation-evidence.txt` to the release notes.
 - Longer-duration transport churn/soak campaigns and expanded anti-eclipse thresholds.
 - Advanced MLS cross-implementation interop matrix expansion.
 - Stateful and differential fuzz campaign expansion beyond release smoke baseline.
-- Broader CI matrix expansion (for example, Windows/macOS full test execution).
+- Broader CI matrix expansion (Windows/macOS full test execution).
 - Observability exporter standardization and dashboard packaging.
