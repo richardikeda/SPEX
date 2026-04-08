@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 use spex_core::error::SpexError;
 use spex_core::pow::{
     generate_puzzle_output, validate_pow_nonce, verify_puzzle_output, PowNonceParams, PowParams,

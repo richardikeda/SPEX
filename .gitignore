@@ -1,6 +1,13 @@
 target/
 **/*.rs.bk
 *.swp
+*.swo
 *.log
 .DS_Store
 skill-build
+.idea/
+.vscode/
+.env
+.env.*
+Thumbs.db
+Desktop.ini

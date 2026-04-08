@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 use spex_core::types::ProtoSuite;
 use spex_mls::{
     parse_external_commit, Commit, ExternalCommit, Group, GroupConfig, GroupMessage, MlsError,

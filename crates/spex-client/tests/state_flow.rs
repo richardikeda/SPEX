@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 use spex_client::{
     create_contact_card_payload, create_identity, create_identity_in_state,
     create_thread_for_state, redeem_contact_card_to_state, send_thread_message_for_state,

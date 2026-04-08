@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 use crate::{
     error::SpexError,
     hash::{hash_ctap2_cbor_value, HashId},

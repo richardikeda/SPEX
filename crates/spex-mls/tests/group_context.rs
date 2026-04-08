@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 use spex_core::{test_vectors, types::ProtoSuite};
 use spex_mls::{Commit, Group, GroupConfig};
 

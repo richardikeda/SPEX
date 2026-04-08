@@ -12,3 +12,6 @@ members = [
 [workspace.package]
 edition = "2021"
 license = "MPL-2.0"
+repository = "https://github.com/richardikeda/SPEX"
+homepage = "https://github.com/richardikeda/SPEX"
+readme = "README.md"

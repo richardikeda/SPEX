@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 #![forbid(unsafe_code)]
 
 //! SPEX transport layer built on libp2p.

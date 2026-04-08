@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 

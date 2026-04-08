@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 use proptest::prelude::*;
 use spex_transport::{
     ingest_validation_correlation_id, validate_p2p_grant_payload, validate_p2p_puzzle_payload,

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 use rusqlite::{params, Connection};
 use spex_bridge::{export_abuse_logs, init_state, AbuseLogFilter};
 

@@ -3,6 +3,12 @@ name = "spex-core"
 version = "0.1.1"
 edition = "2021"
 license = "MPL-2.0"
+description = "Core primitives, canonical CBOR, validation, hashing, signatures, and PoW for the SPEX protocol."
+repository = "https://github.com/richardikeda/SPEX"
+homepage = "https://github.com/richardikeda/SPEX"
+readme = "../README.md"
+keywords = ["protocol", "security", "cryptography", "messaging", "cbor"]
+categories = ["cryptography", "encoding", "network-programming"]
 
 [lib]
 path = "src/lib.rs"

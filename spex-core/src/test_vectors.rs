@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 // v0.1.1 test vectors (hex strings from the spec)
 pub const TV1_CONFIG_CBOR_HEX: &str =
 "a6000101000201030104582000112233445566778899aabbccddeeff00112233445566778899aabbccddeeff0582a30054a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a101010207a30054b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b201020301";

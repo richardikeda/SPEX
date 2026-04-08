@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 use ed25519_dalek::Signature;
 use spex_core::hash::HashId;
 use spex_core::{aead_ad, hash, mls_ext, sign, test_vectors, types};

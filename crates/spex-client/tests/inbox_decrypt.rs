@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 use spex_client::{
     create_identity, create_thread_state, decrypt_thread_envelope, fingerprint_hex, now_unix,
     send_thread_message, ContactState, LocalState,

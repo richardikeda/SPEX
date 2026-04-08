@@ -3,6 +3,12 @@ name = "spex-cli"
 version = "0.1.0"
 edition = "2021"
 license = "MPL-2.0"
+description = "Reference command-line interface for SPEX operational and integration flows."
+repository = "https://github.com/richardikeda/SPEX"
+homepage = "https://github.com/richardikeda/SPEX"
+readme = "../../README.md"
+keywords = ["protocol", "security", "cli", "messaging", "mls"]
+categories = ["command-line-utilities", "cryptography", "network-programming"]
 
 [[bin]]
 name = "spex"

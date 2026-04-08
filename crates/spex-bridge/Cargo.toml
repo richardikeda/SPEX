@@ -3,6 +3,12 @@ name = "spex-bridge"
 version = "0.1.0"
 edition = "2021"
 license = "MPL-2.0"
+description = "HTTP bridge relay for SPEX with explicit validation and abuse controls."
+repository = "https://github.com/richardikeda/SPEX"
+homepage = "https://github.com/richardikeda/SPEX"
+readme = "../../README.md"
+keywords = ["protocol", "security", "bridge", "http", "messaging"]
+categories = ["network-programming", "web-programming::http-server", "cryptography"]
 
 [dependencies]
 axum = { version = "0.7", features = ["macros"] }

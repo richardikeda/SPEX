@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use libp2p::identity::Keypair;

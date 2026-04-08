@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 use axum::{extract::Path, routing::put, Json, Router};
 use serde_json::json;
 use spex_transport::{

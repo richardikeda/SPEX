@@ -133,6 +133,13 @@ Recommended controls:
 
 Security fixes are prioritized and may trigger out-of-cycle releases.
 All security-relevant fixes must be documented in CHANGELOG.md.
+Users should monitor repository releases and changelog entries for remediation guidance.
+
+## Contact and Coordination
+
+- Private vulnerability disclosure: contato@enterscript.com
+- Public non-security questions: use GitHub issues with explicit technical context
+- Security-sensitive reports must remain private until coordinated disclosure is complete
 
 ## Robustness Testing
 

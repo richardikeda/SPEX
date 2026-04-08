@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 use std::time::{Duration, Instant};
 
 use libp2p::{identity::Keypair, PeerId};

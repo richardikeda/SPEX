@@ -3,6 +3,12 @@ name = "spex-mls"
 version = "0.1.0"
 edition = "2021"
 license = "MPL-2.0"
+description = "MLS integration layer and epoch safety logic for the SPEX protocol."
+repository = "https://github.com/richardikeda/SPEX"
+homepage = "https://github.com/richardikeda/SPEX"
+readme = "../../README.md"
+keywords = ["protocol", "security", "mls", "group-messaging", "cryptography"]
+categories = ["cryptography", "network-programming"]
 
 [dependencies]
 mls-rs = "0.51"

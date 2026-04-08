@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 use axum::{body::Body, http::Request, http::StatusCode};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use rusqlite::{params, Connection};

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 use proptest::prelude::*;
 use spex_bridge::{parse_inbox_store_request_bytes, parse_storage_request_bytes};
 

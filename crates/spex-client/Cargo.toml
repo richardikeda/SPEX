@@ -3,6 +3,12 @@ name = "spex-client"
 version = "0.1.0"
 edition = "2021"
 license = "MPL-2.0"
+description = "High-level client SDK for SPEX identity, state, thread, and message flows."
+repository = "https://github.com/richardikeda/SPEX"
+homepage = "https://github.com/richardikeda/SPEX"
+readme = "../../README.md"
+keywords = ["protocol", "security", "sdk", "messaging", "mls"]
+categories = ["cryptography", "network-programming", "api-bindings"]
 
 [dependencies]
 base64 = "0.21"

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 use crate::{cbor, error::SpexError};
 use ciborium::Value;
 use serde::de::{self, MapAccess, Visitor};

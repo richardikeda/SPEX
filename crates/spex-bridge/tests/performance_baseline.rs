@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 use rusqlite::Connection;
 use std::time::{Duration, Instant};
 use tempfile::tempdir;

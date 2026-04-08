@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine};
 use spex_core::{
     hash::{hash_ctap2_cbor_value, HashId},

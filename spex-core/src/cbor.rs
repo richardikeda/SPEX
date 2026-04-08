@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 //! CBOR canonicalization boundaries for SPEX.
 //!
 //! The helpers in this module expose CTAP2 canonical CBOR encoding for CBOR values or any serde

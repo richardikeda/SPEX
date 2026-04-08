@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 use argon2::{Algorithm, Argon2, Params, Version};
 use rand_core::{OsRng, RngCore};
 use sha2::{Digest, Sha256};

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 use spex_bridge::init_state;
 use std::net::SocketAddr;
 use tracing_subscriber::EnvFilter;

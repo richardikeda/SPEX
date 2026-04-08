@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 /// Converts a u16 value to its big-endian byte representation.
 pub fn u16be(v: u16) -> [u8; 2] {
     v.to_be_bytes()

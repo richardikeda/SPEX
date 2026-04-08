@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 use std::fmt;
 
 use chacha20poly1305::{

@@ -3,6 +3,12 @@ name = "spex-transport"
 version = "0.1.0"
 edition = "2021"
 license = "MPL-2.0"
+description = "Transport, manifest, chunking, and validation paths for SPEX delivery."
+repository = "https://github.com/richardikeda/SPEX"
+homepage = "https://github.com/richardikeda/SPEX"
+readme = "../../README.md"
+keywords = ["protocol", "security", "transport", "p2p", "messaging"]
+categories = ["network-programming", "cryptography"]
 
 [dependencies]
 base64 = "0.22"

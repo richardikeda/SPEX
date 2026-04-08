@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine};
 use spex_client::{
     create_contact_card_payload, create_identity_in_state, create_thread_for_state,

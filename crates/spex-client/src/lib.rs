@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 use argon2::Argon2;
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine};
 use chacha20poly1305::aead::{Aead, KeyInit, Payload};

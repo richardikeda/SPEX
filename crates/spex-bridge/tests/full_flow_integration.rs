@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 use axum::{body::Body, http::Request, http::StatusCode, Router};
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine};
 use ed25519_dalek::Signature;

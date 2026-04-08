@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 use std::{env, fs};
 
 use spex_client::{load_state, random_hex, save_state, IdentityState, LocalState};

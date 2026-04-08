@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 use clap::{Parser, Subcommand};
 use libp2p::identity::Keypair;
 use libp2p::Multiaddr;

@@ -14,6 +14,37 @@ https://semver.org/
 
 ---
 
+## [1.0.7] - 2026-04-08
+
+### Licensing Compliance and Versioning Policy
+
+- Added `// SPDX-License-Identifier: MPL-2.0` to Rust source files under `spex-core/`, `crates/`,
+  and `fuzz/` for per-file license traceability.
+- Documented repository versioning policy in `README.md` and `CONTRIBUTING.md`:
+  `Cargo.toml` as crate publish source of truth, `VERSION.md` as protocol/repo release metadata,
+  and `CHANGELOG.md` as human-readable release history.
+- Corrected `CONTRIBUTING.md` pull request process formatting for clearer DCO sign-off guidance.
+- Reviewed crate version harmonization and kept it pending explicit publish audit to avoid unsafe
+  SemVer signaling.
+
+---
+
+## [1.0.6] - 2026-04-08
+
+### Open Source Readiness — Governance and Metadata
+
+- Reinforced repository licensing clarity in `README.md` and `CONTRIBUTING.md` by
+  documenting SPEX as a single-license MPL-2.0 project with no current AGPL or dual-license path.
+- Added DCO sign-off requirement to `CONTRIBUTING.md` for contributor provenance and
+  clearer inbound rights handling.
+- Expanded `SECURITY.md` with public/private contact guidance and explicit release-note
+  tracking expectations for security updates.
+- Hardened `.gitignore` with IDE, environment, and operating-system junk file patterns.
+- Added publication metadata to workspace crates (`description`, `repository`, `homepage`,
+  `readme`, `keywords`, `categories`) and aligned `fuzz/Cargo.toml` with MPL-2.0 metadata.
+
+---
+
 ## [1.0.5] - 2026-04-08
 
 ### CI Optimization — Build Time Reduction

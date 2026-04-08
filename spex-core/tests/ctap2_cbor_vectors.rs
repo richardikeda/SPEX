@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 use ciborium::Value;
 use spex_core::cbor::ctap2_canonical_value_from_slice;
 use spex_core::test_vectors;

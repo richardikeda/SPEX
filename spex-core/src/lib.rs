@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 #![forbid(unsafe_code)]
 
 //! SPEX core primitives and test vectors.

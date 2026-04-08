@@ -47,6 +47,9 @@ This repository includes the standard open source governance and release control
 - Branch protection policy (declarative): [.github/branch-protection/main.json](.github/branch-protection/main.json)
 - CI and release gates: [.github/workflows/rust.yml](.github/workflows/rust.yml), [.github/workflows/release-readiness.yml](.github/workflows/release-readiness.yml)
 
+SPEX is published as open source under a single project license: Mozilla Public License 2.0.
+This repository does not currently use dual licensing or AGPL terms.
+
 ## Documentation Map
 
 - Architecture overview: [docs/overview.md](docs/overview.md)
@@ -92,6 +95,18 @@ cargo clippy --workspace --locked -- -D warnings
 - Treat key changes as critical events.
 - Protect local state at rest.
 - Never trust transport as a security boundary.
+
+## Getting Help
+
+- General usage, integration, and contribution questions: open a GitHub issue with reproducible context.
+- Security reports: do not use public issues; follow [SECURITY.md](SECURITY.md).
+- Project changes and security fixes are published through repository history and release notes in [CHANGELOG.md](CHANGELOG.md).
+
+## Versioning
+
+- Crate versions in each `Cargo.toml` are authoritative for published Rust packages.
+- `VERSION.md` tracks SPEX protocol/repository release metadata.
+- `CHANGELOG.md` is the human-readable history of release changes.
 
 ## License
 

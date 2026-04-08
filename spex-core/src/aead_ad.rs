@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 use crate::types::ProtoSuite;
 use crate::utils::{u16be, u32be, u64be};
 

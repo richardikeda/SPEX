@@ -151,9 +151,25 @@ Document bridge inbox endpoint
 4. Update documentation where needed.
 5. Open a PR describing:
 
-  * the problem
-  * the solution
-  * security impact (if any)
+  - the problem
+  - the solution
+  - security impact (if any)
+6. Sign off each commit with Developer Certificate of Origin attestation:
+
+    ```
+    git commit -s
+    ```
+
+     The sign-off certifies that you have the right to submit the contribution under this repository's license.
+
+  ---
+
+  ## Versioning
+
+  - `Cargo.toml` is authoritative for publishable crate versions and SemVer decisions.
+  - `VERSION.md` represents protocol/repository release metadata, not per-crate publish version.
+  - `CHANGELOG.md` must document notable changes for each repository release.
+  - Do not force crate version harmonization without an explicit publish audit and release decision.
 
 ---
 
@@ -192,6 +208,10 @@ By contributing, you agree that:
 
 - your contribution is licensed under Mozilla Public License 2.0
 - you have the legal right to contribute the submitted code
+- your commits include a DCO sign-off (`Signed-off-by:` line)
+
+SPEX currently uses a single open source license: MPL-2.0.
+This repository is not dual-licensed and does not currently adopt AGPL terms.
 
 ---
 

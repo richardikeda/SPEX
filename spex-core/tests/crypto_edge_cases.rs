@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 use ed25519_dalek::{Signature, SigningKey};
 use rand_core::OsRng;
 use spex_core::{

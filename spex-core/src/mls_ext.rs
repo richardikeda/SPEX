@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 use crate::utils::u16be;
 
 /// SPEX MLS extension types (private range)

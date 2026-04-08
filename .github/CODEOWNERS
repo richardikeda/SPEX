@@ -1,0 +1,19 @@
+# Default ownership
+* @richardikeda
+
+# Critical protocol crates
+/spex-core/ @richardikeda
+/crates/spex-mls/ @richardikeda
+/crates/spex-transport/ @richardikeda
+/crates/spex-bridge/ @richardikeda
+/crates/spex-client/ @richardikeda
+/crates/spex-cli/ @richardikeda
+/fuzz/ @richardikeda
+
+# Governance and CI
+/.github/ @richardikeda
+/docs/ @richardikeda
+/README.md @richardikeda
+/SECURITY.md @richardikeda
+/CONTRIBUTING.md @richardikeda
+/CODE_OF_CONDUCT.md @richardikeda
