@@ -14,12 +14,12 @@ categories = ["cryptography", "encoding", "network-programming"]
 path = "src/lib.rs"
 
 [dependencies]
-sha2 = "0.10"
-blake3 = { version = "1.5", optional = true }
+sha2 = "0.11"
+blake3 = { version = "1.8", optional = true }
 ed25519-dalek = { version = "2.1", features = ["rand_core"] }
-rand_core = "0.6"
+rand_core = "0.9"
 hex = "0.4"
-thiserror = "1.0"
+thiserror = "2.0"
 serde = { version = "1.0", features = ["derive"] }
 ciborium = "0.2"
 argon2 = { version = "0.5", features = ["std"] }
