@@ -1,0 +1,122 @@
+name: Auto Version Bump
+
+# Manual trigger to bump VERSION.md and CHANGELOG.md and open a PR.
+# Applies the AGENTS.md §3.1 versioning rule:
+#   - Increment patch from 1 to 99.
+#   - When patch reaches 99, increment minor and reset patch to 0.
+# A PR is created instead of a direct push because main requires pull requests.
+
+on:
+  workflow_dispatch:
+    inputs:
+      changelog_entry:
+        description: 'Description for the CHANGELOG.md entry (leave blank for default)'
+        required: false
+        type: string
+        default: ''
+
+concurrency:
+  group: auto-version
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  bump-version:
+    name: Bump VERSION.md and CHANGELOG.md
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute next version
+        id: ver
+        run: |
+          # Read current version from VERSION.md (format: VERSION=X.Y.Z)
+          CURRENT=$(grep -oP '(?<=VERSION=)\S+' VERSION.md)
+          MAJOR=$(echo "$CURRENT" | cut -d. -f1)
+          MINOR=$(echo "$CURRENT" | cut -d. -f2)
+          PATCH=$(echo "$CURRENT" | cut -d. -f3)
+
+          # Apply AGENTS.md §3.1 bump rule
+          if [[ "$PATCH" -ge 99 ]]; then
+            MINOR=$((MINOR + 1))
+            PATCH=0
+          else
+            PATCH=$((PATCH + 1))
+          fi
+
+          NEXT="${MAJOR}.${MINOR}.${PATCH}"
+          echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
+          echo "next=$NEXT"       >> "$GITHUB_OUTPUT"
+          echo "Bumping $CURRENT -> $NEXT"
+
+      - name: Update VERSION.md
+        run: |
+          # Replace the version line in VERSION.md with the computed next version.
+          sed -i "s/^VERSION=.*/VERSION=${{ steps.ver.outputs.next }}/" VERSION.md
+          grep VERSION VERSION.md
+
+      - name: Update CHANGELOG.md
+        env:
+          NEXT: ${{ steps.ver.outputs.next }}
+          ENTRY: ${{ inputs.changelog_entry }}
+        run: |
+          # Insert a new versioned entry before the first existing ## [X.Y.Z] block.
+          # Uses Python for reliable multiline manipulation of the changelog.
+          python3 - <<'PYEOF'
+          import os, re
+          from datetime import datetime, timezone
+
+          version = os.environ['NEXT']
+          entry   = os.environ.get('ENTRY', '').strip() or 'Automated version bump.'
+          date    = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+
+          new_block = (
+              f"\n## [{version}] - {date}\n\n"
+              f"### Changed\n"
+              f"- {entry}\n\n"
+              f"---\n\n"
+          )
+
+          with open('CHANGELOG.md', 'r', encoding='utf-8') as fh:
+              content = fh.read()
+
+          # Insert the new entry immediately before the first versioned ## [X.Y.Z] heading.
+          content = re.sub(
+              r'(## \[\d+\.\d+\.\d+\])',
+              new_block + r'\1',
+              content,
+              count=1
+          )
+
+          with open('CHANGELOG.md', 'w', encoding='utf-8') as fh:
+              fh.write(content)
+          print(f"CHANGELOG.md: inserted [{version}] - {date} entry")
+          PYEOF
+
+      - name: Open Pull Request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore: bump version to ${{ steps.ver.outputs.next }}"
+          branch: auto/version-bump-${{ steps.ver.outputs.next }}
+          title: "chore: bump version ${{ steps.ver.outputs.current }} → ${{ steps.ver.outputs.next }}"
+          body: |
+            ## Version Bump
+
+            Automated bump: `${{ steps.ver.outputs.current }}` → `${{ steps.ver.outputs.next }}`
+
+            ### Changes
+            - `VERSION.md` updated
+            - `CHANGELOG.md` entry added
+
+            > Triggered via the *Auto Version Bump* workflow (`workflow_dispatch`).
+            > Review the CHANGELOG entry and merge when ready.
+            > The `version-guard` check will pass because `VERSION.md` is included.
+          labels: "version-bump,automated"
+          delete-branch: true

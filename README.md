@@ -2,6 +2,9 @@
 
 Secure Permissioned Exchange.
 
+[![Rust CI](https://github.com/richardikeda/SPEX/actions/workflows/rust.yml/badge.svg?branch=main)](https://github.com/richardikeda/SPEX/actions/workflows/rust.yml)
+[![Release Readiness](https://github.com/richardikeda/SPEX/actions/workflows/release-readiness.yml/badge.svg?branch=main)](https://github.com/richardikeda/SPEX/actions/workflows/release-readiness.yml)
+
 ## Official Project Statement
 
 SPEX is a security-first messaging and transport protocol with end-to-end encryption based on MLS.
@@ -107,6 +110,8 @@ cargo clippy --workspace --locked -- -D warnings
 - Crate versions in each `Cargo.toml` are authoritative for published Rust packages.
 - `VERSION.md` tracks SPEX protocol/repository release metadata.
 - `CHANGELOG.md` is the human-readable history of release changes.
+- Version bumps are validated on every PR by the [Version Guard workflow](.github/workflows/version-guard.yml).
+- To trigger a manual version bump and changelog update, use the [Auto Version Bump workflow](.github/workflows/auto-version.yml) via `workflow_dispatch`.
 
 ## License
 

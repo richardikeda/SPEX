@@ -958,7 +958,9 @@ fn tls_deployment_model_is_documented() {
 
     // Reverse-proxy deployment model must be documented.
     assert!(
-        guide.contains("Reverse Proxy") || guide.contains("reverse proxy") || guide.contains("reverse-proxy"),
+        guide.contains("Reverse Proxy")
+            || guide.contains("reverse proxy")
+            || guide.contains("reverse-proxy"),
         "TLS guide must document the reverse-proxy deployment model"
     );
 

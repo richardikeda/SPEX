@@ -40,11 +40,10 @@ const MAJOR_SIMPLE: u8 = 0xe0;
 pub fn to_ctap2_canonical_bytes<T: Serialize>(value: &T) -> Result<Vec<u8>, SpexError> {
     // Serialize via ciborium to a standard CBOR byte buffer.
     let mut buf = Vec::new();
-    ciborium::ser::into_writer(value, &mut buf)
-        .map_err(|e| SpexError::Cbor(e.to_string()))?;
+    ciborium::ser::into_writer(value, &mut buf).map_err(|e| SpexError::Cbor(e.to_string()))?;
     // Parse back into a Value so we can apply our CTAP2 ordering/encoding rules.
-    let cbor_value: Value = ciborium::de::from_reader(buf.as_slice())
-        .map_err(|e| SpexError::Cbor(e.to_string()))?;
+    let cbor_value: Value =
+        ciborium::de::from_reader(buf.as_slice()).map_err(|e| SpexError::Cbor(e.to_string()))?;
     ctap2_canonical_value_bytes(&cbor_value)
 }
 
@@ -55,10 +54,8 @@ pub fn from_ctap2_canonical_slice<T: DeserializeOwned>(bytes: &[u8]) -> Result<T
     let value = ctap2_canonical_value_from_slice(bytes)?;
     // Re-encode the validated Value to bytes and decode into the target type.
     let mut buf = Vec::new();
-    ciborium::ser::into_writer(&value, &mut buf)
-        .map_err(|e| SpexError::Cbor(e.to_string()))?;
-    ciborium::de::from_reader(buf.as_slice())
-        .map_err(|e| SpexError::Cbor(e.to_string()))
+    ciborium::ser::into_writer(&value, &mut buf).map_err(|e| SpexError::Cbor(e.to_string()))?;
+    ciborium::de::from_reader(buf.as_slice()).map_err(|e| SpexError::Cbor(e.to_string()))
 }
 
 /// Serialize a CBOR value to CTAP2 canonical CBOR bytes.
@@ -73,16 +70,15 @@ pub fn ctap2_canonical_value_bytes(value: &Value) -> Result<Vec<u8>, SpexError> 
 /// This function is intended for robustness checks and boundary validation,
 /// and must return explicit errors for malformed payloads.
 pub fn parse_cbor_payload(bytes: &[u8]) -> Result<Value, SpexError> {
-    ciborium::de::from_reader(bytes)
-        .map_err(|e| SpexError::Cbor(e.to_string()))
+    ciborium::de::from_reader(bytes).map_err(|e| SpexError::Cbor(e.to_string()))
 }
 
 /// Deserialize a CTAP2 canonical CBOR payload into a CBOR value.
 ///
 /// The input must already be canonical. Non-canonical encodings are rejected.
 pub fn ctap2_canonical_value_from_slice(bytes: &[u8]) -> Result<Value, SpexError> {
-    let value: Value = ciborium::de::from_reader(bytes)
-        .map_err(|e| SpexError::Cbor(e.to_string()))?;
+    let value: Value =
+        ciborium::de::from_reader(bytes).map_err(|e| SpexError::Cbor(e.to_string()))?;
     let canonical = ctap2_canonical_value_bytes(&value)?;
     if canonical != bytes {
         return Err(SpexError::CborNotCanonical);
@@ -268,7 +264,6 @@ fn f16_bits_to_f64(bits: u16) -> f64 {
         sign * (1.0 + (mantissa as f64) / 1024.0) * (2.0f64).powi(exp as i32 - 15)
     }
 }
-
 
 #[cfg(test)]
 mod tests {

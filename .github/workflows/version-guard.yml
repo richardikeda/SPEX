@@ -1,0 +1,53 @@
+name: Version Guard
+
+# Validates that VERSION.md is bumped whenever Rust code or Cargo.toml files change.
+# This enforces the AGENTS.md §3.1 versioning rule on every PR to main.
+
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: version-guard-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  version-bump-required:
+    name: version-bump-required
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout (full history for diff)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify VERSION.md bumped when code changes
+        run: |
+          # Compute diff between base branch and PR head.
+          BASE="origin/${{ github.base_ref }}"
+          HEAD="${{ github.sha }}"
+
+          CHANGED=$(git diff --name-only "$BASE" "$HEAD")
+
+          # Identify code-level changes: .rs files or Cargo.toml manifests.
+          # Excludes: Cargo.lock, .github/ config, and doc-only paths.
+          CODE_CHANGED=$(echo "$CHANGED" \
+            | grep -E '\.(rs|toml)$' \
+            | grep -v '^Cargo\.lock$' \
+            | grep -v '^\.github/' \
+            || true)
+
+          # Count whether VERSION.md was included in the diff.
+          VERSION_CHANGED=$(echo "$CHANGED" | grep -c '^VERSION\.md$' || true)
+
+          if [[ -n "$CODE_CHANGED" ]] && [[ "$VERSION_CHANGED" -eq 0 ]]; then
+            echo "::error file=VERSION.md::VERSION.md must be bumped when code files (.rs / Cargo.toml) change."
+            echo ""
+            echo "Rule: AGENTS.md §3.1 — increment last position (1–99); after 99, increment middle and reset."
+            echo ""
+            echo "Files that triggered this check:"
+            echo "$CODE_CHANGED"
+            exit 1
+          fi
+
+          echo "version-guard: OK (no code change, or VERSION.md was updated)"

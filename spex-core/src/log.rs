@@ -6,8 +6,8 @@ use crate::{
     types::Ctap2Cbor,
 };
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine};
-use serde::{Deserialize, Serialize};
 use ciborium::Value;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -26,7 +26,11 @@ impl Ctap2Cbor for KeyCheckpoint {
         map.insert(1, Value::Bytes(self.verifying_key.clone()));
         map.insert(2, Value::Bytes(self.device_id.clone()));
         map.insert(3, Value::Integer(self.issued_at.into()));
-        Value::Map(map.into_iter().map(|(k, v)| (Value::Integer(k.into()), v)).collect())
+        Value::Map(
+            map.into_iter()
+                .map(|(k, v)| (Value::Integer(k.into()), v))
+                .collect(),
+        )
     }
 }
 
@@ -44,7 +48,11 @@ impl Ctap2Cbor for RecoveryKey {
         map.insert(0, Value::Bytes(self.user_id.clone()));
         map.insert(1, Value::Bytes(self.recovery_key.clone()));
         map.insert(2, Value::Integer(self.issued_at.into()));
-        Value::Map(map.into_iter().map(|(k, v)| (Value::Integer(k.into()), v)).collect())
+        Value::Map(
+            map.into_iter()
+                .map(|(k, v)| (Value::Integer(k.into()), v))
+                .collect(),
+        )
     }
 }
 
@@ -70,7 +78,11 @@ impl Ctap2Cbor for RevocationDeclaration {
         if let Some(reason) = &self.reason {
             map.insert(4, Value::Text(reason.clone()));
         }
-        Value::Map(map.into_iter().map(|(k, v)| (Value::Integer(k.into()), v)).collect())
+        Value::Map(
+            map.into_iter()
+                .map(|(k, v)| (Value::Integer(k.into()), v))
+                .collect(),
+        )
     }
 }
 
@@ -99,7 +111,11 @@ impl Ctap2Cbor for CheckpointEntry {
                 map.insert(1, entry.to_cbor_value());
             }
         }
-        Value::Map(map.into_iter().map(|(k, v)| (Value::Integer(k.into()), v)).collect())
+        Value::Map(
+            map.into_iter()
+                .map(|(k, v)| (Value::Integer(k.into()), v))
+                .collect(),
+        )
     }
 }
 
@@ -267,8 +283,8 @@ impl CheckpointLog {
 
     /// Deserializes a log from CTAP2 canonical CBOR bytes.
     pub fn from_cbor_bytes(bytes: &[u8]) -> Result<Self, SpexError> {
-        let mut log: CheckpointLog = ciborium::de::from_reader(bytes)
-            .map_err(|e| SpexError::Cbor(e.to_string()))?;
+        let mut log: CheckpointLog =
+            ciborium::de::from_reader(bytes).map_err(|e| SpexError::Cbor(e.to_string()))?;
         log.rebuild_merkle_state()?;
         Ok(log)
     }

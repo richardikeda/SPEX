@@ -651,8 +651,8 @@ pub fn verify_contact_card_signature(
 
 /// Parses a CBOR contact card into a typed structure.
 pub fn parse_contact_card(bytes: &[u8]) -> Result<ContactCard, ClientError> {
-    let value: ciborium::Value = ciborium::de::from_reader(bytes)
-        .map_err(|e| ClientError::Cbor(e.to_string()))?;
+    let value: ciborium::Value =
+        ciborium::de::from_reader(bytes).map_err(|e| ClientError::Cbor(e.to_string()))?;
     let map = match value {
         ciborium::Value::Map(map) => map,
         _ => return Err(ClientError::InvalidCard),

@@ -14,6 +14,26 @@ https://semver.org/
 
 ---
 
+## [1.0.8] - 2026-04-08
+
+### CI Automation — Version Guard and Auto Version Bump
+
+- Added `version-guard.yml` workflow: required PR check that fails when `.rs` or
+  `Cargo.toml` files change without a corresponding `VERSION.md` bump, enforcing
+  the AGENTS.md §3.1 versioning rule on every pull request to `main`.
+- Added `auto-version.yml` workflow: `workflow_dispatch` trigger that reads the
+  current version, applies the AGENTS.md bump rule (patch 1–99, then minor wrap),
+  updates both `VERSION.md` and `CHANGELOG.md`, and opens a PR — no direct push
+  to `main`, compatible with branch protection.
+- Fixed `cargo fmt` formatting drift across `spex-core/src/cbor.rs`,
+  `crates/spex-client/src/lib.rs`, and `crates/spex-bridge/tests/integration.rs`.
+  This was the root cause of the failing `lint` CI job.
+- Added CI status badges (`Rust CI`, `Release Readiness`) to `README.md`.
+- Updated `branch-protection/main.json` to document `version-bump-required` as a
+  required status check alongside `release-critical-tests`.
+
+---
+
 ## [1.0.7] - 2026-04-08
 
 ### Licensing Compliance and Versioning Policy
