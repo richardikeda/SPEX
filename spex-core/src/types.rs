@@ -1,9 +1,16 @@
 use crate::{cbor, error::SpexError};
+use ciborium::Value;
 use serde::de::{self, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
-use serde_cbor::Value;
 use std::collections::BTreeMap;
 use std::fmt;
+
+/// Converts a u64 BTreeMap key to a ciborium CBOR integer value.
+///
+/// All SPEX field IDs are non-negative u64 values, so this conversion is lossless.
+fn key_to_cbor(k: u64) -> Value {
+    Value::Integer(k.into())
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ProtoSuite {
@@ -22,7 +29,8 @@ pub trait Ctap2Cbor {
 }
 
 /// Represents a contact card (user metadata + verification material).
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+// Eq is not derived because ciborium::Value (used in extensions) does not implement Eq.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct ContactCard {
     pub user_id: Vec<u8>,
     pub verifying_key: Vec<u8>,
@@ -36,22 +44,23 @@ pub struct ContactCard {
 
 impl Ctap2Cbor for ContactCard {
     fn to_cbor_value(&self) -> Value {
-        let mut map = BTreeMap::new();
-        map.insert(Value::Integer(0), Value::Bytes(self.user_id.clone()));
-        map.insert(Value::Integer(1), Value::Bytes(self.verifying_key.clone()));
-        map.insert(Value::Integer(2), Value::Bytes(self.device_id.clone()));
-        map.insert(Value::Integer(3), Value::Bytes(self.device_nonce.clone()));
-        map.insert(Value::Integer(4), Value::Integer(self.issued_at as i128));
+        // Use a u64-keyed BTreeMap for ordering before converting to Vec<(Value, Value)>.
+        let mut map: BTreeMap<u64, Value> = BTreeMap::new();
+        map.insert(0, Value::Bytes(self.user_id.clone()));
+        map.insert(1, Value::Bytes(self.verifying_key.clone()));
+        map.insert(2, Value::Bytes(self.device_id.clone()));
+        map.insert(3, Value::Bytes(self.device_nonce.clone()));
+        map.insert(4, Value::Integer(self.issued_at.into()));
         if let Some(invite) = &self.invite {
-            map.insert(Value::Integer(5), invite.to_cbor_value());
+            map.insert(5, invite.to_cbor_value());
         }
         if let Some(signature) = &self.signature {
-            map.insert(Value::Integer(6), Value::Bytes(signature.clone()));
+            map.insert(6, Value::Bytes(signature.clone()));
         }
         for (key, value) in &self.extensions {
-            map.insert(Value::Integer(*key as i128), value.clone());
+            map.insert(*key, value.clone());
         }
-        Value::Map(map.into_iter().collect())
+        Value::Map(map.into_iter().map(|(k, v)| (key_to_cbor(k), v)).collect())
     }
 }
 
@@ -66,7 +75,8 @@ impl ContactCard {
 }
 
 /// Represents an invite token (often embedded in cards or bridge messages).
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+// Eq is not derived because ciborium::Value (used in extensions) does not implement Eq.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct InviteToken {
     pub major: u16,
     pub minor: u16,
@@ -76,19 +86,20 @@ pub struct InviteToken {
 
 impl Ctap2Cbor for InviteToken {
     fn to_cbor_value(&self) -> Value {
-        let mut map = BTreeMap::new();
-        map.insert(Value::Integer(0), Value::Integer(self.major as i128));
-        map.insert(Value::Integer(1), Value::Integer(self.minor as i128));
-        map.insert(Value::Integer(2), Value::Bool(self.requires_puzzle));
+        let mut map: BTreeMap<u64, Value> = BTreeMap::new();
+        map.insert(0, Value::Integer((self.major as u64).into()));
+        map.insert(1, Value::Integer((self.minor as u64).into()));
+        map.insert(2, Value::Bool(self.requires_puzzle));
         for (key, value) in &self.extensions {
-            map.insert(Value::Integer(*key as i128), value.clone());
+            map.insert(*key, value.clone());
         }
-        Value::Map(map.into_iter().collect())
+        Value::Map(map.into_iter().map(|(k, v)| (key_to_cbor(k), v)).collect())
     }
 }
 
 /// Represents a grant token (membership/permission entry).
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+// Eq is not derived because ciborium::Value (used in extensions) does not implement Eq.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct GrantToken {
     pub user_id: Vec<u8>,
     pub role: u64,
@@ -99,19 +110,19 @@ pub struct GrantToken {
 
 impl Ctap2Cbor for GrantToken {
     fn to_cbor_value(&self) -> Value {
-        let mut map = BTreeMap::new();
-        map.insert(Value::Integer(0), Value::Bytes(self.user_id.clone()));
-        map.insert(Value::Integer(1), Value::Integer(self.role as i128));
+        let mut map: BTreeMap<u64, Value> = BTreeMap::new();
+        map.insert(0, Value::Bytes(self.user_id.clone()));
+        map.insert(1, Value::Integer(self.role.into()));
         if let Some(flags) = self.flags {
-            map.insert(Value::Integer(2), Value::Integer(flags as i128));
+            map.insert(2, Value::Integer(flags.into()));
         }
         if let Some(expires_at) = self.expires_at {
-            map.insert(Value::Integer(3), Value::Integer(expires_at as i128));
+            map.insert(3, Value::Integer(expires_at.into()));
         }
         for (key, value) in &self.extensions {
-            map.insert(Value::Integer(*key as i128), value.clone());
+            map.insert(*key, value.clone());
         }
-        Value::Map(map.into_iter().collect())
+        Value::Map(map.into_iter().map(|(k, v)| (key_to_cbor(k), v)).collect())
     }
 }
 
@@ -126,7 +137,8 @@ impl GrantToken {
 }
 
 /// Represents the per-thread configuration blob.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+// Eq is not derived because ciborium::Value (used in extensions) does not implement Eq.
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct ThreadConfig {
     pub proto_major: u16,
     pub proto_minor: u16,
@@ -139,30 +151,28 @@ pub struct ThreadConfig {
 
 impl Ctap2Cbor for ThreadConfig {
     fn to_cbor_value(&self) -> Value {
-        let mut map = BTreeMap::new();
-        map.insert(Value::Integer(0), Value::Integer(self.proto_major as i128));
-        map.insert(Value::Integer(1), Value::Integer(self.proto_minor as i128));
-        map.insert(
-            Value::Integer(2),
-            Value::Integer(self.ciphersuite_id as i128),
-        );
-        map.insert(Value::Integer(3), Value::Integer(self.flags as i128));
-        map.insert(Value::Integer(4), Value::Bytes(self.thread_id.clone()));
+        let mut map: BTreeMap<u64, Value> = BTreeMap::new();
+        map.insert(0, Value::Integer((self.proto_major as u64).into()));
+        map.insert(1, Value::Integer((self.proto_minor as u64).into()));
+        map.insert(2, Value::Integer((self.ciphersuite_id as u64).into()));
+        map.insert(3, Value::Integer((self.flags as u64).into()));
+        map.insert(4, Value::Bytes(self.thread_id.clone()));
         let grants = self
             .grants
             .iter()
             .map(|grant| grant.to_cbor_value())
             .collect();
-        map.insert(Value::Integer(5), Value::Array(grants));
+        map.insert(5, Value::Array(grants));
         for (key, value) in &self.extensions {
-            map.insert(Value::Integer(*key as i128), value.clone());
+            map.insert(*key, value.clone());
         }
-        Value::Map(map.into_iter().collect())
+        Value::Map(map.into_iter().map(|(k, v)| (key_to_cbor(k), v)).collect())
     }
 }
 
 /// Represents a sealed message envelope.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+// Eq is not derived because ciborium::Value (used in extensions) does not implement Eq.
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Envelope {
     pub thread_id: Vec<u8>,
     pub epoch: u32,
@@ -239,19 +249,19 @@ impl<'de> Visitor<'de> for EnvelopeVisitor {
 
 impl Ctap2Cbor for Envelope {
     fn to_cbor_value(&self) -> Value {
-        let mut map = BTreeMap::new();
-        map.insert(Value::Integer(0), Value::Bytes(self.thread_id.clone()));
-        map.insert(Value::Integer(1), Value::Integer(self.epoch as i128));
-        map.insert(Value::Integer(2), Value::Integer(self.seq as i128));
-        map.insert(Value::Integer(3), Value::Bytes(self.sender_user_id.clone()));
-        map.insert(Value::Integer(4), Value::Bytes(self.ciphertext.clone()));
+        let mut map: BTreeMap<u64, Value> = BTreeMap::new();
+        map.insert(0, Value::Bytes(self.thread_id.clone()));
+        map.insert(1, Value::Integer((self.epoch as u64).into()));
+        map.insert(2, Value::Integer(self.seq.into()));
+        map.insert(3, Value::Bytes(self.sender_user_id.clone()));
+        map.insert(4, Value::Bytes(self.ciphertext.clone()));
         if let Some(signature) = &self.signature {
-            map.insert(Value::Integer(5), Value::Bytes(signature.clone()));
+            map.insert(5, Value::Bytes(signature.clone()));
         }
         for (key, value) in &self.extensions {
-            map.insert(Value::Integer(*key as i128), value.clone());
+            map.insert(*key, value.clone());
         }
-        Value::Map(map.into_iter().collect())
+        Value::Map(map.into_iter().map(|(k, v)| (key_to_cbor(k), v)).collect())
     }
 }
 
@@ -274,8 +284,17 @@ fn value_as_u32<E: de::Error>(value: Value, field: &str) -> Result<u32, E> {
 /// Reads a CBOR integer for an Envelope field and converts it to u64.
 fn value_as_u64<E: de::Error>(value: Value, field: &str) -> Result<u64, E> {
     match value {
-        Value::Integer(value) if value >= 0 => u64::try_from(value)
-            .map_err(|_| de::Error::custom(format!("invalid {field} field range"))),
+        Value::Integer(value) => {
+            let n = i128::from(value);
+            if n >= 0 {
+                u64::try_from(n)
+                    .map_err(|_| de::Error::custom(format!("invalid {field} field range")))
+            } else {
+                Err(de::Error::custom(format!(
+                    "invalid {field} field (expected unsigned integer)"
+                )))
+            }
+        }
         _ => Err(de::Error::custom(format!(
             "invalid {field} field (expected unsigned integer)"
         ))),

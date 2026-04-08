@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(cargo test:*)",
-      "Bash(cargo deny:*)"
+      "Bash(cargo deny:*)",
+      "Bash(grep -n \"serde_cbor\" d:/WorkSpace/SPEX/SPEX/fuzz/fuzz_targets/*.rs)",
+      "Bash(cargo build:*)"
     ]
   }
 }

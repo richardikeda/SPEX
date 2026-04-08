@@ -123,9 +123,9 @@ fn build_contact_card(identity: &Identity) -> ContactCard {
 
 fn parse_contact_card(bytes: &[u8]) -> Option<ContactCard> {
     // Parses a CBOR contact card from bytes into a ContactCard struct.
-    let value: serde_cbor::Value = serde_cbor::from_slice(bytes).ok()?;
+    let value: ciborium::Value = ciborium::de::from_reader(bytes).ok()?;
     let map = match value {
-        serde_cbor::Value::Map(map) => map,
+        ciborium::Value::Map(map) => map,
         _ => return None,
     };
 
@@ -133,7 +133,7 @@ fn parse_contact_card(bytes: &[u8]) -> Option<ContactCard> {
 
     for (key, value) in map {
         let key = match key {
-            serde_cbor::Value::Integer(v) => v,
+            ciborium::Value::Integer(v) => i128::from(v),
             _ => continue,
         };
         match key {
@@ -154,18 +154,18 @@ fn parse_contact_card(bytes: &[u8]) -> Option<ContactCard> {
     Some(card)
 }
 
-fn expect_bytes(value: serde_cbor::Value) -> Option<Vec<u8>> {
+fn expect_bytes(value: ciborium::Value) -> Option<Vec<u8>> {
     // Extracts bytes from a CBOR value when possible.
     match value {
-        serde_cbor::Value::Bytes(bytes) => Some(bytes),
+        ciborium::Value::Bytes(bytes) => Some(bytes),
         _ => None,
     }
 }
 
-fn expect_u64(value: serde_cbor::Value) -> Option<u64> {
+fn expect_u64(value: ciborium::Value) -> Option<u64> {
     // Extracts a u64 from a CBOR integer value when possible.
     match value {
-        serde_cbor::Value::Integer(v) => u64::try_from(v).ok(),
+        ciborium::Value::Integer(v) => u64::try_from(i128::from(v)).ok(),
         _ => None,
     }
 }

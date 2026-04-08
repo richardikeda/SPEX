@@ -48,7 +48,7 @@ pub enum ClientError {
     #[error("json error: {0}")]
     Json(#[from] serde_json::Error),
     #[error("cbor error: {0}")]
-    Cbor(#[from] serde_cbor::Error),
+    Cbor(String),
     #[error("hex error: {0}")]
     Hex(#[from] hex::FromHexError),
     #[error("missing identity")]
@@ -650,9 +650,10 @@ pub fn verify_contact_card_signature(
 
 /// Parses a CBOR contact card into a typed structure.
 pub fn parse_contact_card(bytes: &[u8]) -> Result<ContactCard, ClientError> {
-    let value: serde_cbor::Value = serde_cbor::from_slice(bytes)?;
+    let value: ciborium::Value = ciborium::de::from_reader(bytes)
+        .map_err(|e| ClientError::Cbor(e.to_string()))?;
     let map = match value {
-        serde_cbor::Value::Map(map) => map,
+        ciborium::Value::Map(map) => map,
         _ => return Err(ClientError::InvalidCard),
     };
 
@@ -660,7 +661,7 @@ pub fn parse_contact_card(bytes: &[u8]) -> Result<ContactCard, ClientError> {
 
     for (key, value) in map {
         let key = match key {
-            serde_cbor::Value::Integer(v) => v,
+            ciborium::Value::Integer(v) => i128::from(v),
             _ => continue,
         };
         match key {
@@ -682,17 +683,20 @@ pub fn parse_contact_card(bytes: &[u8]) -> Result<ContactCard, ClientError> {
 }
 
 /// Extracts bytes from a CBOR value or returns an invalid card error.
-fn expect_bytes(value: serde_cbor::Value) -> Result<Vec<u8>, ClientError> {
+fn expect_bytes(value: ciborium::Value) -> Result<Vec<u8>, ClientError> {
     match value {
-        serde_cbor::Value::Bytes(bytes) => Ok(bytes),
+        ciborium::Value::Bytes(bytes) => Ok(bytes),
         _ => Err(ClientError::InvalidCard),
     }
 }
 
 /// Extracts a u64 from a CBOR value or returns an invalid card error.
-fn expect_u64(value: serde_cbor::Value) -> Result<u64, ClientError> {
+fn expect_u64(value: ciborium::Value) -> Result<u64, ClientError> {
     match value {
-        serde_cbor::Value::Integer(v) => u64::try_from(v).map_err(|_| ClientError::InvalidCard),
+        ciborium::Value::Integer(v) => {
+            let n = i128::from(v);
+            u64::try_from(n).map_err(|_| ClientError::InvalidCard)
+        }
         _ => Err(ClientError::InvalidCard),
     }
 }

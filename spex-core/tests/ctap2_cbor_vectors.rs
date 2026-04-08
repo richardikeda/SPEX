@@ -1,4 +1,4 @@
-use serde_cbor::Value;
+use ciborium::Value;
 use spex_core::cbor::ctap2_canonical_value_from_slice;
 use spex_core::test_vectors;
 use spex_core::types::{ContactCard, Ctap2Cbor, GrantToken, InviteToken, ThreadConfig};
@@ -60,12 +60,13 @@ fn build_tv2_card() -> ContactCard {
 }
 
 // Extracts integer keys from a CBOR map to validate ordering in tests.
+// ciborium::Value::Map is Vec<(Value, Value)>, so we iterate pairs.
 fn map_keys(value: &Value) -> Vec<i128> {
     match value {
         Value::Map(entries) => entries
-            .keys()
-            .map(|key| match key {
-                Value::Integer(value) => *value,
+            .iter()
+            .map(|(key, _)| match key {
+                Value::Integer(value) => i128::from(*value),
                 _ => panic!("expected integer key"),
             })
             .collect(),
@@ -101,7 +102,7 @@ fn tv1_thread_config_optional_fields_and_key_ordering() {
     let grants = match config_value {
         Value::Map(entries) => entries
             .into_iter()
-            .find(|(key, _)| matches!(key, Value::Integer(5)))
+            .find(|(key, _)| matches!(key, Value::Integer(v) if i128::from(*v) == 5))
             .and_then(|(_, value)| match value {
                 Value::Array(values) => Some(values),
                 _ => None,
@@ -126,7 +127,7 @@ fn tv2_contact_card_optional_fields_and_extension_ordering() {
     let extension_value = match card_value {
         Value::Map(entries) => entries
             .into_iter()
-            .find(|(key, _)| matches!(key, Value::Integer(6)))
+            .find(|(key, _)| matches!(key, Value::Integer(v) if i128::from(*v) == 6))
             .map(|(_, value)| value)
             .expect("expected extension at key 6"),
         _ => panic!("expected card map"),

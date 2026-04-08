@@ -14,6 +14,42 @@ https://semver.org/
 
 ---
 
+## [1.0.4] - 2026-04-07
+
+### Security — RUSTSEC-2021-0127 Resolved
+
+- **Migrated serde_cbor → ciborium**: The unmaintained `serde_cbor` crate (RUSTSEC-2021-0127)
+  has been fully replaced with `ciborium 0.2` across the entire workspace.
+- Removed `serde_cbor` from `spex-core`, `spex-client`, `spex-bridge` (dev), `spex-transport` (dev),
+  and `fuzz` crate Cargo.toml files.
+- Removed the `RUSTSEC-2021-0127` advisory exception from `deny.toml`. `cargo deny check` now
+  passes with no advisory exceptions.
+- `spex-core/src/cbor.rs` — CTAP2 canonical encoder/decoder ported to `ciborium::Value`. Public API
+  is unchanged; all CTAP2 test vectors pass.
+- `spex-core/src/types.rs` and `spex-core/src/log.rs` — all `to_cbor_value()` implementations
+  updated to use `ciborium::Value` (including `BTreeMap<u64, Value>` extension fields).
+- Removed the `half` crate dependency from `spex-core`; f16 encoding is now implemented inline.
+- All test files (`ctap2_cbor_vectors.rs`, `full_flow_integration.rs`, `two_identity_flow.rs`)
+  updated to use `ciborium::Value` and `ciborium::de::from_reader`.
+
+### Release Traceability
+
+- Created local git version tags: `v1.0.0`, `v1.0.1`, `v1.0.2`, `v1.0.3`, `v1.0.4`.
+  Push with: `git push origin v1.0.0 v1.0.1 v1.0.2 v1.0.3 v1.0.4`
+
+### TLS Deployment Automation
+
+- Added `scripts/tls_validation.sh`: automates the 5-check TLS deployment validation
+  (certificate validity, protocol enforcement, HTTP redirect, chain trust, plain-HTTP rejection).
+  Produces an `tls-validation-evidence.txt` file for attachment to release notes.
+  Usage: `./scripts/tls_validation.sh <bridge-host>`
+
+### Version
+
+- `VERSION.md` incremented to `1.0.4`.
+
+---
+
 ## [1.0.3] - 2026-04-07
 
 ### License Alignment
@@ -101,16 +137,15 @@ https://semver.org/
 
 ## Published Versions
 
-- `1.0.3` (current — awaiting git tag and release publication)
-- `1.0.2` (no git tag created — documentation-only update)
-- `1.0.1` (no git tag created)
-- `1.0.0` (no git tag created)
+- `1.0.4` (current — local tags created, awaiting `git push origin v1.0.4`)
+- `1.0.3` (local tag: v1.0.3)
+- `1.0.2` (local tag: v1.0.2, same commit as v1.0.1 — documentation-only)
+- `1.0.1` (local tag: v1.0.1)
+- `1.0.0` (local tag: v1.0.0)
 - `0.1.65` ... `0.1.0`
 
-**Git tag status**: No version tags have been created in the repository (`git tag --list` returns
-empty). Maintainers must create and push tags for all declared versions to establish release
-provenance. At minimum, create `v1.0.3` before publication. Tags for historical versions are
-optional but recommended.
+**Git tag status**: Local tags `v1.0.0`–`v1.0.4` exist. Push with:
+`git push origin v1.0.0 v1.0.1 v1.0.2 v1.0.3 v1.0.4`
 
 This list is aligned with `VERSION.md`.
 
