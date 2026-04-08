@@ -14,6 +14,30 @@ https://semver.org/
 
 ---
 
+## [1.0.5] - 2026-04-08
+
+### CI Optimization — Build Time Reduction
+
+- **Removed sccache** from `rust.yml`: sccache had 0% cache hit rate across all runners
+  (0 hits / 330–393 misses). Eliminated `RUSTC_WRAPPER`, `SCCACHE_GHA_ENABLED`,
+  `SCCACHE_DIR` env vars, and `mozilla-actions/sccache-action` step.
+  `Swatinem/rust-cache` alone provides incremental build caching via `target/` and
+  `~/.cargo/registry` directories.
+- **Added `paths-ignore`** to `rust.yml` for `push` and `pull_request` triggers:
+  `**/*.md`, `**/*.MD`, `docs/**`, `LICENSE.MD`, `.github/branch-protection/**`,
+  `scripts/release_gate_docs.sh`. Documentation-only commits no longer trigger the
+  3-job build matrix (~6–10 min savings per docs-only push).
+- **Added `Swatinem/rust-cache`** to `release-readiness.yml` jobs (`release-critical-tests`,
+  `release-docs-and-quality`, `release-robustness`) that previously had no caching at all.
+  Added `cargo fetch --locked` warmup step to all cached jobs.
+- **Simplified `Swatinem/rust-cache` config** in `rust.yml`: removed `add-job-id-key: false`
+  and `cache-directories` (sccache dir no longer needed).
+- `release-readiness.yml` intentionally kept **without `paths-ignore`** because
+  `release_gate_docs.sh` validates documentation presence and structure.
+- TODO.md reorganized with `[TASK N]` labels and only pending items.
+
+---
+
 ## [1.0.4] - 2026-04-07
 
 ### Security — RUSTSEC-2021-0127 Resolved

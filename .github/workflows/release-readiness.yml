@@ -24,6 +24,15 @@ jobs:
         with:
           toolchain: stable
 
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-critical-${{ runner.os }}
+          cache-on-failure: true
+
+      - name: Fetch deps (warm cache)
+        run: cargo fetch --locked
+
       - name: Critical release scope tests
         run: |
           cargo test -p spex-core -p spex-mls -p spex-transport --locked --all-features --verbose
@@ -38,6 +47,15 @@ jobs:
         with:
           toolchain: stable
           components: rustfmt, clippy
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-docs-${{ runner.os }}
+          cache-on-failure: true
+
+      - name: Fetch deps (warm cache)
+        run: cargo fetch --locked
 
       - name: Docs and quality gates
         run: |
@@ -68,6 +86,15 @@ jobs:
         uses: dtolnay/rust-toolchain@nightly
         with:
           toolchain: nightly
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-robustness-${{ runner.os }}
+          cache-on-failure: true
+
+      - name: Fetch deps (warm cache)
+        run: cargo fetch --locked
 
       - name: Install cargo-fuzz
         run: cargo +nightly install cargo-fuzz --locked
