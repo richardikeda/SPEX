@@ -1,0 +1,19 @@
+SPEX
+Copyright 2026 Richard Ikeda
+
+This product is licensed under the Mozilla Public License, Version 2.0.
+A copy of the license is available at:
+  https://www.mozilla.org/en-US/MPL/2.0/
+or in the LICENSE.MD file at the root of this repository.
+
+Mozilla Public License 2.0 summary:
+- Source files covered by this license may be used in larger proprietary works,
+  provided that modifications to the MPL-covered files themselves are published
+  under the same license (file-level copyleft).
+- This product does not apply AGPLv3 or GPLv2/v3 terms. No "network use is
+  distribution" clause is in effect. Commercial use is permitted.
+
+Third-party dependencies are distributed under their own licenses.
+See Cargo.toml and Cargo.lock for the full dependency graph.
+A machine-readable software bill of materials (SBOM) can be generated with:
+  cargo cyclonedx  or  cargo sbom

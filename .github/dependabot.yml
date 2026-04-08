@@ -1,0 +1,50 @@
+# Dependabot configuration for SPEX.
+# Updates Cargo (Rust) and GitHub Actions dependencies automatically.
+# Opens PRs to the main branch; grouped to reduce PR noise.
+#
+# - Cargo: weekly check for workspace dependency updates.
+# - github-actions: weekly check for action pinning and version bumps.
+
+version: 2
+updates:
+  # ── Rust / Cargo ────────────────────────────────────────────────────────────
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "05:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 5
+    # Group all Rust dependency bumps into one PR per week to reduce noise.
+    groups:
+      rust-dependencies:
+        patterns:
+          - "*"
+    # Label all Dependabot PRs for easy filtering.
+    labels:
+      - "dependencies"
+      - "automated"
+    commit-message:
+      prefix: "chore(deps)"
+    # Reviewers inherit CODEOWNERS; no explicit override needed.
+
+  # ── GitHub Actions ──────────────────────────────────────────────────────────
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "05:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 3
+    groups:
+      actions-dependencies:
+        patterns:
+          - "*"
+    labels:
+      - "dependencies"
+      - "automated"
+      - "ci"
+    commit-message:
+      prefix: "chore(ci)"

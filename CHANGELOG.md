@@ -14,6 +14,35 @@ https://semver.org/
 
 ---
 
+## [1.0.9] - 2026-04-08
+
+### Open Source Structure — Repository Completeness Pass
+
+**New files — Recommended (now active):**
+- `.github/workflows/codeql.yml`: CodeQL static security analysis with
+  `security-extended` query suite; runs on push/PR to `main` and weekly schedule.
+- `.github/dependabot.yml`: automated dependency updates for Cargo and
+  GitHub Actions; weekly PRs grouped to reduce noise.
+
+**New files — Optional (deliberate inclusion):**
+- `.github/workflows/release.yml`: skeleton workflow for publishing crates to
+  crates.io on tag push. Guarded with `if: false` — not active until the publish
+  audit checklist is complete. Activation requires `CARGO_REGISTRY_TOKEN` secret.
+- `.github/ISSUE_TEMPLATE/question.yml`: structured question form in native
+  GitHub YAML format; prevents blank security questions and routes reporters.
+- `.github/FUNDING.yml`: placeholder for future GitHub Sponsors profile.
+- `ROADMAP.md`: documents v1.0 baseline, v1.x maintenance items, v2 planned
+  work, and out-of-scope protocol invariants.
+- `NOTICE`: MPL-2.0 copyright notice, license summary, and SBOM generation hint.
+
+**New directory — ADR index:**
+- `docs/decisions/README.md`: Architecture Decision Records index, format guide,
+  and blank template.
+- `docs/decisions/0001-license-mpl-2.md`: First ADR documenting the MPL-2.0
+  license selection rationale, AGPLv3 comparison, and future dual-licensing path.
+
+---
+
 ## [1.0.8] - 2026-04-08
 
 ### CI Automation — Version Guard and Auto Version Bump

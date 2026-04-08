@@ -1,0 +1,104 @@
+name: Release
+
+# Optional release workflow — skeleton for publishing SPEX crates to crates.io.
+# NOT ACTIVE YET: requires crates.io API token secret and a verified publish audit
+# of all crate versions before first activation.
+#
+# Activation checklist (complete before enabling):
+#  [ ] Verify all crate versions are correct and consistent (see Cargo.toml files).
+#  [ ] Add CARGO_REGISTRY_TOKEN secret to the repository settings.
+#  [ ] Run `cargo publish --dry-run -p <crate>` locally for each crate.
+#  [ ] Ensure all crates pass `cargo package --list` for unwanted file inclusion.
+#  [ ] Remove the `if: false` guard below.
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    # Guard: remove this line when the activation checklist above is complete.
+    if: false
+    name: Publish crates to crates.io
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-publish-${{ runner.os }}
+          cache-on-failure: true
+
+      - name: Fetch deps
+        run: cargo fetch --locked
+
+      - name: Publish spex-core
+        run: cargo publish -p spex-core --locked
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      - name: Publish spex-mls
+        run: cargo publish -p spex-mls --locked
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      - name: Publish spex-transport
+        run: cargo publish -p spex-transport --locked
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      - name: Publish spex-bridge
+        run: cargo publish -p spex-bridge --locked
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      - name: Publish spex-client
+        run: cargo publish -p spex-client --locked
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      - name: Publish spex-cli
+        run: cargo publish -p spex-cli --locked
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  create-github-release:
+    if: false
+    name: Create GitHub Release
+    runs-on: ubuntu-24.04
+    needs: publish
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract CHANGELOG entry for this version
+        id: changelog
+        run: |
+          # Extract the top entry from CHANGELOG.md for the release notes.
+          TAG="${GITHUB_REF_NAME#v}"
+          NOTES=$(awk "/^## \[$TAG\]/{flag=1; next} /^## \[/{flag=0} flag{print}" CHANGELOG.md)
+          echo "notes<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$NOTES" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body: ${{ steps.changelog.outputs.notes }}
+          draft: false
+          prerelease: false

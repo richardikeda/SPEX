@@ -1,0 +1,65 @@
+name: question
+description: Ask a question about SPEX usage, integration, or protocol behavior
+title: "[Question]: "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before asking, please check:
+        - [README.md](https://github.com/richardikeda/SPEX/blob/main/README.md)
+        - [docs/integration.md](https://github.com/richardikeda/SPEX/blob/main/docs/integration.md)
+        - [docs/cli.md](https://github.com/richardikeda/SPEX/blob/main/docs/cli.md)
+        - [CONTRIBUTING.md](https://github.com/richardikeda/SPEX/blob/main/CONTRIBUTING.md)
+
+        **Security questions:** Do not use issues. Follow [SECURITY.md](https://github.com/richardikeda/SPEX/blob/main/SECURITY.md).
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which part of SPEX does your question relate to?
+      options:
+        - Protocol / wire format
+        - spex-core
+        - spex-mls
+        - spex-transport
+        - spex-bridge
+        - spex-client
+        - spex-cli
+        - CI / build / tooling
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: State the question clearly and concisely.
+      placeholder: What are the invariants I must preserve when...?
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: >
+        What have you already tried or read? Include relevant code snippets,
+        error messages, or reference to the specific document that left you
+        uncertain.
+      placeholder: I read docs/wire-format.md and understand X, but I am unclear about Y...
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues and found no answer.
+          required: true
+        - label: This is not a security report.
+          required: true
