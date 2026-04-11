@@ -14,6 +14,24 @@ https://semver.org/
 
 ---
 
+## [1.0.10] - 2026-04-11
+
+### CI Professionalization — Workflow Modernization and Hardening
+
+- Updated all workflow checkout steps to `actions/checkout@v6` to remove deprecated
+  Node 20 runtime usage warnings and align with current GitHub Actions runner expectations.
+- Upgraded CodeQL actions to `github/codeql-action@v4` (`init`, `autobuild`, `analyze`) to
+  keep static security analysis on the current supported major.
+- Added explicit workflow/job hardening controls:
+  - least-privilege `permissions: contents: read` in readiness and CI flows where write access
+    is not required;
+  - `timeout-minutes` on long-running jobs to avoid hanging runners and uncontrolled CI spend.
+- Improved CI determinism and consistency in Rust CI:
+  - standardized Linux runner to `ubuntu-24.04` in build matrix;
+  - defined shared environment variables (`CARGO_TERM_COLOR`, `RUST_BACKTRACE`) at workflow scope.
+
+---
+
 ## [1.0.9] - 2026-04-08
 
 ### Open Source Structure — Repository Completeness Pass
