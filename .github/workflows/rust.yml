@@ -1,24 +1,7 @@
 name: Rust CI
 
 on:
-  pull_request:
-    branches: [main]
-    paths-ignore:
-      - '**/*.md'
-      - '**/*.MD'
-      - 'docs/**'
-      - 'LICENSE.MD'
-      - '.github/branch-protection/**'
-      - 'scripts/release_gate_docs.sh'
-  push:
-    branches: [main]
-    paths-ignore:
-      - '**/*.md'
-      - '**/*.MD'
-      - 'docs/**'
-      - 'LICENSE.MD'
-      - '.github/branch-protection/**'
-      - 'scripts/release_gate_docs.sh'
+  workflow_call:
 
 concurrency:
   group: rust-ci-${{ github.workflow }}-${{ github.ref }}
@@ -65,7 +48,14 @@ jobs:
           cache-on-failure: true
 
       - name: Fetch deps (warm cache)
-        run: cargo fetch --locked
+        run: |
+          for i in 1 2 3; do
+            cargo fetch --locked && exit 0
+            echo "cargo fetch failed (attempt $i), retrying..."
+            sleep 5
+          done
+          echo "cargo fetch failed after retries"
+          exit 1
 
       - name: Build (workspace)
         run: cargo build --workspace --locked --verbose
@@ -99,7 +89,14 @@ jobs:
           cache-on-failure: true
 
       - name: Fetch deps (warm cache)
-        run: cargo fetch --locked
+        run: |
+          for i in 1 2 3; do
+            cargo fetch --locked && exit 0
+            echo "cargo fetch failed (attempt $i), retrying..."
+            sleep 5
+          done
+          echo "cargo fetch failed after retries"
+          exit 1
 
       - name: Format check
         run: cargo fmt --all -- --check

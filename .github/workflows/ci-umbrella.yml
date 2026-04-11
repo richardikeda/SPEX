@@ -1,0 +1,41 @@
+name: CI Umbrella
+
+# Single orchestration workflow for SPEX CI gates.
+# This workflow centralizes execution and calls reusable workflows.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      run_extended_checks:
+        description: Run robustness and supply-chain release checks.
+        required: false
+        default: false
+        type: boolean
+  schedule:
+    - cron: '0 3 * * 1'
+
+concurrency:
+  group: ci-umbrella-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    name: Rust CI
+    uses: ./.github/workflows/rust.yml
+
+  release-readiness:
+    name: Release Readiness
+    uses: ./.github/workflows/release-readiness.yml
+    with:
+      run_extended: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.run_extended_checks) }}
+
+  codeql:
+    name: CodeQL
+    uses: ./.github/workflows/codeql.yml

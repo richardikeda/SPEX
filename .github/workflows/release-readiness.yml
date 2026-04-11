@@ -1,13 +1,13 @@
 name: Release Readiness
 
 on:
-  pull_request:
-    branches: [main]
-  push:
-    branches: [main]
-  workflow_dispatch:
-  schedule:
-    - cron: '0 3 * * 1'
+  workflow_call:
+    inputs:
+      run_extended:
+        description: Run robustness and supply-chain jobs.
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: release-readiness-${{ github.workflow }}-${{ github.ref }}
@@ -35,7 +35,14 @@ jobs:
           cache-on-failure: true
 
       - name: Fetch deps (warm cache)
-        run: cargo fetch --locked
+        run: |
+          for i in 1 2 3; do
+            cargo fetch --locked && exit 0
+            echo "cargo fetch failed (attempt $i), retrying..."
+            sleep 5
+          done
+          echo "cargo fetch failed after retries"
+          exit 1
 
       - name: Critical release scope tests
         run: |
@@ -60,7 +67,14 @@ jobs:
           cache-on-failure: true
 
       - name: Fetch deps (warm cache)
-        run: cargo fetch --locked
+        run: |
+          for i in 1 2 3; do
+            cargo fetch --locked && exit 0
+            echo "cargo fetch failed (attempt $i), retrying..."
+            sleep 5
+          done
+          echo "cargo fetch failed after retries"
+          exit 1
 
       - name: Docs and quality gates
         run: |
@@ -78,7 +92,7 @@ jobs:
         run: ./scripts/release_gate_negative_test.sh
 
   release-robustness:
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    if: inputs.run_extended
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     steps:
@@ -101,7 +115,14 @@ jobs:
           cache-on-failure: true
 
       - name: Fetch deps (warm cache)
-        run: cargo fetch --locked
+        run: |
+          for i in 1 2 3; do
+            cargo fetch --locked && exit 0
+            echo "cargo fetch failed (attempt $i), retrying..."
+            sleep 5
+          done
+          echo "cargo fetch failed after retries"
+          exit 1
 
       - name: Install cargo-fuzz
         run: cargo +nightly install cargo-fuzz --locked
@@ -125,7 +146,7 @@ jobs:
           done
 
   release-supply-chain:
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    if: inputs.run_extended
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:

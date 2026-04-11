@@ -14,6 +14,23 @@ https://semver.org/
 
 ---
 
+## [1.0.11] - 2026-04-11
+
+### CI Umbrella — Centralized Workflow Orchestration
+
+- Added centralized CI orchestration workflow:
+  - `.github/workflows/ci-umbrella.yml` now serves as the single entrypoint for PR/push/manual/schedule CI execution.
+- Converted primary CI workflows to reusable `workflow_call` units:
+  - `.github/workflows/rust.yml`
+  - `.github/workflows/release-readiness.yml`
+  - `.github/workflows/codeql.yml`
+- Added controlled extended-check execution via umbrella input:
+  - `run_extended_checks` triggers robustness and supply-chain jobs when needed.
+- Improved resilience for transient network failures by adding retry loops around
+  `cargo fetch --locked` in reusable workflows.
+
+---
+
 ## [1.0.10] - 2026-04-11
 
 ### CI Professionalization — Workflow Modernization and Hardening

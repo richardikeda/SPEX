@@ -8,23 +8,7 @@ name: CodeQL
 # invoke `cargo build` internally and extract the compilation database.
 
 on:
-  push:
-    branches: [main]
-    paths-ignore:
-      - '**/*.md'
-      - '**/*.MD'
-      - 'docs/**'
-      - 'LICENSE.MD'
-  pull_request:
-    branches: [main]
-    paths-ignore:
-      - '**/*.md'
-      - '**/*.MD'
-      - 'docs/**'
-      - 'LICENSE.MD'
-  schedule:
-    # Run every Monday at 04:00 UTC independent of push activity.
-    - cron: '0 4 * * 1'
+  workflow_call:
 
 concurrency:
   group: codeql-${{ github.workflow }}-${{ github.ref }}
