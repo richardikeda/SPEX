@@ -14,6 +14,14 @@ https://semver.org/
 
 ---
 
+
+## [1.0.10] - 2026-04-11
+
+### Changed
+- Automated version bump.
+
+---
+
 ## [1.0.9] - 2026-04-08
 
 ### Open Source Structure — Repository Completeness Pass
