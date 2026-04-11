@@ -1,11 +1,8 @@
 name: CodeQL
 
 # Static security analysis via GitHub CodeQL.
-# Recommended for open source security-sensitive projects.
-# Runs on push/PR to main and on weekly schedule.
-#
-# The `rust` language support uses `build-mode: autobuild`; CodeQL will
-# invoke `cargo build` internally and extract the compilation database.
+# Uses build-mode: none — the Rust extractor performs source-level analysis
+# without compiling the project, saving significant CI time.
 
 on:
   workflow_call:
@@ -13,9 +10,6 @@ on:
 concurrency:
   group: codeql-${{ github.ref }}
   cancel-in-progress: true
-
-env:
-  CARGO_TERM_COLOR: always
 
 # Least-privilege: CodeQL requires security-events write; everything else is read.
 permissions:
@@ -27,37 +21,22 @@ jobs:
   analyze:
     name: Analyze (${{ matrix.language }})
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        # CodeQL supports Rust natively via the Rust extractor GA.
-        # Add 'actions' if you use composite or reusable actions worth scanning.
         language: [rust]
+        build-mode: [none]
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-
-      - name: Install Rust stable toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
-
-      - name: Cache Rust build artifacts
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: codeql-${{ runner.os }}
-          cache-on-failure: true
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
         with:
           languages: ${{ matrix.language }}
-          # Use the security-extended query suite for a security-critical project.
+          build-mode: ${{ matrix.build-mode }}
           queries: security-extended
-
-      - name: Build for CodeQL (autobuild)
-        uses: github/codeql-action/autobuild@v4
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4

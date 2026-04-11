@@ -14,6 +14,21 @@ https://semver.org/
 
 ---
 
+## [1.0.13] - 2026-04-11
+
+### CI Fixes — CodeQL Performance and Cross-Platform Compatibility
+
+- Switched CodeQL from `autobuild` to `build-mode: none` (source-level analysis).
+  Eliminates full Rust compilation during analysis — cuts CodeQL time from ~90 min
+  to ~30 min and removes need for Rust toolchain/cache in the CodeQL job.
+- Fixed Windows build failure in Rust CI: added `shell: bash` to cargo fetch retry
+  loops (bash syntax was incompatible with the Windows default PowerShell shell).
+- Updated `release_gate_docs.sh` to match the current release-readiness workflow
+  format (individual per-crate test assertions instead of single combined command).
+- Reduced CodeQL timeout from 90 min to 30 min.
+
+---
+
 ## [1.0.12] - 2026-04-11
 
 ### CI Umbrella — Full Unification and Auto-Version

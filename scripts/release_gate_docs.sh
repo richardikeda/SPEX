@@ -41,8 +41,18 @@ if ! rg -q "release-critical-tests" .github/workflows/release-readiness.yml; the
   exit 1
 fi
 
-if ! rg -q "cargo test -p spex-core -p spex-mls -p spex-transport --locked --all-features --verbose" .github/workflows/release-readiness.yml; then
-  echo "release-critical-tests must execute only the explicit critical package scope" >&2
+if ! rg -q "cargo test -p spex-core --locked --all-features" .github/workflows/release-readiness.yml; then
+  echo "release-critical-tests must test spex-core" >&2
+  exit 1
+fi
+
+if ! rg -q "cargo test -p spex-mls --locked --all-features" .github/workflows/release-readiness.yml; then
+  echo "release-critical-tests must test spex-mls" >&2
+  exit 1
+fi
+
+if ! rg -q "cargo test -p spex-transport --locked --all-features" .github/workflows/release-readiness.yml; then
+  echo "release-critical-tests must test spex-transport" >&2
   exit 1
 fi
 

@@ -53,6 +53,7 @@ jobs:
           cache-on-failure: true
 
       - name: Fetch deps (warm cache)
+        shell: bash
         run: |
           for i in 1 2 3; do
             cargo fetch --locked && exit 0
@@ -94,6 +95,7 @@ jobs:
           cache-on-failure: true
 
       - name: Fetch deps (warm cache)
+        shell: bash
         run: |
           for i in 1 2 3; do
             cargo fetch --locked && exit 0
