@@ -11,8 +11,8 @@ keywords = ["protocol", "security", "mls", "group-messaging", "cryptography"]
 categories = ["cryptography", "network-programming"]
 
 [dependencies]
-mls-rs = "0.51"
-mls-rs-crypto-rustcrypto = "0.19"
+mls-rs = "0.54"
+mls-rs-crypto-rustcrypto = "0.21"
 spex-core = { version = "0.1.1", path = "../../spex-core" }
 chacha20poly1305 = "0.10"
 

@@ -11,15 +11,15 @@ keywords = ["protocol", "security", "bridge", "http", "messaging"]
 categories = ["network-programming", "web-programming::http-server", "cryptography"]
 
 [dependencies]
-axum = { version = "0.7", features = ["macros"] }
+axum = { version = "0.8", features = ["macros"] }
 base64 = "0.22.1"
 ed25519-dalek = "2.1"
 hex = "0.4"
-rusqlite = { version = "0.31", features = ["bundled"] }
+rusqlite = { version = "0.39", features = ["bundled"] }
 parking_lot = "0.12.5"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-thiserror = "1"
+thiserror = "2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
@@ -27,7 +27,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 spex-core = { version = "0.1.1", path = "../../spex-core" }
 
 [dev-dependencies]
-criterion = "0.5"
+criterion = "0.8"
 proptest = "1"
 ed25519-dalek = "2.1"
 ciborium = "0.2"
