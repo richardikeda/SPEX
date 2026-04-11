@@ -134,7 +134,7 @@ impl AdaptiveRetryConfig {
     fn delay_for_attempt(&self, attempt: u32) -> Duration {
         let exponent = 2u32.saturating_pow(attempt.min(20));
         let capped = self.max_delay.min(self.base_delay.saturating_mul(exponent));
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let jitter = rng.gen_range((1.0 - self.jitter_ratio)..=(1.0 + self.jitter_ratio));
         capped.mul_f64(jitter.max(0.1))
     }

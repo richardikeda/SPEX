@@ -509,7 +509,7 @@ fn store_chunk_record(
 /// Performs a random-walk query to discover nearby peers via Kademlia.
 pub fn random_walk(kademlia: &mut Kademlia<MemoryStore>) {
     let mut random_bytes = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut random_bytes);
+    rand::rng().fill_bytes(&mut random_bytes);
     let _ = robust_random_walk_with_seed(kademlia, &random_bytes, 3);
 }
 
