@@ -14,6 +14,25 @@ https://semver.org/
 
 ---
 
+## [1.0.12] - 2026-04-11
+
+### CI Umbrella — Full Unification and Auto-Version
+
+- Fixed umbrella permissions: added `security-events: write` and `actions: read`
+  so CodeQL can upload SARIF results (was silently failing with `contents: read` only).
+- Fixed concurrency groups in all reusable workflows: replaced `github.workflow`
+  (which resolved to the caller's name) with static prefixes per workflow.
+- Converted `version-guard.yml` to `workflow_call` and integrated into the umbrella
+  (runs only on `pull_request` events).
+- Made `auto-version.yml` trigger automatically via `workflow_run` after CI Umbrella
+  succeeds on `main` push. Includes loop-guard to skip if last commit is already
+  an auto-version bump.
+- Updated `peter-evans/create-pull-request` from v6 to v8.
+- Updated README.md badge to single umbrella CI status.
+- Updated README.md governance references to point to `ci-umbrella.yml`.
+
+---
+
 ## [1.0.11] - 2026-04-11
 
 ### CI Umbrella — Centralized Workflow Orchestration

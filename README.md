@@ -2,8 +2,7 @@
 
 Secure Permissioned Exchange.
 
-[![Rust CI](https://github.com/richardikeda/SPEX/actions/workflows/rust.yml/badge.svg?branch=main)](https://github.com/richardikeda/SPEX/actions/workflows/rust.yml)
-[![Release Readiness](https://github.com/richardikeda/SPEX/actions/workflows/release-readiness.yml/badge.svg?branch=main)](https://github.com/richardikeda/SPEX/actions/workflows/release-readiness.yml)
+[![CI](https://github.com/richardikeda/SPEX/actions/workflows/ci-umbrella.yml/badge.svg?branch=main)](https://github.com/richardikeda/SPEX/actions/workflows/ci-umbrella.yml)
 
 ## Official Project Statement
 
@@ -48,7 +47,7 @@ This repository includes the standard open source governance and release control
 - Mandatory release checklist: [docs/release-v1-checklist.md](docs/release-v1-checklist.md)
 - Release operations runbook: [docs/runbook-release-operations.md](docs/runbook-release-operations.md)
 - Branch protection policy (declarative): [.github/branch-protection/main.json](.github/branch-protection/main.json)
-- CI and release gates: [.github/workflows/rust.yml](.github/workflows/rust.yml), [.github/workflows/release-readiness.yml](.github/workflows/release-readiness.yml)
+- CI and release gates: [.github/workflows/ci-umbrella.yml](.github/workflows/ci-umbrella.yml) (orchestrates all checks)
 
 SPEX is published as open source under a single project license: Mozilla Public License 2.0.
 This repository does not currently use dual licensing or AGPL terms.

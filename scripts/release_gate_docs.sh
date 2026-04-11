@@ -46,7 +46,7 @@ if ! rg -q "cargo test -p spex-core -p spex-mls -p spex-transport --locked --all
   exit 1
 fi
 
-if ! rg -q '"release-critical-tests"' .github/branch-protection/main.json; then
+if ! rg -q 'release-critical-tests' .github/branch-protection/main.json; then
   echo "branch protection must require release-critical-tests status check" >&2
   exit 1
 fi

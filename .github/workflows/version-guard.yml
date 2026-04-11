@@ -2,10 +2,10 @@ name: Version Guard
 
 # Validates that VERSION.md is bumped whenever Rust code or Cargo.toml files change.
 # This enforces the AGENTS.md §3.1 versioning rule on every PR to main.
+# Called from ci-umbrella.yml on pull_request events only.
 
 on:
-  pull_request:
-    branches: [main]
+  workflow_call:
 
 concurrency:
   group: version-guard-${{ github.ref }}

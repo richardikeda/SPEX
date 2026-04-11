@@ -2,6 +2,8 @@ name: CI Umbrella
 
 # Single orchestration workflow for SPEX CI gates.
 # This workflow centralizes execution and calls reusable workflows.
+# All CI checks (build, lint, release-readiness, CodeQL, version-guard)
+# are orchestrated from here as a single status entry.
 
 on:
   pull_request:
@@ -19,11 +21,15 @@ on:
     - cron: '0 3 * * 1'
 
 concurrency:
-  group: ci-umbrella-${{ github.workflow }}-${{ github.ref }}
+  group: ci-umbrella-${{ github.ref }}
   cancel-in-progress: true
 
+# Permissions granted to all called workflows.
+# CodeQL requires security-events:write and actions:read.
 permissions:
   contents: read
+  security-events: write
+  actions: read
 
 jobs:
   rust:
@@ -34,8 +40,17 @@ jobs:
     name: Release Readiness
     uses: ./.github/workflows/release-readiness.yml
     with:
-      run_extended: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.run_extended_checks) }}
+      run_extended: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.run_extended_checks == true) }}
 
   codeql:
     name: CodeQL
     uses: ./.github/workflows/codeql.yml
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+
+  version-guard:
+    name: Version Guard
+    if: github.event_name == 'pull_request'
+    uses: ./.github/workflows/version-guard.yml

@@ -10,7 +10,7 @@ on:
         type: boolean
 
 concurrency:
-  group: release-readiness-${{ github.workflow }}-${{ github.ref }}
+  group: release-readiness-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
