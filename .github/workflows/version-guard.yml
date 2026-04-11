@@ -11,13 +11,16 @@ concurrency:
   group: version-guard-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   version-bump-required:
     name: version-bump-required
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout (full history for diff)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 

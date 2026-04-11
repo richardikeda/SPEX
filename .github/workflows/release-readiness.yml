@@ -9,15 +9,26 @@ on:
   schedule:
     - cron: '0 3 * * 1'
 
+# Cancel in-progress runs on PRs and pushes, but let manual/scheduled runs
+# complete fully — those trigger the expensive robustness and supply-chain gates.
 concurrency:
   group: release-readiness-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' && github.event_name != 'schedule' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+permissions:
+  contents: read
 
 jobs:
+  # ── Gate 1: critical security-sensitive crates ──────────────────────────────
   release-critical-tests:
+    name: Critical release tests (core, mls, transport)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -33,14 +44,22 @@ jobs:
       - name: Fetch deps (warm cache)
         run: cargo fetch --locked
 
-      - name: Critical release scope tests
-        run: |
-          cargo test -p spex-core -p spex-mls -p spex-transport --locked --all-features --verbose
+      # Run each critical crate individually for clear failure attribution.
+      - name: Test spex-core (all features)
+        run: cargo test -p spex-core --locked --all-features
 
+      - name: Test spex-mls (all features)
+        run: cargo test -p spex-mls --locked --all-features
+
+      - name: Test spex-transport (all features)
+        run: cargo test -p spex-transport --locked --all-features
+
+  # ── Gate 2: documentation quality and static analysis ───────────────────────
   release-docs-and-quality:
+    name: Docs and quality gates (fmt, clippy, doc, release script)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - name: Install Rust (fmt + clippy)
         uses: dtolnay/rust-toolchain@stable
@@ -57,32 +76,44 @@ jobs:
       - name: Fetch deps (warm cache)
         run: cargo fetch --locked
 
-      - name: Docs and quality gates
-        run: |
-          cargo fmt --all -- --check
-          cargo clippy --workspace --locked -- -D warnings
-          ./scripts/release_gate_docs.sh
+      - name: Format check
+        run: cargo fmt --all -- --check
 
+      - name: Clippy (all features)
+        run: cargo clippy --workspace --locked --all-features -- -D warnings
+
+      - name: Check docs compile
+        run: cargo doc --workspace --no-deps --all-features
+        env:
+          RUSTDOCFLAGS: -D warnings
+
+      - name: Release gate docs
+        run: ./scripts/release_gate_docs.sh
+
+  # ── Gate 3: failure-path / negative behavior validation ─────────────────────
   release-negative-gate:
+    name: Negative gate (failure-path validation)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - name: Validate block-on-failure behavior
         run: ./scripts/release_gate_negative_test.sh
 
+  # ── Gate 4: full robustness suite + fuzz smoke (manual / weekly only) ────────
   release-robustness:
+    name: Robustness and fuzz smoke tests
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - name: Install Rust (stable)
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
 
-      - name: Install Rust (nightly)
+      - name: Install Rust (nightly — required for cargo-fuzz)
         uses: dtolnay/rust-toolchain@nightly
         with:
           toolchain: nightly
@@ -90,7 +121,8 @@ jobs:
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: release-robustness-${{ runner.os }}
+          # Separate key: nightly toolchain produces a different artifact tree.
+          shared-key: release-robustness-${{ runner.os }}-nightly
           cache-on-failure: true
 
       - name: Fetch deps (warm cache)
@@ -101,40 +133,52 @@ jobs:
 
       - name: Crate-level robustness suites
         run: |
-          cargo test -p spex-core --locked --verbose
-          cargo test -p spex-mls --locked --verbose
-          cargo test -p spex-transport --locked --verbose
-          cargo test -p spex-bridge --locked --verbose
-          cargo test -p spex-client --locked --verbose
-          cargo test -p spex-cli --locked --verbose
+          cargo test -p spex-core --locked
+          cargo test -p spex-mls --locked
+          cargo test -p spex-transport --locked
+          cargo test -p spex-bridge --locked
+          cargo test -p spex-client --locked
+          cargo test -p spex-cli --locked
 
-      - name: Fuzz smoke (deterministic short run)
+      - name: Fuzz smoke (deterministic 30 s per target, seed=1)
         run: |
           set -euo pipefail
           for target_file in fuzz/fuzz_targets/*.rs; do
             target_name="$(basename "${target_file}" .rs)"
-            echo "Running fuzz smoke for ${target_name}"
+            echo "==> Fuzz smoke: ${target_name}"
             cargo +nightly fuzz run "${target_name}" --fuzz-dir fuzz -- -max_total_time=30 -seed=1
           done
 
+  # ── Gate 5: supply-chain audit (manual / weekly only) ────────────────────────
   release-supply-chain:
+    name: Supply chain security (audit + deny)
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
 
-      - name: Install cargo-audit and cargo-deny
-        run: |
-          cargo install cargo-audit --locked
-          cargo install cargo-deny --locked
+      # rust-cache also caches ~/.cargo/bin, so cargo-audit and cargo-deny are
+      # restored on subsequent runs without recompilation.
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-supply-chain-${{ runner.os }}
+          cache-on-failure: true
 
-      - name: cargo audit
+      # taiki-e/install-action downloads pre-built binaries — much faster than
+      # compiling cargo-audit and cargo-deny from source.
+      - name: Install cargo-audit and cargo-deny
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit,cargo-deny
+
+      - name: cargo audit (CVE / RUSTSEC advisory check)
         run: cargo audit
 
-      - name: cargo deny check
+      - name: cargo deny check (licenses + bans + advisories + sources)
         run: cargo deny check
