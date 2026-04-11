@@ -134,7 +134,7 @@ impl AdaptiveRetryConfig {
     fn delay_for_attempt(&self, attempt: u32) -> Duration {
         let exponent = 2u32.saturating_pow(attempt.min(20));
         let capped = self.max_delay.min(self.base_delay.saturating_mul(exponent));
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let jitter = rng.gen_range((1.0 - self.jitter_ratio)..=(1.0 + self.jitter_ratio));
         capped.mul_f64(jitter.max(0.1))
     }
@@ -621,7 +621,7 @@ impl P2pTransport {
                         info!(target: "spex_transport::p2p", operation="publish_manifest", correlation_id=%correlation_id, attempt=attempts, "manifest publish completed");
                         break;
                     }
-                    Err(PublishError::InsufficientPeers)
+                    Err(PublishError::NoPeersSubscribedToTopic)
                         if Instant::now() < deadline && attempts < retry.max_retries =>
                     {
                         attempts += 1;
@@ -630,7 +630,7 @@ impl P2pTransport {
                         warn!(target: "spex_transport::p2p", operation="publish_manifest", correlation_id=%correlation_id, attempt=attempts, delay_ms=delay.as_millis() as u64, "publish waiting for peers");
                         self.drive_swarm(delay, &mut ignored, |_, _| {}).await;
                     }
-                    Err(PublishError::InsufficientPeers) => {
+                    Err(PublishError::NoPeersSubscribedToTopic) => {
                         self.record_timeout("publish");
                         return Err(TransportError::Libp2p(
                             "manifest publish timed out waiting for peers".to_string(),

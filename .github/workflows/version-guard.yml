@@ -11,6 +11,9 @@ concurrency:
   group: version-guard-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   version-bump-required:
     name: version-bump-required

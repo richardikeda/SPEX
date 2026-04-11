@@ -9,11 +9,9 @@ concurrency:
 
 permissions:
   contents: read
-
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
-
 jobs:
   build-and-test:
     name: build-and-test (${{ matrix.os }}, ${{ matrix.toolchain }})
@@ -22,13 +20,20 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Primary: Ubuntu stable — runs the full test suite.
           - os: ubuntu-24.04
             toolchain: stable
             run_tests: true
+          # Beta: catches regressions before they land in stable.
           - os: ubuntu-24.04
             toolchain: beta
             run_tests: false
+          # macOS: cross-platform build smoke test.
           - os: macos-latest
+            toolchain: stable
+            run_tests: false
+          # Windows: cross-platform build smoke test (important for open-source CLI).
+          - os: windows-latest
             toolchain: stable
             run_tests: false
     runs-on: ${{ matrix.os }}
@@ -36,7 +41,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Install Rust toolchain
+      - name: Install Rust toolchain (${{ matrix.toolchain }})
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: ${{ matrix.toolchain }}
@@ -58,25 +63,25 @@ jobs:
           exit 1
 
       - name: Build (workspace)
-        run: cargo build --workspace --locked --verbose
+        run: cargo build --workspace --locked
 
       - name: Test (default features)
         if: matrix.run_tests
-        run: cargo test --workspace --locked --verbose
+        run: cargo test --workspace --locked
 
       - name: Test (all features)
         if: matrix.run_tests
-        run: cargo test --workspace --locked --all-features --verbose
+        run: cargo test --workspace --locked --all-features
 
   lint:
-    name: lint (ubuntu, stable)
-    runs-on: ubuntu-latest
+    name: lint (ubuntu-24.04, stable)
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Install Rust toolchain (fmt, clippy)
+      - name: Install Rust toolchain (fmt + clippy)
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
@@ -101,5 +106,10 @@ jobs:
       - name: Format check
         run: cargo fmt --all -- --check
 
-      - name: Clippy
-        run: cargo clippy --workspace --locked -- -D warnings
+      - name: Clippy (all features)
+        run: cargo clippy --workspace --locked --all-features -- -D warnings
+
+      - name: Check docs compile
+        run: cargo doc --workspace --no-deps --all-features
+        env:
+          RUSTDOCFLAGS: -D warnings

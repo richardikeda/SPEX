@@ -14,19 +14,24 @@ concurrency:
   group: codeql-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  CARGO_TERM_COLOR: always
+
+# Least-privilege: CodeQL requires security-events write; everything else is read.
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
 jobs:
   analyze:
     name: Analyze (${{ matrix.language }})
     runs-on: ubuntu-24.04
     timeout-minutes: 90
-    permissions:
-      security-events: write
-      actions: read
-      contents: read
     strategy:
       fail-fast: false
       matrix:
-        # CodeQL supports Rust natively as of the Rust extractor GA.
+        # CodeQL supports Rust natively via the Rust extractor GA.
         # Add 'actions' if you use composite or reusable actions worth scanning.
         language: [rust]
     steps:

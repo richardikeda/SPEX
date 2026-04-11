@@ -11,7 +11,7 @@ const LARGE_PAYLOAD_MAX_REASSEMBLE_MS: u64 = 3_000;
 fn stress_test_large_payload_chunking() {
     let payload_size = 10 * 1024 * 1024; // 10 MB
     let mut payload = vec![0u8; payload_size];
-    rand::thread_rng().fill_bytes(&mut payload);
+    rand::rng().fill_bytes(&mut payload);
 
     let config = ChunkingConfig {
         chunk_size: 64 * 1024, // 64 KB
@@ -38,7 +38,7 @@ fn stress_test_large_payload_chunking() {
 fn stress_test_tiny_chunks_many() {
     let payload_size = 1024 * 1024; // 1 MB
     let mut payload = vec![0u8; payload_size];
-    rand::thread_rng().fill_bytes(&mut payload);
+    rand::rng().fill_bytes(&mut payload);
 
     let config = ChunkingConfig {
         chunk_size: 1024,

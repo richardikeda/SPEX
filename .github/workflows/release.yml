@@ -1,35 +1,82 @@
 name: Release
 
-# Optional release workflow — skeleton for publishing SPEX crates to crates.io.
-# NOT ACTIVE YET: requires crates.io API token secret and a verified publish audit
-# of all crate versions before first activation.
+# Publishes SPEX crates to crates.io and creates a GitHub Release.
 #
-# Activation checklist (complete before enabling):
-#  [ ] Verify all crate versions are correct and consistent (see Cargo.toml files).
-#  [ ] Add CARGO_REGISTRY_TOKEN secret to the repository settings.
-#  [ ] Run `cargo publish --dry-run -p <crate>` locally for each crate.
-#  [ ] Ensure all crates pass `cargo package --list` for unwanted file inclusion.
-#  [ ] Remove the `if: false` guard below.
+# Activation checklist (complete ALL before removing the `if: false` guards):
+#   [ ] Verify all crate versions are correct and consistent across Cargo.toml files.
+#   [ ] Add CARGO_REGISTRY_TOKEN secret to the repository settings.
+#   [ ] Run `cargo publish --dry-run -p <crate>` locally for each crate.
+#   [ ] Verify `cargo package --list` output for each crate (no unwanted files).
+#   [ ] Run `cargo audit` and `cargo deny check` locally — zero findings.
+#   [ ] Remove the `if: false` guards from both jobs below.
 
 on:
   push:
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+'
 
+# Never cancel an in-progress release — partial publishes cannot be undone.
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
 
 permissions:
   contents: write
 
 jobs:
+  # ── Pre-flight: build + test + audit before touching crates.io ───────────────
+  preflight:
+    # Guard: remove this line when the activation checklist above is complete.
+    if: false
+    name: Pre-flight checks (build, test, audit)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-preflight-${{ runner.os }}
+          cache-on-failure: true
+
+      - name: Fetch deps
+        run: cargo fetch --locked
+
+      - name: Build (workspace)
+        run: cargo build --workspace --locked
+
+      - name: Test (all features)
+        run: cargo test --workspace --locked --all-features
+
+      - name: Install cargo-audit and cargo-deny
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit,cargo-deny
+
+      - name: cargo audit
+        run: cargo audit
+
+      - name: cargo deny check
+        run: cargo deny check
+
+  # ── Publish crates in dependency order ───────────────────────────────────────
   publish:
     # Guard: remove this line when the activation checklist above is complete.
     if: false
     name: Publish crates to crates.io
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    needs: preflight
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -48,37 +95,58 @@ jobs:
       - name: Fetch deps
         run: cargo fetch --locked
 
+      # Publish in strict dependency order.
+      # Each `sleep 30` gives crates.io time to index the uploaded crate before
+      # the next dependent crate attempts to resolve it.
+
       - name: Publish spex-core
         run: cargo publish -p spex-core --locked
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      - name: Wait for crates.io to index spex-core
+        run: sleep 30
 
       - name: Publish spex-mls
         run: cargo publish -p spex-mls --locked
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
+      - name: Wait for crates.io to index spex-mls
+        run: sleep 30
+
       - name: Publish spex-transport
         run: cargo publish -p spex-transport --locked
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      - name: Wait for crates.io to index spex-transport
+        run: sleep 30
 
       - name: Publish spex-bridge
         run: cargo publish -p spex-bridge --locked
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
+      - name: Wait for crates.io to index spex-bridge
+        run: sleep 30
+
       - name: Publish spex-client
         run: cargo publish -p spex-client --locked
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      - name: Wait for crates.io to index spex-client
+        run: sleep 30
 
       - name: Publish spex-cli
         run: cargo publish -p spex-cli --locked
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
+  # ── Create the GitHub Release with CHANGELOG notes ───────────────────────────
   create-github-release:
+    # Guard: remove this line when the activation checklist above is complete.
     if: false
     name: Create GitHub Release
     runs-on: ubuntu-24.04
@@ -87,15 +155,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Extract CHANGELOG entry for this version
+      - name: Extract CHANGELOG entry for this release
         id: changelog
         run: |
-          # Extract the top entry from CHANGELOG.md for the release notes.
+          # Extract the section for the tagged version from CHANGELOG.md.
           TAG="${GITHUB_REF_NAME#v}"
-          NOTES=$(awk "/^## \[$TAG\]/{flag=1; next} /^## \[/{flag=0} flag{print}" CHANGELOG.md)
+          NOTES=$(awk "/^## \[${TAG}\]/{flag=1; next} /^## \[/{flag=0} flag{print}" CHANGELOG.md)
+          if [[ -z "$NOTES" ]]; then
+            NOTES="See CHANGELOG.md for details."
+          fi
           echo "notes<<EOF" >> "$GITHUB_OUTPUT"
-          echo "$NOTES" >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
+          echo "$NOTES"     >> "$GITHUB_OUTPUT"
+          echo "EOF"        >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -103,3 +174,4 @@ jobs:
           body: ${{ steps.changelog.outputs.notes }}
           draft: false
           prerelease: false
+          generate_release_notes: false
