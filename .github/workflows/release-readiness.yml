@@ -13,7 +13,7 @@ on:
 # complete fully — those trigger the expensive robustness and supply-chain gates.
 concurrency:
   group: release-readiness-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name != 'schedule' && github.event_name != 'workflow_dispatch' }}
 
 permissions:
   contents: read
