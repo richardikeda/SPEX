@@ -14,6 +14,15 @@ https://semver.org/
 
 ---
 
+## [1.0.14] - 2026-04-11
+
+### CI Workflow Reliability and Performance
+
+- Removed duplicate lint/doc stage from `.github/workflows/rust.yml`; those checks remain enforced in `.github/workflows/release-readiness.yml`, reducing redundant CI time.
+- Fixed `release-readiness` concurrency behavior to match the documented intent: scheduled and manual runs are no longer canceled mid-execution.
+
+---
+
 ## [1.0.13] - 2026-04-11
 
 ### CI Fixes — CodeQL Performance and Cross-Platform Compatibility
