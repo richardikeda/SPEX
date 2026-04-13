@@ -14,6 +14,14 @@ https://semver.org/
 
 ---
 
+
+## [1.0.19] - 2026-04-13
+
+### Changed
+- Automated version bump.
+
+---
+
 ## [1.0.18] - 2026-04-13
 
 ### Documentation Public Hygiene and Security Disclosure
