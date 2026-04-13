@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
   - name: Security report
-    url: mailto:contato@enterscript.com
-    about: Report vulnerabilities privately. Do not file public security issues.
+    url: https://github.com/richardikeda/SPEX/security/advisories/new
+    about: Report vulnerabilities privately via GitHub Security Advisories. Do not file public security issues.
   - name: Contribution guide
     url: https://github.com/richardikeda/SPEX/blob/main/CONTRIBUTING.md
     about: Review contribution rules, testing expectations, and DCO requirements before opening an issue.
