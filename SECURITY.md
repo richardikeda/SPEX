@@ -23,9 +23,9 @@ Only main and the latest stable release receive security fixes.
 
 Do not open public issues for vulnerabilities.
 
-Security contact:
+Use GitHub Security Advisory private reporting for this repository:
 
-- contato@enterscript.com
+- https://github.com/richardikeda/SPEX/security/advisories/new
 
 Please include:
 
@@ -137,7 +137,7 @@ Users should monitor repository releases and changelog entries for remediation g
 
 ## Contact and Coordination
 
-- Private vulnerability disclosure: contato@enterscript.com
+- Private vulnerability disclosure: https://github.com/richardikeda/SPEX/security/advisories/new
 - Public non-security questions: use GitHub issues with explicit technical context
 - Security-sensitive reports must remain private until coordinated disclosure is complete
 

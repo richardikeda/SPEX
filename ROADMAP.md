@@ -76,8 +76,9 @@ The following will not change regardless of version, schedule, or request:
 
 ## Contributing to the Roadmap
 
-Protocol-level proposals must follow the task template in [AGENTS.md](AGENTS.md) and
-go through a documented ADR in [docs/decisions/](docs/decisions/) before any
+Protocol-level proposals must follow contribution and review rules in
+[CONTRIBUTING.md](CONTRIBUTING.md) and go through a documented ADR in
+[docs/decisions/](docs/decisions/) before any
 implementation is started.
 
 Non-protocol suggestions (tooling, CI, documentation) can be raised as issues
