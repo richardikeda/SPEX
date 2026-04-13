@@ -167,7 +167,7 @@ async fn spawn_bridge_with_items(items: Vec<Vec<u8>>) -> String {
         .map(|item| BASE64_STANDARD.encode(item))
         .collect();
     let app = Router::new().route(
-        "/inbox/:key",
+        "/inbox/{key}",
         get(move |Path(_key): Path<String>| {
             let items = encoded_items.clone();
             async move { Json(json!({ "items": items })) }

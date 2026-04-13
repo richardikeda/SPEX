@@ -31,7 +31,7 @@ async fn reject_for_key(
 /// Ensures bridge error payloads are mapped to explicit transport errors.
 #[tokio::test]
 async fn maps_bridge_validation_errors() {
-    let app = Router::new().route("/inbox/:key", put(reject_for_key));
+    let app = Router::new().route("/inbox/{key}", put(reject_for_key));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind");
