@@ -1,4 +1,4 @@
-# SPEX TODO List (v1.0.5)
+# SPEX TODO List (v1.0.18)
 
 ## Scope
 
@@ -11,12 +11,11 @@ organized by priority.
 
 ### [TASK 1] Push Git Version Tags to Origin
 
-Local tags exist: `v1.0.0`–`v1.0.5`.
-Only `v1.0.1` is currently on the remote.
+Ensure local release tags are published to origin and visible in GitHub tags/releases.
 
 Required action (maintainer):
 ```bash
-git push origin v1.0.0 v1.0.2 v1.0.3 v1.0.4 v1.0.5
+git push origin --tags
 ```
 
 Acceptance criteria:

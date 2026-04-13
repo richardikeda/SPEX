@@ -14,6 +14,23 @@ https://semver.org/
 
 ---
 
+## [1.0.18] - 2026-04-13
+
+### Documentation Public Hygiene and Security Disclosure
+
+- Updated vulnerability reporting guidance to use GitHub Security Advisories
+  instead of a public mailto contact.
+- Synchronized `TODO.md` release header and release-tag guidance with the current
+  repository version lineage.
+- Added a documentation entry-point (`docs/index.md`) with persona-based
+  navigation for public onboarding.
+- Reorganized historical release records into `docs/archive/` and converted old
+  top-level files into explicit archive pointers to reduce onboarding noise while
+  preserving transparency.
+- Clarified roadmap contribution language to point protocol governance through
+  `CONTRIBUTING.md` and ADR workflow under `docs/decisions/`.
+
+---
 ## [1.0.17] - 2026-04-13
 
 ### Repository Hygiene and Audit
