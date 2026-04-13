@@ -136,7 +136,7 @@ fn seed_inbox_with_expiry(db_path: &std::path::Path, inbox_key: &str, items: &[I
     for item in items {
         conn.execute(
             "INSERT INTO inbox_items (inbox_key, item, expires_at) VALUES (?1, ?2, ?3)",
-            params![inbox_key, item.payload, item.expires_at],
+            params![inbox_key, item.payload, item.expires_at.map(|v| v as i64)],
         )
         .expect("insert inbox item");
     }

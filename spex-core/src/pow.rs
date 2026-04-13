@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 use argon2::{Algorithm, Argon2, Params, Version};
-use rand_core::{OsRng, TryRngCore};
+use rand_core::{OsRng, RngCore};
 use sha2::{Digest, Sha256};
 
 use crate::error::SpexError;
@@ -84,7 +84,7 @@ pub(crate) fn derive_recipient_salt_with_context(recipient_key: &[u8], context: 
 /// Generates a random PoW nonce using the provided parameters.
 pub fn generate_pow_nonce(params: PowNonceParams) -> Vec<u8> {
     let mut nonce = vec![0u8; params.nonce_len];
-    OsRng.try_fill_bytes(&mut nonce).expect("OsRng failed");
+    OsRng.fill_bytes(&mut nonce);
     nonce
 }
 

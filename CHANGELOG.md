@@ -14,6 +14,55 @@ https://semver.org/
 
 ---
 
+## [1.0.17] - 2026-04-13
+
+### Repository Hygiene and Audit
+
+- Added `local.md` to `.gitignore` to prevent git-history backup files from
+  being accidentally committed.
+- Verified all `release_gate_docs.sh` checks pass on current HEAD.
+- Security audit of full commit history: no credentials, tokens, or secrets
+  found committed at any point in history.
+- Documented missing CHANGELOG entries for 1.0.15 and 1.0.16.
+
+---
+
+## [1.0.16] - 2026-04-13
+
+### Bridge, Cleanup, and Branch Protection
+
+- Added `ClientAddr` extractor for optional client socket address in Axum
+  handlers (`spex-bridge`).
+- Removed orphan gitlink entry `.claude/worktrees/gallant-noyce` that was
+  causing `fatal: No url found for submodule path` warnings in CI post-job
+  cleanup.
+- Updated `.gitignore` to exclude `.claude/` and transient local files.
+- Updated `branch-protection/main.json` to document the required CI status
+  checks: `CI Umbrella`, `Release Readiness / Critical release tests (core,
+  mls, transport)`, and `Version Guard / version-bump-required`.
+
+---
+
+## [1.0.15] - 2026-04-12
+
+### CI Umbrella and Workflow Unification
+
+- Implemented `ci-umbrella.yml` as the single orchestration entry-point:
+  all gates (`rust.yml`, `release-readiness.yml`, `codeql.yml`,
+  `version-guard.yml`) are now called as reusable `workflow_call` units and
+  produce a single top-level status check (`CI Umbrella`).
+- Unified CI workflows and enhanced auto-versioning with a loop-guard to
+  prevent runaway version increment loops.
+- Added `permissions` blocks to all workflows for least-privilege operation.
+- Improved `Rust CI` concurrency: in-progress runs on the same ref are
+  cancelled to reduce queue pressure while keeping scheduled/manual runs
+  intact.
+- Optimized CodeQL workflow: switched from `autobuild` to `build-mode: none`
+  (moved to CHANGELOG 1.0.13 context, finalized here); reduced CodeQL job
+  timeout to 30 min.
+
+---
+
 ## [1.0.14] - 2026-04-11
 
 ### CI Workflow Reliability and Performance

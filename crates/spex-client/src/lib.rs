@@ -939,7 +939,9 @@ pub fn encrypt_payload_with_aead(
     let cipher = ChaCha20Poly1305::new_from_slice(&key)
         .map_err(|err| ClientError::Crypto(err.to_string()))?;
     let mut nonce_bytes = [0u8; 12];
-    OsRng.try_fill_bytes(&mut nonce_bytes).expect("OsRng failed");
+    OsRng
+        .try_fill_bytes(&mut nonce_bytes)
+        .expect("OsRng failed");
     let nonce = Nonce::from_slice(&nonce_bytes);
     let ciphertext = cipher
         .encrypt(

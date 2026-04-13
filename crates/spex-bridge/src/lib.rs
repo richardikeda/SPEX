@@ -25,6 +25,28 @@ use std::{
 };
 use tokio::task;
 
+/// Optionally extracts the client socket address from the connection info extension.
+///
+/// axum 0.8 removed the blanket `Option<T: FromRequestParts>` impl for `ConnectInfo`.
+/// This extractor reads the extension directly so handlers can remain optional.
+pub struct ClientAddr(pub Option<SocketAddr>);
+
+impl<S: Send + Sync> axum::extract::FromRequestParts<S> for ClientAddr {
+    type Rejection = std::convert::Infallible;
+
+    fn from_request_parts(
+        parts: &mut axum::http::request::Parts,
+        _state: &S,
+    ) -> impl std::future::Future<Output = Result<Self, Self::Rejection>> + Send {
+        std::future::ready(Ok(ClientAddr(
+            parts
+                .extensions
+                .get::<ConnectInfo<SocketAddr>>()
+                .map(|ci| ci.0),
+        )))
+    }
+}
+
 #[derive(Clone)]
 pub struct AppState {
     pool: Arc<DbPool>,
@@ -371,9 +393,9 @@ impl IntoResponse for BridgeError {
 /// Builds the Axum router for the bridge API.
 pub fn app(state: AppState) -> Router {
     Router::new()
-        .route("/cards/:card_hash", put(put_card).get(get_card))
-        .route("/slot/:slot_id", put(put_slot).get(get_slot))
-        .route("/inbox/:key", put(put_inbox).get(get_inbox))
+        .route("/cards/{card_hash}", put(put_card).get(get_card))
+        .route("/slot/{slot_id}", put(put_slot).get(get_slot))
+        .route("/inbox/{key}", put(put_inbox).get(get_inbox))
         .with_state(state)
 }
 
@@ -478,14 +500,14 @@ fn inbox_items_has_expires_column(conn: &Connection) -> rusqlite::Result<bool> {
 async fn put_card(
     State(state): State<AppState>,
     Path(card_hash): Path<String>,
-    connect_info: Option<ConnectInfo<SocketAddr>>,
+    client_addr: ClientAddr,
     Json(payload): Json<StorageRequest>,
 ) -> Result<StatusCode, BridgeError> {
     let data = decode_base64(&payload.data)?;
     let data_len = data.len();
     let identity = identity_from_grant(&payload.grant)?;
     let now = state.clock.now();
-    let ip = extract_ip(connect_info);
+    let ip = extract_ip(client_addr);
     let snapshot = load_rate_limit_snapshot(&state, &identity, now, state.limits).await?;
     let minimum_pow = required_pow_params(&snapshot, &state.limits);
     let state_clone = state.clone();
@@ -563,13 +585,13 @@ async fn get_card(
 async fn put_slot(
     State(state): State<AppState>,
     Path(slot_id): Path<String>,
-    connect_info: Option<ConnectInfo<SocketAddr>>,
+    client_addr: ClientAddr,
     Json(payload): Json<StorageRequest>,
 ) -> Result<StatusCode, BridgeError> {
     let data = decode_base64(&payload.data)?;
     let data_len = data.len();
     let now = state.clock.now();
-    let ip = extract_ip(connect_info);
+    let ip = extract_ip(client_addr);
     let identity = identity_from_grant(&payload.grant).unwrap_or_else(|_| "unknown".to_string());
     if let Err(err) = validate_grant(now, &payload.grant) {
         tracing::warn!(
@@ -669,14 +691,14 @@ async fn get_slot(
 async fn put_inbox(
     State(state): State<AppState>,
     Path(inbox_key): Path<String>,
-    connect_info: Option<ConnectInfo<SocketAddr>>,
+    client_addr: ClientAddr,
     Json(payload): Json<InboxStoreRequest>,
 ) -> Result<StatusCode, BridgeError> {
     let data = decode_base64(&payload.data)?;
     let data_len = data.len();
     let identity = identity_from_grant(&payload.grant)?;
     let now = state.clock.now();
-    let ip = extract_ip(connect_info);
+    let ip = extract_ip(client_addr);
     let snapshot = load_rate_limit_snapshot(&state, &identity, now, state.limits).await?;
     let minimum_pow = required_pow_params(&snapshot, &state.limits);
     let state_clone = state.clone();
@@ -863,10 +885,11 @@ fn identity_from_grant(grant: &GrantTokenPayload) -> Result<String, BridgeError>
     Ok(hex::encode(user_id))
 }
 
-/// Extracts a client IP string from connection info when available, masking it for privacy.
-fn extract_ip(connect_info: Option<ConnectInfo<SocketAddr>>) -> String {
-    connect_info
-        .map(|info| mask_ip(info.0.ip()))
+/// Extracts a client IP string from the client address when available, masking it for privacy.
+fn extract_ip(client_addr: ClientAddr) -> String {
+    client_addr
+        .0
+        .map(|addr| mask_ip(addr.ip()))
         .unwrap_or_else(|| "unknown".to_string())
 }
 
@@ -1206,7 +1229,7 @@ async fn load_inbox_items(
              WHERE inbox_key = ?1 AND (expires_at IS NULL OR expires_at > ?2) AND id > ?3 \
              ORDER BY id ASC LIMIT ?4",
         )?;
-        let rows = stmt.query_map(params![inbox_key, now, cursor, fetch_limit], |row| {
+        let rows = stmt.query_map(params![inbox_key, now as i64, cursor, fetch_limit], |row| {
             Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?))
         })?;
         let mut items = Vec::new();

@@ -37,7 +37,7 @@ async fn test_publish_via_bridge_success() {
         received_requests: Arc::new(Mutex::new(Vec::new())),
     };
     let app = Router::new()
-        .route("/inbox/:key", put(handle_put_inbox))
+        .route("/inbox/{key}", put(handle_put_inbox))
         .with_state(state.clone());
 
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -130,7 +130,7 @@ async fn handle_put_inbox_reject(
 
 #[tokio::test]
 async fn test_publish_via_bridge_explicit_rejections() {
-    let app = Router::new().route("/inbox/:key", put(handle_put_inbox_reject));
+    let app = Router::new().route("/inbox/{key}", put(handle_put_inbox_reject));
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     tokio::spawn(async move {
