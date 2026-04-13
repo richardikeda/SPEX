@@ -4,6 +4,12 @@ name: CI Umbrella
 # This workflow centralizes execution and calls reusable workflows.
 # All CI checks (build, lint, release-readiness, CodeQL, version-guard)
 # are orchestrated from here as a single status entry.
+#
+# Docs-only skip: when a PR or push only touches documentation files
+# (.md, docs/, AUTHORS, LICENSE, NOTICE, .github/ISSUE_TEMPLATE, etc.),
+# the expensive build/test/analysis jobs are skipped automatically.
+# A final "CI Gate" aggregator job always runs and is the sole required
+# status check in the branch ruleset; it passes when jobs are skipped.
 
 on:
   pull_request:
@@ -32,18 +38,82 @@ permissions:
   actions: read
 
 jobs:
+  # Detects whether source code (.rs / Cargo.toml) changed relative to the
+  # base branch (PR) or previous commit (push). On schedule/workflow_dispatch,
+  # always treats as src_changed=true so full CI always executes on these paths.
+  detect-changes:
+    name: detect-changes
+    runs-on: ubuntu-24.04
+    outputs:
+      src_changed: ${{ steps.check.outputs.src_changed }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Detect source vs docs-only change
+        id: check
+        shell: bash
+        run: |
+          # Scheduled and manual runs always execute all jobs.
+          if [[ "${{ github.event_name }}" == "schedule" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "src_changed=true" >> "$GITHUB_OUTPUT"
+            echo "Triggered by ${{ github.event_name }} — running all CI jobs."
+            exit 0
+          fi
+
+          # Compute the set of changed files against the target base.
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            BASE="origin/${{ github.base_ref }}"
+          else
+            # Push event: compare to the immediate parent commit.
+            BASE="HEAD~1"
+          fi
+
+          CHANGED=$(git diff --name-only "$BASE" HEAD 2>/dev/null || echo "")
+
+          # Source-level changes: .rs files or Cargo.toml manifests.
+          # Excludes: Cargo.lock (auto-generated), .github/ workflow/template
+          # files, and any pure-documentation paths.
+          SRC=$(echo "$CHANGED" \
+            | grep -E '\.(rs|toml)$' \
+            | grep -v '^Cargo\.lock$' \
+            | grep -v '^\.github/' \
+            || true)
+
+          if [[ -n "$SRC" ]]; then
+            echo "src_changed=true" >> "$GITHUB_OUTPUT"
+            echo "Source changes detected — running full CI:"
+            echo "$SRC"
+          else
+            echo "src_changed=false" >> "$GITHUB_OUTPUT"
+            echo "Docs-only change detected — build and test jobs will be skipped."
+            echo "Changed files:"
+            echo "$CHANGED"
+          fi
+
   rust:
     name: Rust CI
+    needs: detect-changes
+    # Skip the full Rust build/test matrix when no source code changed.
+    if: needs.detect-changes.outputs.src_changed == 'true'
     uses: ./.github/workflows/rust.yml
 
   release-readiness:
     name: Release Readiness
+    needs: detect-changes
+    # Skip release-readiness gates when no source code changed.
+    if: needs.detect-changes.outputs.src_changed == 'true'
     uses: ./.github/workflows/release-readiness.yml
     with:
       run_extended: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.run_extended_checks == true) }}
 
   codeql:
     name: CodeQL
+    # CodeQL uses build-mode:none (source-level, no compilation) and is fast.
+    # It must always run because the branch ruleset enforces a code_scanning rule
+    # that requires CodeQL results to be present for every commit — skipping it
+    # on docs-only changes would block the merge with no way to bypass it.
     uses: ./.github/workflows/codeql.yml
     permissions:
       contents: read
@@ -52,5 +122,34 @@ jobs:
 
   version-guard:
     name: Version Guard
-    if: github.event_name == 'pull_request'
+    needs: detect-changes
+    # Only run on PRs that contain source-level changes (.rs / .toml).
+    # Docs-only PRs do not modify code, so there is nothing to guard — skipping
+    # avoids an unnecessary full-history checkout on every documentation PR.
+    if: github.event_name == 'pull_request' && needs.detect-changes.outputs.src_changed == 'true'
     uses: ./.github/workflows/version-guard.yml
+
+  # Aggregator gate — the sole required status check in the branch ruleset.
+  # Runs unconditionally (always()) and inspects all upstream job results.
+  # Passes when every job either succeeded or was legitimately skipped
+  # (docs-only change). Fails when any job reported failure or cancellation.
+  ci-gate:
+    name: CI Gate
+    runs-on: ubuntu-24.04
+    needs: [detect-changes, rust, release-readiness, codeql, version-guard]
+    if: always()
+    steps:
+      - name: Evaluate CI results
+        shell: bash
+        run: |
+          # Collect the result of every upstream job.
+          RESULTS="${{ join(needs.*.result, ' ') }}"
+          echo "Upstream job results: $RESULTS"
+
+          # Fail if any job reported failure or was cancelled.
+          if echo "$RESULTS" | grep -qE '\b(failure|cancelled)\b'; then
+            echo "::error::One or more CI jobs failed or were cancelled."
+            exit 1
+          fi
+
+          echo "CI Gate: all jobs passed or were skipped (docs-only change)."
