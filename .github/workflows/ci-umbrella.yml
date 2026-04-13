@@ -110,9 +110,10 @@ jobs:
 
   codeql:
     name: CodeQL
-    needs: detect-changes
-    # Skip static analysis when no source code changed; nothing to analyze.
-    if: needs.detect-changes.outputs.src_changed == 'true'
+    # CodeQL uses build-mode:none (source-level, no compilation) and is fast.
+    # It must always run because the branch ruleset enforces a code_scanning rule
+    # that requires CodeQL results to be present for every commit — skipping it
+    # on docs-only changes would block the merge with no way to bypass it.
     uses: ./.github/workflows/codeql.yml
     permissions:
       contents: read
