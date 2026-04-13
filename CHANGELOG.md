@@ -14,6 +14,53 @@ https://semver.org/
 
 ---
 
+## [1.0.20] - 2026-04-13
+
+### CI: Workflow Audit and Cleanup
+
+Expanded the docs-only CI skip work with full workflow coherence fixes.
+
+**Removed `auto-version.yml`:**
+- The workflow was broken by design: `peter-evans/create-pull-request@v8` creates
+  commits using `GITHUB_TOKEN`, which are unsigned. The branch ruleset requires
+  signed commits, so every auto-version PR was unmerge-able.
+- Additionally, the workflow would fire on docs-only pushes (since `ci-gate`
+  always passes), triggering spurious version bumps for non-code changes.
+- `version-guard` already enforces the AGENTS.md §3.1 bump rule at PR time;
+  a post-merge auto-bump is redundant. Version increments remain a manual step.
+
+**Updated `ci-umbrella.yml`:**
+- `version-guard` is now gated on `needs.detect-changes.outputs.src_changed == 'true'`
+  in addition to `github.event_name == 'pull_request'`.
+  Docs-only PRs skip the full-history checkout entirely.
+
+**Simplified `codeql.yml`:**
+- Removed the single-item `strategy.matrix` (`language: [rust]`, `build-mode: [none]`).
+  SPEX has one language; the matrix added no value and produced a confusing
+  job name (`Analyze (rust)` via a template expression). Now uses literal values.
+
+---
+
+## [1.0.19] - 2026-04-13
+
+### CI: Docs-Only Skip
+
+- Added `detect-changes` job to `ci-umbrella.yml` that detects whether a PR or
+  push contains source-level changes (`.rs` / `.toml` files, excluding
+  `Cargo.lock` and `.github/` paths).
+- `rust`, `release-readiness`, and `codeql` jobs are now conditional on
+  `src_changed == 'true'`, so they are skipped automatically for documentation-
+  only changes.
+- `version-guard` continues to run on all PRs regardless of change type
+  (it already passes gracefully when no code changed).
+- Added `ci-gate` aggregator job (runs unconditionally via `always()`) as the
+  single required status check in the branch ruleset; passes when all jobs
+  succeeded or were legitimately skipped.
+- Scheduled (`cron`) and `workflow_dispatch` runs always execute all jobs
+  regardless of file paths.
+
+---
+
 ## [1.0.18] - 2026-04-13
 
 ### Documentation Public Hygiene and Security Disclosure
