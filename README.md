@@ -54,16 +54,20 @@ This repository does not currently use dual licensing or AGPL terms.
 
 ## Documentation Map
 
+- Documentation entry point (recommended first read): [docs/index.md](docs/index.md)
+
 - Architecture overview: [docs/overview.md](docs/overview.md)
 - Integration guide: [docs/integration.md](docs/integration.md)
 - CLI guide: [docs/cli.md](docs/cli.md)
 - Bridge API: [docs/bridge-api.md](docs/bridge-api.md)
 - Bridge TLS deployment guide: [docs/bridge-tls-deployment.md](docs/bridge-tls-deployment.md)
 - Protocol security guide: [docs/security.md](docs/security.md)
+- Documentation hosting strategy: [docs/documentation-hosting-strategy.md](docs/documentation-hosting-strategy.md)
 - Wire format reference: [docs/wire-format.md](docs/wire-format.md)
 - Transport observability: [docs/observability.md](docs/observability.md)
 - Operations: abuse/revocation/recovery: [docs/operations-revocation-recovery-abuse.md](docs/operations-revocation-recovery-abuse.md)
 - PT-BR user guide (single document): [docs/pt-BR-guide.md](docs/pt-BR-guide.md)
+- Historical release records (public archive): [docs/archive/README.md](docs/archive/README.md)
 
 ## Quick Start
 
