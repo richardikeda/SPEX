@@ -11,3 +11,4 @@ skill-build
 .env.*
 Thumbs.db
 Desktop.ini
+.claude/
