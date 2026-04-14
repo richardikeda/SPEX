@@ -1,0 +1,520 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.12s
+     Running unittests src\lib.rs (target\debug\deps\spex_bridge-3a46d5e7414f55e0.exe)
+
+running 6 tests
+test tests::mask_ip_v4_zeroes_last_octet ... ok
+test tests::mask_ip_v6_zeroes_segments ... ok
+test tests::validate_hash_accepts_matching_hex ... ok
+test property_tests::invalid_base64_is_handled_without_panic ... ok
+test property_tests::storage_request_parser_never_panics ... ok
+test property_tests::inbox_request_parser_never_panics ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.20s
+
+     Running unittests src\main.rs (target\debug\deps\spex_bridge-e4869ae6a1efa631.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\abuse_concurrency.rs (target\debug\deps\abuse_concurrency-543c5746ab11fa09.exe)
+
+running 2 tests
+test concurrent_same_identity_escalates_pow_and_rejects_stale_params ... ok
+test concurrent_identities_keep_pow_and_reputation_isolated ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 43.90s
+
+     Running tests\abuse_export.rs (target\debug\deps\abuse_export-fe23820389a4d442.exe)
+
+running 1 test
+test test_export_abuse_logs_filters ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests\adversarial_parsing.rs (target\debug\deps\adversarial_parsing-94bfe097fdd8c01b.exe)
+
+running 6 tests
+test invalid_payload_error_is_deterministic ... ok
+test rejects_invalid_base64_required_field ... ok
+test rejects_truncated_payloads ... ok
+test rejects_unexpected_json_types ... ok
+test inbox_parser_never_panics_on_untrusted_bytes ... ok
+test storage_parser_never_panics_on_untrusted_bytes ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.26s
+
+     Running tests\full_flow_integration.rs (target\debug\deps\full_flow_integration-a0598fcb52d6444f.exe)
+
+running 1 test
+test full_identity_bridge_mls_flow ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.59s
+
+     Running tests\integration.rs (target\debug\deps\integration-5f41bd4eaed288fa.exe)
+
+running 22 tests
+test get_inbox_without_items ... ok
+test get_inbox_filters_expired_items ... ok
+test get_inbox_with_items ... ok
+test rejects_expired_grant_on_card ... ok
+test rejects_expired_grant_on_inbox ... ok
+test rejects_invalid_grant_signature ... ok
+test rejects_expired_grant ... ok
+test rejects_invalid_grant ... ok
+test rejects_weak_pow ... ok
+test rejects_invalid_grant_signature_on_card ... ok
+test tls_deployment_model_is_documented ... ok
+test rejects_weak_pow_on_inbox ... ok
+test put_get_card_roundtrip ... ok
+test rejects_invalid_grant_signature_on_inbox ... ok
+test rejects_invalid_slot_payload ... ok
+test accepts_minimum_pow_for_slot ... ok
+test put_inbox_filters_expired_items ... ok
+test rejects_incorrect_pow_salt ... ok
+test put_get_slot_roundtrip ... ok
+test put_get_inbox_roundtrip ... ok
+test rejects_invalid_puzzle ... ok
+test rejects_slot_hash_mismatch ... ok
+
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 13.40s
+
+     Running tests\load_test.rs (target\debug\deps\load_test-e729b3408292d024.exe)
+
+running 1 test
+test stress_test_concurrent_inbox_reads ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+     Running tests\performance_baseline.rs (target\debug\deps\performance_baseline-68d7fcaca80c8e30.exe)
+
+running 1 test
+test test_connection_open_performance ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running unittests main.rs (target\debug\deps\spex-91f5095455f3c945.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\planned_cli_flow.rs (target\debug\deps\planned_cli_flow-3484881a5a04cb57.exe)
+
+running 6 tests
+test test_cli_card_redeem_redacts_contact_identifier ... ok
+test test_cli_identity_create ... ok
+test test_cli_revocation_negative_cases ... ok
+test test_cli_revocation_and_recovery_multi_environment ... ok
+test test_cli_message_send_negative_cases ... ok
+test test_cli_message_send ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 11.23s
+
+     Running unittests src\lib.rs (target\debug\deps\spex_client-050dc23a5ee11636.exe)
+
+running 6 tests
+test tests::test_apply_thread_commit_with_events_emits_callbacks ... ok
+test revocation_policy_tests::test_append_revocation_entry_checked ... ok
+test tests::test_apply_thread_commit_with_events_rejects_out_of_order_epoch ... ok
+test tests::test_contact_redeem_outcome_reason ... ok
+test tests::test_failure_reason_display ... ok
+test tests::test_failure_reason_mapping ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\bridge_publish.rs (target\debug\deps\bridge_publish-6c38a0c186b305f8.exe)
+
+running 2 tests
+test test_publish_via_bridge_explicit_rejections ... ok
+test test_publish_via_bridge_success ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.87s
+
+     Running tests\e2e_flow.rs (target\debug\deps\e2e_flow-308162ea0db7b317.exe)
+
+running 8 tests
+test rejects_expired_grant_in_p2p_validation ... ok
+test rejects_invalid_grant_signature_in_p2p_validation ... ok
+test revocation_entries_roundtrip_and_log_consistency ... ok
+test decrypts_envelope_with_contact_state ... ok
+test e2e_two_identities_transport_publish_recover_and_decrypt ... ok
+test rejects_weak_pow_request_puzzle ... ok
+test accepts_minimum_pow_request_puzzle ... ok
+test e2e_two_identities_card_request_grant_pow_mls_bridge_p2p ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 11.59s
+
+     Running tests\inbox_decrypt.rs (target\debug\deps\inbox_decrypt-1f0cd4c1ccef1b22.exe)
+
+running 1 test
+test decrypts_envelope_payload_for_member ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\integration_scenarios.rs (target\debug\deps\integration_scenarios-ffba33b079771739.exe)
+
+running 1 test
+test test_three_party_conversation ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+     Running tests\security_replay_tamper.rs (target\debug\deps\security_replay_tamper-07138a390a1af2ed.exe)
+
+running 4 tests
+test non_member_sender_is_rejected_before_decryption ... ok
+test context_mixing_rejected_by_thread_cfg_hash_and_epoch_invariants ... ok
+test transport_tampering_is_rejected_and_does_not_mutate_local_messages ... ok
+test replay_valid_transport_material_is_deterministic ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s
+
+     Running tests\state_encryption.rs (target\debug\deps\state_encryption-e39e5b70b84d0be8.exe)
+
+running 1 test
+test saves_and_loads_encrypted_state_with_passphrase ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.11s
+
+     Running tests\state_flow.rs (target\debug\deps\state_flow-145d6f66300a04f2.exe)
+
+running 2 tests
+test test_send_thread_message_for_state_updates_state ... ok
+test test_redeem_contact_card_to_state_detects_key_change ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running unittests src\lib.rs (target\debug\deps\spex_core-13b106396595c62b.exe)
+
+running 14 tests
+test aead_ad::tests::test_build_ad_against_tv4 ... ok
+test aead_ad::tests::test_build_ad_boundary_values ... ok
+test aead_ad::tests::test_build_ad_layout ... ok
+test cbor::tests::test_ctap2_canonical_value_from_slice ... ok
+test hash::tests::test_hash_bytes_sha256 ... ok
+test hash::tests::test_hash_ctap2_cbor ... ok
+test hash::tests::test_hash_ctap2_cbor_value ... ok
+test utils::tests::test_u16be ... ok
+test utils::tests::test_u32be ... ok
+test utils::tests::test_u64be ... ok
+test cbor::tests::canonicalization_is_idempotent_for_integer_arrays ... ok
+test validation::tests::contact_card_decode_never_panics ... ok
+test cbor::tests::parse_cbor_payload_never_panics ... ok
+test validation::tests::grant_token_decode_never_panics ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+
+     Running tests\crypto_edge_cases.rs (target\debug\deps\crypto_edge_cases-894c5f16e5720ae5.exe)
+
+running 4 tests
+test test_hashing_empty_input ... ok
+test test_malformed_signature_bytes ... ok
+test test_signature_verification_failure ... ok
+test test_hashing_large_input ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+     Running tests\ctap2_cbor_vectors.rs (target\debug\deps\ctap2_cbor_vectors-de6a16cfb4850f3f.exe)
+
+running 6 tests
+test rejects_malformed_contact_card_ctap2_decode ... ok
+test rejects_truncated_thread_config_ctap2_decode ... ok
+test tv1_thread_config_ctap2_bytes_match ... ok
+test tv1_thread_config_optional_fields_and_key_ordering ... ok
+test tv2_contact_card_ctap2_bytes_match ... ok
+test tv2_contact_card_optional_fields_and_extension_ordering ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\pow.rs (target\debug\deps\pow-a838cafc37d6d80f.exe)
+
+running 6 tests
+test rejects_invalid_nonce_length ... ok
+test rejects_pow_params_below_minimum ... ok
+test rejects_puzzle_below_minimum_requirements ... ok
+test different_salt_changes_output ... ok
+test rejects_puzzle_with_incorrect_salt ... ok
+test accepts_puzzle_at_minimum_requirements ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.39s
+
+     Running tests\sign_validation.rs (target\debug\deps\sign_validation-390519407609a284.exe)
+
+running 2 tests
+test grant_token_signature_validation ... ok
+test contact_card_signature_validation ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\vectors_v011.rs (target\debug\deps\vectors_v011-4488538e4a61c055.exe)
+
+running 7 tests
+test tv1_cfg_hash_sha256_matches ... ok
+test tv2_card_hash_sha256_matches ... ok
+test tv2_ed25519_pubkey_matches_seed ... ok
+test tv3_mls_ext_cfg_hash_bytes_match ... ok
+test tv3_mls_ext_proto_suite_bytes_match ... ok
+test tv4_aead_ad_matches ... ok
+test tv2_signature_matches ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src\lib.rs (target\debug\deps\spex_mls-c2117db4f32fd115.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\epoch_recovery_properties.rs (target\debug\deps\epoch_recovery_properties-ec3c3cc55c5a3e2f.exe)
+
+running 3 tests
+test stale_or_current_replay_does_not_advance_epoch ... ok
+test malformed_recovery_sequence_is_rejected ... ok
+test recovery_is_deterministic_under_missing_commit_permutations ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests\group_context.rs (target\debug\deps\group_context-6b224740a066383e.exe)
+
+running 2 tests
+test tv3_group_context_commit_rebuilds_extensions ... ok
+test tv3_group_context_has_spex_extensions ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\mls_advanced_negative.rs (target\debug\deps\mls_advanced_negative-472d4a6b3ae32273.exe)
+
+running 5 tests
+test rejects_large_epoch_gap_with_explicit_order_metadata ... ok
+test rejects_partial_recovery_for_missing_epoch_chain ... ok
+test rejects_reordered_commit_delivery_without_recovery ... ok
+test rejects_replayed_commit_deterministically ... ok
+test rejects_stale_epoch_commit_out_of_order ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\mls_membership.rs (target\debug\deps\mls_membership-88c887319e5f1cc2.exe)
+
+running 2 tests
+test group_membership_commits_update_roster ... ok
+test group_message_validation_rejects_divergent_metadata ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\mls_real_groups.rs (target\debug\deps\mls_real_groups-f321a17efe08401e.exe)
+
+running 2 tests
+test mls_rs_multi_member_add_remove_validates_extensions ... ok
+test mls_rs_real_group_commit_update_resync_flow ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.24s
+
+     Running tests\mls_rs_integration.rs (target\debug\deps\mls_rs_integration-e644e7e2adc95cb7.exe)
+
+running 3 tests
+test mls_rs_group_creation_validates_extensions ... ok
+test mls_rs_commits_update_membership_and_epoch ... ok
+test mls_rs_epoch_changes_on_multiple_commits ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests\mls_scenarios.rs (target\debug\deps\mls_scenarios-5ba5c48b61d70b61.exe)
+
+running 3 tests
+test test_updates_key_rotation ... ok
+test test_member_permutation_consistency ... ok
+test test_resynchronization_flow ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+
+     Running tests\planned_concurrent_updates.rs (target\debug\deps\planned_concurrent_updates-4234048353aa8295.exe)
+
+running 8 tests
+test rejects_incompatible_recovery_sequence ... ok
+test rejects_malformed_external_commit_payload ... ok
+test validates_context_invariants_for_cfg_proto_and_epoch ... ok
+test rejects_partial_resync_recovery_with_missing_epochs ... ok
+test concurrent_add_and_remove_same_interval_is_rejected ... ok
+test receives_n_plus_one_without_n_then_recovers ... ok
+test rejects_stale_replay_after_successful_resync ... ok
+test resync_handles_advanced_add_update_remove_permutations ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.21s
+
+     Running tests\secrets_crypto.rs (target\debug\deps\secrets_crypto-6d10198a54add12b.exe)
+
+running 4 tests
+test group_encrypt_decrypt_roundtrip ... ok
+test group_encrypt_rejects_unknown_member ... ok
+test group_rejects_messages_with_invalid_epoch_or_config ... ok
+test group_secret_distribution_rotates_on_commit ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\stress_group.rs (target\debug\deps\stress_group-60cb0bbe850bc61f.exe)
+
+running 3 tests
+test stress_test_simplified_group ... ok
+test stress_test_group_creation_and_messaging ... ok
+test stress_test_full_mesh_sync_small_group ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.25s
+
+     Running unittests src\lib.rs (target\debug\deps\spex_transport-bbeda507659b993c.exe)
+
+running 12 tests
+test chunking::tests::test_chunking_and_reassembly ... ok
+test chunking::tests::test_reassemble_empty_chunks ... ok
+test inbox::tests::test_build_bridge_publish_request_rejects_weak_pow ... ok
+test inbox::tests::test_derive_inbox_scan_key ... ok
+test inbox::tests::test_resolve_inbox_with_fallback_accepts_empty_context ... ok
+test p2p::tests::test_metrics_rates_cover_success_and_failure_paths ... ok
+test p2p::tests::test_adaptive_retry_bounds_with_extreme_timeouts ... ok
+test p2p::tests::test_metrics_rates_handle_missing_context ... ok
+test telemetry::tests::test_derive_minimal_correlation_id_for_missing_metadata ... ok
+test telemetry::tests::test_derive_operation_correlation_id_is_deterministic ... ok
+test telemetry::tests::test_derive_operation_correlation_reports_fallback_usage ... ok
+test inbox::tests::test_build_bridge_publish_request_serializes_envelope ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.38s
+
+     Running tests\bridge_publish_http.rs (target\debug\deps\bridge_publish_http-e68849405e567a74.exe)
+
+running 1 test
+test maps_bridge_validation_errors ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.93s
+
+     Running tests\dht_gossip_random_walk.rs (target\debug\deps\dht_gossip_random_walk-b0e7555294665a13.exe)
+
+running 5 tests
+test reassemble_chunks_with_manifest_rejects_malicious_chunk ... ok
+test recover_manifest_from_gossip_filters_malicious_payloads ... ok
+test two_nodes_publish_retrieve_and_reassemble_from_dht_and_gossip ... ok
+test robust_random_walk_avoids_malicious_peer_ids ... ok
+test random_walk_avoids_eclipse_from_malicious_peers ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests\p2p_backoff_churn.rs (target\debug\deps\p2p_backoff_churn-6b6fe3004e3b35ff.exe)
+
+running 6 tests
+test profile_timeouts_are_explicit_and_ordered ... ok
+test network_health_thresholds_classify_degraded_and_critical_under_churn ... ok
+test intermittent_peer_timeout_penalties_do_not_immediately_ban ... ok
+test timeout_tuning_by_profile_respects_bounds ... ok
+test recovery_backoff_times_out_with_retry_metrics ... ok
+test publish_backoff_records_retries_under_degraded_network ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.19s
+
+     Running tests\p2p_ingest_property.rs (target\debug\deps\p2p_ingest_property-a45852e00fdc5df0.exe)
+
+running 4 tests
+test ingest_correlation_is_deterministic ... ok
+test grant_payload_validation_is_deterministic ... ok
+test grant_payload_validation_never_panics ... ok
+test puzzle_payload_validation_never_panics ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.27s
+
+     Running tests\p2p_ingest_validation.rs (target\debug\deps\p2p_ingest_validation-e356725b78b89d98.exe)
+
+running 5 tests
+test ingest_correlation_fallback_is_deterministic ... ok
+test rejects_expired_grant_in_p2p_ingest ... ok
+test rejects_malformed_base64_payload_with_explicit_error ... ok
+test rejects_invalid_grant_signature_in_p2p_ingest ... ok
+test rejects_weak_pow_in_p2p_ingest ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+
+     Running tests\p2p_manifest_delivery.rs (target\debug\deps\p2p_manifest_delivery-863fde9f3d30ba2e.exe)
+
+running 3 tests
+test publish_correlation_fallback_is_deterministic_without_inbox_context ... ok
+test recurring_invalid_payload_escalates_to_ban ... ok
+test two_nodes_publish_and_recover_manifest_delivery ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 26.60s
+
+     Running tests\p2p_manifest_recovery.rs (target\debug\deps\p2p_manifest_recovery-4def5474049635d6.exe)
+
+running 7 tests
+test malformed_manifest_payload_returns_explicit_error ... ok
+test manifest_recovery_returns_explicit_error_when_all_payloads_invalid ... ok
+test reassemble_correlation_is_deterministic_for_manifest_shape ... ok
+test reassemble_rejects_partial_manifest_with_explicit_error ... ok
+test two_nodes_recover_fragmented_payload ... ok
+test two_nodes_reject_corrupt_chunks ... ok
+test two_nodes_recover_payload_via_manifest ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 24.42s
+
+     Running tests\planned_p2p_persistence.rs (target\debug\deps\planned_p2p_persistence-87167925bb5c15fc.exe)
+
+running 5 tests
+test test_negative_snapshot_corrupted_and_empty_store ... ok
+test test_snapshot_integrity_status_reports_restored_counts ... ok
+test test_corrupted_snapshot_is_quarantined_with_explicit_warning ... ok
+test test_anti_eclipse_peer_scoring ... ok
+test test_peer_persistence_across_restarts ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.34s
+
+     Running tests\security_replay_tamper.rs (target\debug\deps\security_replay_tamper-0d664ff0e21dbf7d.exe)
+
+running 4 tests
+test manifest_with_partial_references_is_rejected ... ok
+test tampered_chunk_hash_is_rejected_without_panic ... ok
+test inconsistent_responses_escalate_probation_then_ban ... ok
+test replayed_material_recovers_with_different_chunk_orders ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests\stress_chunking.rs (target\debug\deps\stress_chunking-21bd9795c664c7c0.exe)
+
+running 2 tests
+test stress_test_tiny_chunks_many ... ok
+test stress_test_large_payload_chunking ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.01s
+
+     Running tests\two_identity_flow.rs (target\debug\deps\two_identity_flow-fa217dd205ca96eb.exe)
+
+running 2 tests
+test two_identities_exchange_cards_handshake_and_mls ... ok
+test two_identities_send_receive_via_dht_and_bridge ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s
+
+   Doc-tests spex_bridge
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests spex_client
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests spex_core
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests spex_mls
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests spex_transport
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
