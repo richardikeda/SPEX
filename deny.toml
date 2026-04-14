@@ -6,9 +6,18 @@
 [advisories]
 version = 2
 # Deny packages with active security advisories.
-yanked = "deny"
+# NOTE: yanked = "warn" instead of "deny" because core2 v0.4.0 is yanked but
+# unavoidable: multihash v0.19.3 requires core2 ^0.4.0 and there is no
+# non-yanked release in that range. This constraint is inherited via libp2p.
+# Tracked: upgrade libp2p when a compatible version drops core2.
+yanked = "warn"
 # RUSTSEC-2021-0127 (serde_cbor unmaintained) resolved by migrating to ciborium in v1.0.4.
-# No advisory exceptions are required.
+# RUSTSEC-2024-0436 (paste unmaintained): indirect dep via libp2p-tcp → if-watch
+# → netlink-packet-core. Already at latest (1.0.15); no upstream fix available
+# without upgrading libp2p. Tracked for the next libp2p bump.
+ignore = [
+  { id = "RUSTSEC-2024-0436", reason = "Indirect dependency via libp2p; paste is not used in SPEX core code. Tracked for libp2p upgrade." },
+]
 
 [bans]
 multiple-versions = "warn"

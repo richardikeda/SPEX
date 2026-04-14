@@ -1,0 +1,126 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.44s
+     Running unittests src\lib.rs (target\debug\deps\spex_bridge-3a46d5e7414f55e0.exe)
+
+running 6 tests
+test tests::mask_ip_v4_zeroes_last_octet ... ok
+test tests::mask_ip_v6_zeroes_segments ... ok
+test tests::validate_hash_accepts_matching_hex ... ok
+test property_tests::invalid_base64_is_handled_without_panic ... ok
+test property_tests::storage_request_parser_never_panics ... ok
+test property_tests::inbox_request_parser_never_panics ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.21s
+
+     Running unittests src\main.rs (target\debug\deps\spex_bridge-e4869ae6a1efa631.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\abuse_concurrency.rs (target\debug\deps\abuse_concurrency-543c5746ab11fa09.exe)
+
+running 2 tests
+test concurrent_identities_keep_pow_and_reputation_isolated ... ok
+test concurrent_same_identity_escalates_pow_and_rejects_stale_params ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 48.32s
+
+     Running tests\abuse_export.rs (target\debug\deps\abuse_export-fe23820389a4d442.exe)
+
+running 1 test
+test test_export_abuse_logs_filters ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests\adversarial_parsing.rs (target\debug\deps\adversarial_parsing-94bfe097fdd8c01b.exe)
+
+running 6 tests
+test invalid_payload_error_is_deterministic ... ok
+test rejects_invalid_base64_required_field ... ok
+test rejects_truncated_payloads ... ok
+test rejects_unexpected_json_types ... ok
+test inbox_parser_never_panics_on_untrusted_bytes ... ok
+test storage_parser_never_panics_on_untrusted_bytes ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s
+
+     Running tests\full_flow_integration.rs (target\debug\deps\full_flow_integration-a0598fcb52d6444f.exe)
+
+running 1 test
+test full_identity_bridge_mls_flow ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.30s
+
+     Running tests\integration.rs (target\debug\deps\integration-5f41bd4eaed288fa.exe)
+
+running 22 tests
+test get_inbox_without_items ... ok
+test get_inbox_with_items ... ok
+test get_inbox_filters_expired_items ... ok
+test rejects_expired_grant_on_inbox ... ok
+test rejects_invalid_grant_signature_on_card ... ok
+test rejects_invalid_grant_signature ... ok
+test rejects_expired_grant_on_card ... ok
+test rejects_expired_grant ... ok
+test rejects_invalid_grant ... ok
+test rejects_weak_pow ... ok
+test tls_deployment_model_is_documented ... ok
+test rejects_weak_pow_on_inbox ... ok
+test put_get_inbox_roundtrip ... ok
+test rejects_incorrect_pow_salt ... ok
+test put_get_slot_roundtrip ... ok
+test rejects_invalid_grant_signature_on_inbox ... ok
+test accepts_minimum_pow_for_slot ... ok
+test put_inbox_filters_expired_items ... ok
+test rejects_invalid_slot_payload ... ok
+test put_get_card_roundtrip ... ok
+test rejects_slot_hash_mismatch ... ok
+test rejects_invalid_puzzle ... ok
+
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 14.38s
+
+     Running tests\load_test.rs (target\debug\deps\load_test-e729b3408292d024.exe)
+
+running 1 test
+test stress_test_concurrent_inbox_reads ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+
+     Running tests\performance_baseline.rs (target\debug\deps\performance_baseline-68d7fcaca80c8e30.exe)
+
+running 1 test
+test test_connection_open_performance ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running unittests main.rs (target\debug\deps\spex-91f5095455f3c945.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\planned_cli_flow.rs (target\debug\deps\planned_cli_flow-3484881a5a04cb57.exe)
+
+running 6 tests
+test test_cli_card_redeem_redacts_contact_identifier ... ok
+test test_cli_identity_create ... ok
+test test_cli_revocation_and_recovery_multi_environment ... FAILED
+test test_cli_revocation_negative_cases ... ok
+test test_cli_message_send_negative_cases ... ok
+test test_cli_message_send ... ok
+
+failures:
+
+---- test_cli_revocation_and_recovery_multi_environment stdout ----
+
+thread 'test_cli_revocation_and_recovery_multi_environment' (31040) panicked at crates\spex-cli\tests\planned_cli_flow.rs:375:32:
+load env a state: StateEncryption("missing passphrase file variable")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    test_cli_revocation_and_recovery_multi_environment
+
+test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 11.54s
+
+error: test failed, to rerun pass `-p spex-cli --test planned_cli_flow`

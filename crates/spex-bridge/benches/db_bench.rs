@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use rusqlite::Connection;
 use std::path::PathBuf;
 use tempfile::tempdir;
@@ -16,7 +16,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     Connection::open(&db_path).unwrap();
 
     c.bench_function("open_connection", |b| {
-        b.iter(|| open_connection(black_box(&db_path)))
+        b.iter(|| open_connection(std::hint::black_box(&db_path)))
     });
 }
 
