@@ -12,8 +12,9 @@ use reqwest::{Client, StatusCode};
 use serde_json::json;
 use spex_bridge::{app, init_state_with_clock, Clock};
 use spex_client::{
-    create_identity, create_identity_in_state, create_thread_for_state, load_checkpoint_log,
-    load_state, now_unix, save_state, sign_grant, LocalState,
+    create_contact_card_payload, create_identity, create_identity_in_state,
+    create_thread_for_state, load_checkpoint_log, load_state, now_unix, save_state, sign_grant,
+    LocalState,
 };
 use spex_core::{
     hash::HashId,
@@ -184,6 +185,25 @@ fn test_cli_identity_create() {
     assert!(!identity.verifying_key_hex.is_empty());
     assert!(!identity.device_id_hex.is_empty());
     assert!(!identity.device_nonce_hex.is_empty());
+}
+
+#[test]
+fn test_cli_card_redeem_redacts_contact_identifier() {
+    // Redeems a valid card and ensures output does not expose full contact user_id.
+    let (_dir, env) = make_cli_state_env("card-redeem-redacted");
+    let identity = create_identity();
+    let card = create_contact_card_payload(&identity).expect("create contact card payload");
+
+    let output = run_spex(&env, &["card", "redeem", "--card", &card]);
+    assert!(
+        output.status.success(),
+        "card redeem failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("contact saved digest:"));
+    assert!(!stdout.contains(&identity.user_id_hex));
 }
 
 #[tokio::test(flavor = "multi_thread")]
