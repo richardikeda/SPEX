@@ -12,8 +12,9 @@ use reqwest::{Client, StatusCode};
 use serde_json::json;
 use spex_bridge::{app, init_state_with_clock, Clock};
 use spex_client::{
-    create_contact_card_payload, create_identity, create_identity_in_state, create_thread_for_state,
-    load_checkpoint_log, load_state, now_unix, save_state, sign_grant, LocalState,
+    create_contact_card_payload, create_identity, create_identity_in_state,
+    create_thread_for_state, load_checkpoint_log, load_state, now_unix, save_state, sign_grant,
+    LocalState,
 };
 use spex_core::{
     hash::HashId,
