@@ -296,7 +296,7 @@ mod tests {
         fn canonicalization_is_idempotent_for_integer_arrays(values in proptest::collection::vec(any::<i64>(), 0..128)) {
             let value = Value::Array(
                 values.into_iter()
-                    .map(|item| Value::Integer((item as i64).into()))
+                    .map(|item| Value::Integer(item.into()))
                     .collect()
             );
             prop_assert!(stable_roundtrip(&value));
