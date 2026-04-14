@@ -12,6 +12,7 @@ use spex_client::{
     rotate_identity_in_state, save_checkpoint_log, save_state, send_thread_message_for_state,
     transport_inbox_has_items, ClientError, ClientFailureReason,
 };
+use spex_core::hash::{hash_bytes, HashId};
 use spex_core::log::{CheckpointEntry, CheckpointLog, LogConsistency};
 use spex_transport::{
     inbox::{BridgeClient, InboxScanResponse, InboxSource},
@@ -323,6 +324,13 @@ fn export_abuse_log_file(
     Ok(())
 }
 
+/// Returns a short SHA-256 digest prefix for sensitive output summaries.
+fn digest_prefix(value: &str) -> String {
+    let digest = hash_bytes(HashId::Sha256, value.as_bytes());
+    let hex_digest = hex::encode(digest);
+    hex_digest[..16].to_string()
+}
+
 /// Runs the CLI entry point and dispatches commands.
 #[tokio::main]
 async fn main() {
@@ -343,12 +351,17 @@ async fn run_cli() -> Result<(), ClientError> {
             IdentityCommand::New => {
                 let identity = create_identity_in_state(&mut state);
                 let fingerprint = fingerprint_hex(&hex::decode(&identity.verifying_key_hex)?);
-                println!("user_id: {}", identity.user_id_hex);
+                println!("identity created");
+                println!("user_id digest: {}", digest_prefix(&identity.user_id_hex));
                 println!("fingerprint: {}", fingerprint);
             }
             IdentityCommand::Rotate => {
                 let rotation = rotate_identity_in_state(&mut state)?;
-                println!("new user_id: {}", rotation.new_identity.user_id_hex);
+                println!("identity rotated");
+                println!(
+                    "new user_id digest: {}",
+                    digest_prefix(&rotation.new_identity.user_id_hex)
+                );
                 println!(
                     "new fingerprint: {}",
                     fingerprint_hex(&hex::decode(&rotation.new_identity.verifying_key_hex)?)
@@ -362,7 +375,11 @@ async fn run_cli() -> Result<(), ClientError> {
                     .as_ref()
                     .ok_or(ClientError::MissingIdentity)?;
                 let payload = create_contact_card_payload(identity)?;
-                println!("card: {}", payload);
+                println!(
+                    "card generated (base64_len: {}, sha256: {})",
+                    payload.len(),
+                    digest_prefix(&payload)
+                );
             }
             CardCommand::Redeem { card } => {
                 let outcome = redeem_contact_card_to_state(&mut state, &card)?;
@@ -381,20 +398,25 @@ async fn run_cli() -> Result<(), ClientError> {
         Commands::Request { command } => match command {
             RequestCommand::Send { to, role } => {
                 let outcome = create_request_for_state(&mut state, &to, role)?;
-                println!("request: {}", outcome.token_base64);
+                println!(
+                    "request generated (base64_len: {}, sha256: {})",
+                    outcome.token_base64.len(),
+                    digest_prefix(&outcome.token_base64)
+                );
             }
         },
         Commands::Grant { command } => match command {
             GrantCommand::Accept { request } => {
                 let outcome = accept_request_for_state(&mut state, &request)?;
-                println!("grant: {}", outcome.grant_token_base64);
+                println!(
+                    "grant generated (base64_len: {}, sha256: {})",
+                    outcome.grant_token_base64.len(),
+                    digest_prefix(&outcome.grant_token_base64)
+                );
             }
             GrantCommand::Deny { request } => {
                 let request_token = spex_client::parse_request_token(&request)?;
-                println!(
-                    "request denied: {} (role {})",
-                    request_token.from_user_id, request_token.role
-                );
+                println!("request denied (role {})", request_token.role);
             }
         },
         Commands::Thread { command } => match command {
@@ -483,8 +505,9 @@ async fn run_cli() -> Result<(), ClientError> {
                         let receipts = ingest_inbox_payloads(&mut state, response.items)?;
                         for receipt in &receipts {
                             println!(
-                                "message: {} -> {}",
-                                receipt.sender_user_id_hex, receipt.text
+                                "message: sender_digest={} chars={}",
+                                digest_prefix(&receipt.sender_user_id_hex),
+                                receipt.text.chars().count()
                             );
                         }
                         println!(
@@ -503,8 +526,9 @@ async fn run_cli() -> Result<(), ClientError> {
                         let receipts = record_inbox_messages(&mut state, response.items)?;
                         for receipt in &receipts {
                             println!(
-                                "message: {} -> {}",
-                                receipt.sender_user_id_hex, receipt.text
+                                "message: sender_digest={} chars={}",
+                                digest_prefix(&receipt.sender_user_id_hex),
+                                receipt.text.chars().count()
                             );
                         }
                         println!(
@@ -515,9 +539,6 @@ async fn run_cli() -> Result<(), ClientError> {
                     }
                 } else {
                     println!("local inbox: {} items", state.inbox.len());
-                    for item in &state.inbox {
-                        println!("- {}", item.payload_base64);
-                    }
                     state.inbox.clear();
                 }
             }
@@ -545,7 +566,12 @@ async fn run_cli() -> Result<(), ClientError> {
                 log.append(CheckpointEntry::Recovery(entry.clone()))
                     .map_err(|err| ClientError::Log(err.to_string()))?;
                 save_checkpoint_log(&mut state, &log)?;
-                println!("recovery key: {}", hex::encode(entry.recovery_key));
+                let recovery_hex = hex::encode(entry.recovery_key);
+                println!(
+                    "recovery key generated (hex_len: {}, sha256: {})",
+                    recovery_hex.len(),
+                    digest_prefix(&recovery_hex)
+                );
                 println!("checkpoint appended (len: {})", log.entries.len());
             }
             LogCommand::RevokeKey {
