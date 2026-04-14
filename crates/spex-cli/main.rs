@@ -391,7 +391,10 @@ async fn run_cli() -> Result<(), ClientError> {
                         );
                     }
                 }
-                println!("contact saved: {}", outcome.contact.user_id_hex);
+                println!(
+                    "contact saved digest: {}",
+                    digest_prefix(&outcome.contact.user_id_hex)
+                );
                 println!("fingerprint: {}", outcome.contact.fingerprint);
             }
         },
