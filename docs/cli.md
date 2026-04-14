@@ -109,3 +109,12 @@ cargo run -p spex-cli -- inbox poll --p2p --inbox-key <HEX_KEY> \
 
 When redeeming a contact card, CLI prints the public-key fingerprint.
 Unexpected key changes for known identities should be treated as critical.
+
+## Secure Output Defaults
+
+To reduce accidental data exposure in shell history and CI logs, the CLI now avoids
+printing sensitive values in clear text (for example: full card payloads, request/grant
+tokens, inbox payload bodies, and recovery keys).
+
+Operational commands print summary metadata (length and digest prefix) so operators can
+correlate artifacts without exposing raw secret-bearing material.
