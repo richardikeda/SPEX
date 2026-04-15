@@ -20,6 +20,7 @@ A release candidate can start only when all conditions below are true:
 - `CHANGELOG.md` contains an explicit v1 scope summary.
 - No open protocol-format changes are present in the release branch.
 - All backlog items listed as blockers in `TODO.md` are complete.
+- Release branch commit lineage is signed and verifiable.
 
 ## 2) Mandatory Gates
 
@@ -118,6 +119,34 @@ Before publication, verify:
 - Changelog scope matches implemented changes.
 - All docs links referenced by `README.md` resolve.
 - CI workflow status is green for release-required jobs.
+- CodeQL has no new critical findings on the candidate commit.
+- Release tag is annotated and cryptographically signed.
+
+### Optional Binary Distribution Verification
+
+When distributing CLI binaries in GitHub Release artifacts, verify all items below:
+
+- Platform matrix is explicit (for example: Linux x86_64, Windows x86_64, macOS arm64/x86_64).
+- `SHA256SUMS` file is generated and attached to the release.
+- Detached signatures are attached for binary artifacts and checksum files
+  (Cosign, Minisign, or GPG policy selected by maintainers).
+- Verification instructions are documented in release notes.
+
+If binary artifacts are not shipped, release notes must explicitly state:
+
+- source-only release;
+- required local build command(s);
+- expected toolchain baseline.
+
+## 6.1) CodeQL Alert Triage Workflow
+
+When a CodeQL finding remains open on a release candidate:
+
+1. Re-run or wait for the latest CodeQL analysis on the signed commit.
+2. Inspect data-flow path and confirm real source/sink exposure.
+3. If true positive, fix by redaction/omission of sensitive output.
+4. If false positive, dismiss with explicit rationale and evidence link.
+5. Record the triage decision in PR discussion or release notes.
 
 ## 7) Merge/Release Blocking Policy
 

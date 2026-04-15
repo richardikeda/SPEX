@@ -20,14 +20,31 @@ This runbook consolidates operational actions for go-live, incident triage, and 
 
 ## 2) Go-Live Sequence
 
-1. Tag release candidate commit internally.
-2. Announce maintenance window and expected impact.
-3. Publish release artifacts.
-4. Start high-frequency monitoring for:
+1. Prepare release branch and open PR to `main`.
+2. Ensure all commits in the release branch are signed and verifiable.
+3. Require CI green and CodeQL with no new critical findings.
+4. Merge PR into `main` only after required checks are green.
+5. Create annotated and signed tag on the merged `main` commit.
+6. Publish GitHub Release notes for the tagged commit.
+7. If binary artifacts are included, attach binaries + `SHA256SUMS` + signatures.
+8. Announce maintenance window and expected impact.
+9. Start high-frequency monitoring for:
    - delivery success rate
    - timeout/retry rates
    - abnormal rejection rates for grant/PoW validations
-5. Keep rollback owner available for immediate response.
+10. Keep rollback owner available for immediate response.
+
+### Binary Artifact Policy (Optional)
+
+- Binary publishing is optional and must not bypass source release checks.
+- If binaries are published, include checksum and signature verification guidance.
+- If binaries are not published, release notes must describe source build commands.
+
+### CodeQL False-Positive Handling
+
+- Never suppress without triage.
+- Triage must include data-flow verification and explicit rationale.
+- Dismissed findings must remain auditable in PR/release records.
 
 ## 3) Incident Triage
 
