@@ -14,6 +14,36 @@ https://semver.org/
 
 ---
 
+## [1.0.23] - 2026-04-14
+
+### First Public Release (Stable)
+
+This is the first public GitHub Release aligned with the repository version
+metadata in `VERSION.md`.
+
+- Public release/tag baseline is now `v1.0.23`.
+- Existing local tags up to `v1.0.4` are historical milestones.
+- Improvements documented in `1.0.5` through `1.0.20` are included in the
+  stable public baseline represented by `v1.0.23`.
+- From this point forward, release tag and `VERSION.md` must remain synchronized.
+
+### Consolidated Improvements Included Since v1.0.4
+
+- CI hardening and performance:
+  - docs-only skip strategy;
+  - reusable CI umbrella orchestration;
+  - workflow reliability, permission hardening, and status-check coherence;
+  - CodeQL runtime/performance and maintainability improvements.
+- Security and governance posture:
+  - vulnerability reporting migration to GitHub Security Advisories;
+  - branch protection and release gate policy alignment;
+  - repository hygiene and auditability refinements.
+- Documentation and open-source readiness:
+  - public docs entry-point and archive reorganization;
+  - release process clarity and policy consistency updates.
+
+---
+
 ## [1.0.20] - 2026-04-13
 
 ### CI: Workflow Audit and Cleanup
@@ -432,15 +462,16 @@ Expanded the docs-only CI skip work with full workflow coherence fixes.
 
 ## Published Versions
 
-- `1.0.4` (current — local tags created, awaiting `git push origin v1.0.4`)
+- `1.0.23` (current public release)
 - `1.0.3` (local tag: v1.0.3)
 - `1.0.2` (local tag: v1.0.2, same commit as v1.0.1 — documentation-only)
 - `1.0.1` (local tag: v1.0.1)
 - `1.0.0` (local tag: v1.0.0)
 - `0.1.65` ... `0.1.0`
 
-**Git tag status**: Local tags `v1.0.0`–`v1.0.4` exist. Push with:
-`git push origin v1.0.0 v1.0.1 v1.0.2 v1.0.3 v1.0.4`
+**Git tag status**: Local tags `v1.0.0`–`v1.0.4` exist; this release adds `v1.0.23`.
+Push with:
+`git push origin v1.0.0 v1.0.1 v1.0.2 v1.0.3 v1.0.4 v1.0.23`
 
 This list is aligned with `VERSION.md`.
 
