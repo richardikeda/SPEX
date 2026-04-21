@@ -32,6 +32,8 @@ Unexpected key changes may indicate compromise or substitution attack.
 - Enforce minimum PoW when requires_puzzle is active (memory >= 64 MiB, iterations >= 3).
 - Restrict roles/flags under local least-privilege policy.
 
+Anti-spam economic friction model and full bridge ingress validation pipeline: see [docs/diagrams.md — Anti-Spam & Abuse Controls](diagrams.md#7-anti-spam--abuse-controls) and [docs/diagrams.md — Bridge Validation Pipeline](diagrams.md#4-bridge-validation-pipeline).
+
 
 ## P2P Persistence and Anti-Eclipse Controls
 

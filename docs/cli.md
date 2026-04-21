@@ -23,6 +23,28 @@ Override path with:
 
 Identity, card, request, grant, thread, and message flows are consolidated through `spex-client`.
 
+```mermaid
+flowchart TD
+    STATE["~/.spex/state.json\n(SPEX_STATE_PATH)\nEncrypted at rest\nOS keychain or SPEX_STATE_PASSPHRASE"]
+
+    STATE --> ID["🪪 Identity\nEd25519 keypair\nuser_id · device_id"]
+    STATE --> CARDS["📋 Known Cards\nContactCard index\nFingerprint continuity checks"]
+    STATE --> GRANTS["🎫 Grants Issued/Received\nRole · Expiry · Flags"]
+    STATE --> THREADS["🧵 Thread State\nMLS group state\nEpoch history"]
+    STATE --> LOG["📜 Checkpoint Log\nAppend-only\nMerkle consistency\nRevocation records"]
+
+    LOG --> GOSSIP["log gossip-verify\nVerify log integrity\nwith peers"]
+    LOG --> EXPORT["log export\nAudit / backup"]
+    LOG --> RECOVERY["log create-recovery-key\nlog import (recovery path)"]
+
+    ID -->|"key compromise"| REVOKE["log revoke-key\n--key-hex --reason"]
+    REVOKE --> LOG
+
+    style STATE fill:#1e3a5f,color:#fff,stroke:#4a90d9
+    style LOG fill:#1a4731,color:#fff,stroke:#52c97b
+    style REVOKE fill:#7f1d1d,color:#fff,stroke:#ef4444
+```
+
 ## Subcommands
 
 ### identity
@@ -104,6 +126,8 @@ cargo run -p spex-cli -- msg send --thread <THREAD_ID_HEX> --text "hello" --p2p 
 cargo run -p spex-cli -- inbox poll --p2p --inbox-key <HEX_KEY> \
   --peer /ip4/127.0.0.1/tcp/9001/p2p/<PEER_ID>
 ```
+
+Full transport decision flow (bridge vs P2P vs hybrid): see [docs/diagrams.md — Message Send Flow](diagrams.md#3-message-send-flow).
 
 ## Fingerprints
 

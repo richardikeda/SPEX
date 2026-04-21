@@ -133,10 +133,81 @@ Recommended status codes:
 - minimum policy: memory >= 64 MiB, iterations >= 3
 - invalid puzzle returns 401
 
+Every payload entering the bridge passes through the following mandatory pipeline:
+
+```mermaid
+flowchart LR
+    REQ(["Client\nPUT /inbox/:key"]) --> D1
+
+    D1{"Decode\nbase64 fields"}
+    D1 -->|invalid| ERR400["400 Bad Request"]
+    D1 -->|ok| D2
+
+    D2{"Grant\nvalidation"}
+    D2 -->|expired / bad sig| ERR401a["401 Unauthorized\n(invalid grant)"]
+    D2 -->|ok| D3
+
+    D3{"PoW\nvalidation\nmemory ≥ 64 MiB\niter ≥ 3"}
+    D3 -->|insufficient| ERR401b["401 Unauthorized\n(weak PoW)"]
+    D3 -->|ok| D4
+
+    D4{"TTL\npolicy\n≤ 604800s"}
+    D4 -->|out of range| ERR400b["400 Bad Request\n(invalid TTL)"]
+    D4 -->|ok| D5
+
+    D5{"Payload size\n≤ 262144 bytes"}
+    D5 -->|too large| ERR400c["400 Bad Request"]
+    D5 -->|ok| D6
+
+    D6{"Rate limit\nquota"}
+    D6 -->|exceeded| ERR429["429 Too Many Requests"]
+    D6 -->|ok| STORE
+
+    STORE["Store envelope\nSQLite (TTL-aware)"]
+    STORE --> OK["204 No Content ✓"]
+
+    style ERR400 fill:#7f1d1d,color:#fff,stroke:#ef4444
+    style ERR400b fill:#7f1d1d,color:#fff,stroke:#ef4444
+    style ERR400c fill:#7f1d1d,color:#fff,stroke:#ef4444
+    style ERR401a fill:#78350f,color:#fff,stroke:#f59e0b
+    style ERR401b fill:#78350f,color:#fff,stroke:#f59e0b
+    style ERR429 fill:#4c1d95,color:#fff,stroke:#a78bfa
+    style OK fill:#14532d,color:#fff,stroke:#22c55e
+```
+
 ## Rate Limiting and Abuse Logging
 
 - identity-scoped quotas per time window
 - event recording for denied/accepted outcomes
+
+```mermaid
+flowchart LR
+    SENDER(["Sender"])
+
+    SENDER --> POW["Compute PoW Puzzle\nArgon2-style\nmemory ≥ 64 MiB\niterations ≥ 3"]
+    POW --> GRANT["Attach signed\nGrantToken\n(role · expiry · flags)"]
+    GRANT --> BRIDGE_CHECK{"Bridge\nIngress\nValidation"}
+
+    BRIDGE_CHECK -->|"PoW too weak"| DENIED["Request Denied\n401"]
+    BRIDGE_CHECK -->|"Grant expired/invalid"| DENIED
+    BRIDGE_CHECK -->|"Rate limit exceeded"| THROTTLED["Throttled\n429"]
+    BRIDGE_CHECK -->|"All checks pass"| ACCEPTED["Accepted\n204 ✓"]
+
+    ACCEPTED --> ABUSE_LOG["Abuse event log\n(identity-scoped)"]
+    DENIED --> ABUSE_LOG
+    THROTTLED --> ABUSE_LOG
+
+    subgraph ASYMMETRY ["⚖️ Asymmetric Cost Model"]
+        COST_SEND["Sending: O(PoW compute)"]
+        COST_RECV["Receiving: O(verify)  ← cheap"]
+        COST_SEND -.->|"much more expensive"| COST_RECV
+    end
+
+    style DENIED fill:#7f1d1d,color:#fff,stroke:#ef4444
+    style THROTTLED fill:#4c1d95,color:#fff,stroke:#a78bfa
+    style ACCEPTED fill:#14532d,color:#fff,stroke:#22c55e
+    style ASYMMETRY fill:#1a1a2e,color:#fff,stroke:#555
+```
 
 ## Client/Transport Bridge Contract
 

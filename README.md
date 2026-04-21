@@ -56,6 +56,7 @@ This repository does not currently use dual licensing or AGPL terms.
 
 - Documentation entry point (recommended first read): [docs/index.md](docs/index.md)
 
+- **Flows & Workflows (diagrams):** [docs/diagrams.md](docs/diagrams.md)
 - Architecture overview: [docs/overview.md](docs/overview.md)
 - Integration guide: [docs/integration.md](docs/integration.md)
 - CLI guide: [docs/cli.md](docs/cli.md)

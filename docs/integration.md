@@ -36,11 +36,93 @@ Reference flow:
 
 Use shared validation primitives from core/transport before accepting untrusted payloads.
 
+```mermaid
+sequenceDiagram
+    participant A as Alice (Sender)
+    participant B as Bob (Recipient)
+    participant T as Transport / Bridge
+
+    Note over A,B: Step 1 — Identity & Card
+
+    A->>A: identity new
+    A->>A: card create → ContactCard (CBOR base64)
+    A-->>B: share ContactCard (out-of-band or via bridge)
+
+    Note over A,B: Step 2 — Request
+
+    B->>B: card redeem --card <BASE64>
+    B->>B: Validate: signature · encoding · fingerprint
+    B->>B: Build RequestToken + PoW (if requires_puzzle)
+    B->>T: request send --to <USER_ID>
+
+    Note over A,B: Step 3 — Grant
+
+    A->>A: Validate RequestToken
+    A->>A: Check PoW (memory ≥ 64 MiB, iterations ≥ 3)
+    A->>A: grant accept → GrantToken (signed CBOR)
+    A-->>B: GrantToken
+
+    Note over A,B: Step 4 — Thread Bootstrap
+
+    B->>B: Build ThreadConfig (GrantToken list)
+    B->>B: MLS group init via spex-mls
+    B-->>A: Thread ready ✓
+
+    Note over A,B: Explicit authorization complete — messages may now flow
+```
+
 ## Thread and Message Flow
 
 - Build ThreadConfig from validated grants.
 - Serialize envelope in canonical CBOR.
 - Publish through P2P, bridge, or hybrid strategy.
+
+```mermaid
+flowchart TD
+    START([Sender has valid GrantToken]) --> THREAD
+
+    THREAD["thread new --members USER_IDs\n→ ThreadConfig + MLS group init"]
+    THREAD --> COMPOSE
+
+    COMPOSE["msg send --thread THREAD_ID --text '...' \n→ Build Envelope CBOR\n  thread_id · epoch · seq · sender_user_id\n  ciphertext · signature"]
+
+    COMPOSE --> ROUTE{Transport\nStrategy}
+
+    ROUTE -->|"--bridge-url"| BRIDGE_PATH
+    ROUTE -->|"--p2p"| P2P_PATH
+    ROUTE -->|hybrid| BOTH
+
+    subgraph BRIDGE_PATH ["🌉 Bridge Path"]
+        B1["Attach GrantToken + PoW puzzle"]
+        B2["PUT /inbox/:key  (TLS required)"]
+        B3["Bridge: validate grant + PoW\nStore envelope (TTL ≤ 604800s)"]
+        B1 --> B2 --> B3
+    end
+
+    subgraph P2P_PATH ["🌐 P2P Path"]
+        P1["Chunk envelope → Manifest"]
+        P2["DHT / Kademlia publish"]
+        P3["Gossip propagation"]
+        P1 --> P2 --> P3
+    end
+
+    subgraph BOTH ["♻️ Hybrid"]
+        H1["Attempt P2P first"]
+        H2["Fallback to bridge on failure"]
+        H1 --> H2
+    end
+
+    B3 --> INBOX
+    P3 --> INBOX
+    H2 --> INBOX
+
+    INBOX["📥 Recipient: inbox poll\n→ Decrypt · Verify signature · Apply MLS epoch"]
+    INBOX --> DONE([Message delivered ✓])
+
+    style BRIDGE_PATH fill:#3d1a00,color:#fff,stroke:#e8603c
+    style P2P_PATH fill:#3d2b00,color:#fff,stroke:#f5a623
+    style BOTH fill:#1a1a2e,color:#fff,stroke:#aaa
+```
 
 ## Non-Rust Integration Requirements
 
