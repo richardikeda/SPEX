@@ -17,6 +17,8 @@ yanked = "warn"
 # without upgrading libp2p. Tracked for the next libp2p bump.
 ignore = [
   { id = "RUSTSEC-2024-0436", reason = "Indirect dependency via libp2p; paste is not used in SPEX core code. Tracked for libp2p upgrade." },
+  { id = "RUSTSEC-2026-0118", reason = "Indirect dependency via libp2p; hickory-proto has no fixed upgrade available yet. Tracked for libp2p upgrade." },
+  { id = "RUSTSEC-2026-0119", reason = "Indirect dependency via libp2p; tied to hickory-proto 0.25.2. Tracked for libp2p upgrade." },
 ]
 
 [bans]

@@ -1,0 +1,5 @@
+[advisories]
+ignore = [
+    "RUSTSEC-2026-0118", # hickory-proto NSEC3 loop, unresolvable without libp2p upgrade
+    "RUSTSEC-2026-0119", # hickory-proto CPU exhaustion, unresolvable without libp2p upgrade
+]
