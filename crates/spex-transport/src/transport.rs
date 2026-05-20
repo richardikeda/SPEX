@@ -15,7 +15,7 @@ use libp2p::kad::{
     RecordKey,
 };
 use libp2p::{Multiaddr, PeerId};
-use rand::RngCore;
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 
 use spex_core::cbor::from_ctap2_canonical_slice;

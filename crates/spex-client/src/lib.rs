@@ -4,8 +4,8 @@ use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine};
 use chacha20poly1305::aead::{Aead, KeyInit, Payload};
 use chacha20poly1305::{ChaCha20Poly1305, Nonce};
 use ed25519_dalek::SigningKey;
-use keyring::Entry;
-use rand::{rngs::OsRng, TryRngCore};
+use keyring_core::Entry;
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use spex_core::{
     aead_ad,
@@ -494,7 +494,7 @@ pub struct InboxMessageReceipt {
 /// Generates a new identity state with fresh keys and device metadata.
 pub fn create_identity() -> IdentityState {
     let mut seed = [0u8; 32];
-    OsRng.try_fill_bytes(&mut seed).expect("OsRng failed");
+    rand::rng().fill_bytes(&mut seed);
     let signing_key = SigningKey::from_bytes(&seed);
     let verifying_key = signing_key.verifying_key();
     let user_id = random_bytes(32);
@@ -519,7 +519,7 @@ pub fn create_identity_in_state(state: &mut LocalState) -> IdentityState {
 /// Rotates the local identity signing and verification keys in place.
 pub fn rotate_identity(identity: &mut IdentityState) -> &IdentityState {
     let mut seed = [0u8; 32];
-    OsRng.try_fill_bytes(&mut seed).expect("OsRng failed");
+    rand::rng().fill_bytes(&mut seed);
     let signing_key = SigningKey::from_bytes(&seed);
     let verifying_key = signing_key.verifying_key();
     identity.signing_key_hex = hex::encode(seed);
@@ -939,9 +939,7 @@ pub fn encrypt_payload_with_aead(
     let cipher = ChaCha20Poly1305::new_from_slice(&key)
         .map_err(|err| ClientError::Crypto(err.to_string()))?;
     let mut nonce_bytes = [0u8; 12];
-    OsRng
-        .try_fill_bytes(&mut nonce_bytes)
-        .expect("OsRng failed");
+    rand::rng().fill_bytes(&mut nonce_bytes);
     let nonce = Nonce::from_slice(&nonce_bytes);
     let ciphertext = cipher
         .encrypt(
@@ -1208,7 +1206,7 @@ pub fn random_hex(len: usize) -> String {
 /// Generates random bytes for identifiers and secrets.
 pub fn random_bytes(len: usize) -> Vec<u8> {
     let mut buffer = vec![0u8; len];
-    OsRng.try_fill_bytes(&mut buffer).expect("OsRng failed");
+    rand::rng().fill_bytes(&mut buffer);
     buffer
 }
 
@@ -1286,12 +1284,12 @@ fn parse_encrypted_state_file(contents: &str) -> Option<EncryptedStateFile> {
 fn encrypt_state_file(state: &LocalState) -> Result<String, ClientError> {
     let plaintext = serde_json::to_vec(state)?;
     let mut nonce = [0u8; 12];
-    OsRng.try_fill_bytes(&mut nonce).expect("OsRng failed");
+    rand::rng().fill_bytes(&mut nonce);
     let key_source = resolve_state_key_source()?;
     let (kdf, salt_base64, key) = match key_source {
         StateKeySource::Passphrase(passphrase) => {
             let mut salt = [0u8; 16];
-            OsRng.try_fill_bytes(&mut salt).expect("OsRng failed");
+            rand::rng().fill_bytes(&mut salt);
             let key = derive_key_from_passphrase(&passphrase, &salt)?;
             ("argon2id".to_string(), BASE64_STANDARD.encode(salt), key)
         }
@@ -1402,6 +1400,10 @@ fn derive_key_from_passphrase(passphrase: &str, salt: &[u8]) -> Result<[u8; 32],
 
 /// Loads or creates a keychain-backed encryption key for the local state.
 fn resolve_keychain_key() -> Result<Vec<u8>, ClientError> {
+    if keyring_core::get_default_store().is_none() {
+        keyring::use_native_store(false)
+            .map_err(|err| ClientError::StateEncryption(err.to_string()))?;
+    }
     let entry = Entry::new(STATE_KEYCHAIN_SERVICE, STATE_KEYCHAIN_USER)
         .map_err(|err| ClientError::StateEncryption(err.to_string()))?;
     match entry.get_password() {
@@ -1409,9 +1411,9 @@ fn resolve_keychain_key() -> Result<Vec<u8>, ClientError> {
             .decode(password.as_bytes())
             .map_err(|err| ClientError::StateEncryption(err.to_string())),
         Err(err) => match err {
-            keyring::Error::NoEntry => {
+            keyring_core::Error::NoEntry => {
                 let mut key = [0u8; 32];
-                OsRng.try_fill_bytes(&mut key).expect("OsRng failed");
+                rand::rng().fill_bytes(&mut key);
                 let encoded = BASE64_STANDARD.encode(key);
                 entry
                     .set_password(&encoded)
