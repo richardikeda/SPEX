@@ -20,7 +20,7 @@ use libp2p::kad::{
 use libp2p::multiaddr::Protocol;
 use libp2p::swarm::{NetworkBehaviour, Swarm, SwarmEvent};
 use libp2p::{Multiaddr, PeerId, SwarmBuilder};
-use rand::Rng;
+use rand::RngExt;
 use tracing::{info, warn};
 
 use crate::telemetry::{
