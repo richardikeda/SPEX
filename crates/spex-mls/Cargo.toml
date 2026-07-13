@@ -14,7 +14,7 @@ categories = ["cryptography", "network-programming"]
 mls-rs = "0.55"
 mls-rs-crypto-rustcrypto = "0.22"
 spex-core = { version = "0.1.1", path = "../../spex-core" }
-chacha20poly1305 = "0.10"
+chacha20poly1305 = "0.11"
 
 [dev-dependencies]
 hex = "0.4"

@@ -12,7 +12,7 @@ categories = ["network-programming", "cryptography"]
 
 [dependencies]
 base64 = "0.22"
-ed25519-dalek = "2.1"
+ed25519-dalek = "3.0"
 futures = "0.3"
 hex = "0.4"
 libp2p = { version = "0.56", features = [
@@ -39,7 +39,7 @@ spex-core = { version = "0.1.1", path = "../../spex-core" }
 [dev-dependencies]
 axum = "0.8"
 proptest = "1"
-ed25519-dalek = "2.1"
+ed25519-dalek = "3.0"
 ciborium = "0.2"
 spex-mls = { version = "0.1.0", path = "../spex-mls" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
