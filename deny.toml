@@ -17,6 +17,8 @@ yanked = "warn"
 # without upgrading libp2p. Tracked for the next libp2p bump.
 ignore = [
   { id = "RUSTSEC-2024-0436", reason = "Indirect dependency via libp2p; paste is not used in SPEX core code. Tracked for libp2p upgrade." },
+  { id = "RUSTSEC-2026-0118", reason = "Optional hickory-proto path retained in Cargo.lock by libp2p although libp2p DNS and mDNS features are disabled; see docs/security-advisory-exceptions.md." },
+  { id = "RUSTSEC-2026-0119", reason = "Optional hickory-proto path retained in Cargo.lock by libp2p although libp2p DNS and mDNS features are disabled; see docs/security-advisory-exceptions.md." },
 ]
 
 [bans]
