@@ -23,6 +23,7 @@ This is the recommended entry point for public documentation.
 2. Read [Protocol security guide](security.md)
 3. Read [Advanced security/threat testing](advanced-security-threat-testing.md)
 4. Read [Release checklist](release-v1-checklist.md)
+5. Read [Security advisory exceptions](security-advisory-exceptions.md)
 
 ### I am researching MLS/protocol behavior
 

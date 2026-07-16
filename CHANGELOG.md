@@ -14,6 +14,20 @@ https://semver.org/
 
 ---
 
+## [1.0.24] - 2026-07-16
+
+### CI and dependency compatibility
+
+- Updated the supported `rand`/`rand_core` APIs used by nonce and key material
+  generation; the cryptographic OS entropy source and protocol behavior are
+  unchanged.
+- Updated the keyring dependency and disabled unused libp2p DNS/mDNS defaults.
+- Documented time-bounded, feature-guarded exceptions for the two advisories
+  retained only as optional libp2p packages in `Cargo.lock`.
+- Added regression coverage for configured PoW nonce generation length.
+
+---
+
 ## [1.0.23] - 2026-04-14
 
 ### First Public Release (Stable)

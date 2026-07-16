@@ -204,7 +204,19 @@ jobs:
           tool: cargo-audit,cargo-deny
 
       - name: cargo audit (CVE / RUSTSEC advisory check)
-        run: cargo audit
+        run: |
+          # The lockfile retains optional libp2p DNS/mDNS packages although their
+          # features are disabled. Keep the approved exceptions constrained to
+          # inactive feature paths; see docs/security-advisory-exceptions.md.
+          for package in libp2p-dns libp2p-mdns; do
+            active_path="$(cargo tree --locked -e features -i "${package}" 2>/dev/null || true)"
+            if [[ -n "${active_path}" ]]; then
+              echo "::error::${package} is active; its advisory exception is invalid."
+              echo "${active_path}"
+              exit 1
+            fi
+          done
+          cargo audit --ignore RUSTSEC-2026-0118 --ignore RUSTSEC-2026-0119
 
       - name: cargo deny check (licenses + bans + advisories + sources)
         run: cargo deny check

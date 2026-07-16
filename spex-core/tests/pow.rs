@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 use spex_core::error::SpexError;
 use spex_core::pow::{
-    generate_puzzle_output, validate_pow_nonce, verify_puzzle_output, PowNonceParams, PowParams,
+    generate_pow_nonce, generate_puzzle_output, validate_pow_nonce, verify_puzzle_output,
+    PowNonceParams, PowParams,
 };
 
 // Builds a PowParams instance that is intentionally below the Argon2 minimums.
@@ -90,4 +91,14 @@ fn rejects_invalid_nonce_length() {
 
     let result = validate_pow_nonce(&nonce, params);
     assert!(matches!(result, Err(SpexError::InvalidLength("pow nonce"))));
+}
+
+// Verifies the configured nonce size is preserved when the OS RNG generates PoW input.
+#[test]
+fn generated_nonce_matches_configured_length() {
+    let params = PowNonceParams { nonce_len: 48 };
+
+    let nonce = generate_pow_nonce(params);
+
+    assert_eq!(nonce.len(), params.nonce_len);
 }

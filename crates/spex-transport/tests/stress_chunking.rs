@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-use rand::RngCore;
+use rand::Rng;
 use spex_core::hash::HashId;
 use spex_transport::chunking::{chunk_data, reassemble_chunks, ChunkingConfig};
 use std::time::{Duration, Instant};
