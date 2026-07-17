@@ -81,6 +81,7 @@ Tests the P2P networking layer, chunking, and data delivery.
 Tests the HTTP relay server.
 
 *   `src/lib.rs` (Unit): Basic state initialization tests.
+*   `src/main.rs` (Unit): Verifies loopback-safe bridge bind defaults, explicit overrides, and malformed-address rejection.
 *   `tests/integration.rs`: Tests public API endpoints (`/cards`, `/slot`, `/inbox`), including:
     *   Round-trip storage and retrieval.
     *   PoW validation (salt, difficulty).
@@ -93,11 +94,11 @@ Tests the HTTP relay server.
 
 Tests the high-level client library that ties everything together.
 
-*   `src/lib.rs` (Unit): Tests for failure reason mapping and internal helpers.
+*   `src/lib.rs` (Unit): Tests for failure reason mapping, request PoW presence, and internal helpers.
 *   `tests/bridge_publish.rs`: Tests publishing envelopes to the bridge.
 *   `tests/e2e_flow.rs`: Simulates a complete conversation between two clients (identity creation, card exchange, messaging).
 *   `tests/inbox_decrypt.rs`: Verifies that inbox messages can be decrypted and parsed correctly.
-*   `tests/state_encryption.rs`: Tests the encryption of the local state file (At-Rest Encryption) using passphrases.
+*   `tests/state_encryption.rs`: Tests the encryption of the local state file (At-Rest Encryption) using passphrases, including a fresh random Argon2id salt for every save.
 *   `tests/state_flow.rs`: Tests state transitions (e.g., updating thread state, redeeming cards).
 *   `tests/integration_scenarios.rs`: Multi-party conversation simulation (3 members) with mocked delivery.
 

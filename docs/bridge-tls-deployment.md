@@ -22,7 +22,7 @@ protocol-level signature and context checks, but is required in addition to them
 ## Canonical Deployment Model: Reverse Proxy
 
 The canonical production deployment model is **reverse-proxy TLS termination**.
-The bridge binary itself listens on a local plaintext port (default `0.0.0.0:3000`).
+The bridge binary itself listens on a local plaintext port (default `127.0.0.1:3000`).
 A TLS-terminating reverse proxy sits in front and handles all external HTTPS connections.
 
 ```
@@ -92,12 +92,17 @@ bridge.example.com {
 
 ## Bridge Binding Configuration
 
-To ensure the bridge cannot be reached over plain HTTP from outside the host, bind it to
-loopback only. Set the `SPEX_BRIDGE_ADDR` environment variable (or modify the binary) to:
+To ensure the bridge cannot be reached over plain HTTP from outside the host, the bridge
+defaults to loopback-only binding. Set `SPEX_BRIDGE_ADDR` only when the deployment requires
+another explicit bind address:
 
 ```bash
 SPEX_BRIDGE_ADDR=127.0.0.1:3000 spex-bridge
 ```
+
+An invalid `SPEX_BRIDGE_ADDR` value stops bridge startup with an explicit address-parse error.
+Do not set this variable to a public interface unless the network boundary, TLS termination,
+and access controls have been reviewed for that deployment.
 
 If deploying in a containerized environment, the bridge container should not expose port 3000
 directly to the host network. Use an internal Docker network and route traffic through the

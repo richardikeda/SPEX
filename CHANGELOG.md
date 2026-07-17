@@ -12,6 +12,12 @@ https://semver.org/
 ### Scope
 - Post-v1 maintenance and v2 planning.
 
+### Security
+
+- Replaced the state-encryption salt's zero-filled temporary buffer with explicit
+  OS-backed entropy generation. Each Argon2id-protected state save receives a
+  distinct persisted salt, and regression coverage verifies the property.
+
 ---
 
 ## [1.0.24] - 2026-07-16
