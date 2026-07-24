@@ -47,7 +47,7 @@ jobs:
     outputs:
       src_changed: ${{ steps.check.outputs.src_changed }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
