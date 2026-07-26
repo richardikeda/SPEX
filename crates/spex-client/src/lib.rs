@@ -60,6 +60,10 @@ pub enum ClientError {
     SignatureInvalid,
     #[error("request target does not match local identity")]
     RequestTargetMismatch,
+    #[error("request timestamp is outside the accepted window")]
+    RequestStale,
+    #[error("request has already been accepted")]
+    RequestReplay,
     #[error("thread not found")]
     ThreadNotFound,
     #[error("transport error: {0}")]
@@ -145,6 +149,8 @@ impl From<&ClientError> for ClientFailureReason {
             | ClientError::MissingSignature
             | ClientError::UnauthorizedSender
             | ClientError::RequestTargetMismatch
+            | ClientError::RequestStale
+            | ClientError::RequestReplay
             | ClientError::GrantInvalid => Self::SecurityViolation,
             ClientError::GrantExpired => Self::GrantExpired,
             ClientError::InvalidPuzzle => Self::PowTooWeak,
@@ -206,6 +212,8 @@ pub struct LocalState {
     pub transport_chunk_store: HashMap<String, String>,
     #[serde(default)]
     pub key_rotations: Vec<KeyRotationState>,
+    #[serde(default)]
+    pub accepted_request_ids: Vec<String>,
 }
 
 /// Encrypted local state file wrapper.
@@ -232,6 +240,9 @@ const STATE_KEYCHAIN_SERVICE: &str = "spex";
 const STATE_KEYCHAIN_USER: &str = "local-state";
 const STATE_PASSPHRASE_FILE_ENV: &str = "SPEX_STATE_PASSPHRASE_FILE";
 const STATE_SALT_BYTES: usize = 16;
+const REQUEST_POW_CONTEXT: &[u8] = b"spex.request.pow.v1";
+const DEFAULT_REQUEST_MAX_AGE_SECONDS: u64 = 5 * 60;
+const DEFAULT_REQUEST_FUTURE_SKEW_SECONDS: u64 = 30;
 
 /// Identity data stored for the local user.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -375,12 +386,56 @@ pub struct PuzzleToken {
 }
 
 /// PoW parameters serialized into request tokens.
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
 pub struct PowParamsPayload {
     pub memory_kib: u32,
     pub iterations: u32,
     pub parallelism: u32,
     pub output_len: usize,
+}
+
+impl PowParamsPayload {
+    /// Returns the protocol floor used by the default receiver-side PoW policy.
+    pub fn minimum() -> Self {
+        let minimum = pow::PowParams::minimum();
+        Self {
+            memory_kib: minimum.memory_kib,
+            iterations: minimum.iterations,
+            parallelism: minimum.parallelism,
+            output_len: minimum.output_len,
+        }
+    }
+
+    /// Converts serialized PoW parameters into the core validation representation.
+    fn to_core(self) -> pow::PowParams {
+        pow::PowParams {
+            memory_kib: self.memory_kib,
+            iterations: self.iterations,
+            parallelism: self.parallelism,
+            output_len: self.output_len,
+        }
+    }
+}
+
+/// Trusted receiver-side policy for accepting request proof of work.
+#[derive(Debug, Clone, Copy)]
+pub struct RequestPowPolicy {
+    pub requires_pow: bool,
+    pub minimum_params: PowParamsPayload,
+    pub max_age_seconds: u64,
+    pub max_future_skew_seconds: u64,
+}
+
+impl Default for RequestPowPolicy {
+    /// Returns the safe local policy used by the client and CLI acceptance paths.
+    fn default() -> Self {
+        Self {
+            requires_pow: true,
+            minimum_params: PowParamsPayload::minimum(),
+            max_age_seconds: DEFAULT_REQUEST_MAX_AGE_SECONDS,
+            max_future_skew_seconds: DEFAULT_REQUEST_FUTURE_SKEW_SECONDS,
+        }
+    }
 }
 
 /// Signed grant token payload for bridging.
@@ -713,9 +768,17 @@ pub fn parse_request_token(token: &str) -> Result<RequestToken, ClientError> {
 
 /// Builds a PoW puzzle for a request token and encodes it as a payload.
 pub fn build_request_puzzle(recipient_key: &[u8]) -> Result<PuzzleToken, ClientError> {
+    build_request_puzzle_with_binding(recipient_key, recipient_key)
+}
+
+/// Builds a PoW puzzle whose input is bound to receiver-validated request fields.
+fn build_request_puzzle_with_binding(
+    recipient_key: &[u8],
+    request_binding: &[u8],
+) -> Result<PuzzleToken, ClientError> {
     let params = pow::PowParams::default();
     let nonce = pow::generate_pow_nonce(pow::PowNonceParams::default());
-    let puzzle_input = pow::build_puzzle_input(&nonce, recipient_key);
+    let puzzle_input = pow::build_puzzle_input(&nonce, request_binding);
     let puzzle_output = pow::generate_puzzle_output(recipient_key, &puzzle_input, params)
         .map_err(|err| ClientError::Crypto(err.to_string()))?;
     Ok(PuzzleToken {
@@ -736,6 +799,25 @@ pub fn validate_request_puzzle(
     puzzle: &PuzzleToken,
     recipient_key: &[u8],
 ) -> Result<(), ClientError> {
+    validate_request_puzzle_with_policy(puzzle, recipient_key, PowParamsPayload::minimum())
+}
+
+/// Validates a request puzzle against an explicit trusted receiver-side minimum.
+pub fn validate_request_puzzle_with_policy(
+    puzzle: &PuzzleToken,
+    recipient_key: &[u8],
+    minimum_params: PowParamsPayload,
+) -> Result<(), ClientError> {
+    validate_request_puzzle_internal(puzzle, recipient_key, minimum_params, None)
+}
+
+/// Validates puzzle parameters, output, and the request fields bound into its input.
+fn validate_request_puzzle_internal(
+    puzzle: &PuzzleToken,
+    recipient_key: &[u8],
+    minimum_params: PowParamsPayload,
+    expected_binding: Option<&[u8]>,
+) -> Result<(), ClientError> {
     let recipient_bytes = BASE64_STANDARD
         .decode(puzzle.recipient_key.as_bytes())
         .map_err(|_| ClientError::InvalidPuzzle)?;
@@ -748,18 +830,21 @@ pub fn validate_request_puzzle(
     let puzzle_output = BASE64_STANDARD
         .decode(puzzle.puzzle_output.as_bytes())
         .map_err(|_| ClientError::InvalidPuzzle)?;
-    let params = pow::PowParams {
-        memory_kib: puzzle.params.memory_kib,
-        iterations: puzzle.params.iterations,
-        parallelism: puzzle.params.parallelism,
-        output_len: puzzle.params.output_len,
-    };
+    if let Some(binding) = expected_binding {
+        let nonce_len = pow::PowNonceParams::default().nonce_len;
+        if puzzle_input.len() != nonce_len.saturating_add(binding.len())
+            || puzzle_input.get(nonce_len..) != Some(binding)
+        {
+            return Err(ClientError::InvalidPuzzle);
+        }
+    }
+    let params = puzzle.params.to_core();
     match validation::validate_pow_puzzle(
         recipient_key,
         &puzzle_input,
         &puzzle_output,
         params,
-        pow::PowParams::minimum(),
+        minimum_params.to_core(),
     ) {
         Ok(()) => Ok(()),
         Err(GrantPowValidationError::PowTooWeak | GrantPowValidationError::PowInvalid) => {
@@ -1509,13 +1594,22 @@ pub fn create_request_payload(
     to_user_id_hex: &str,
     role: u64,
 ) -> Result<(RequestToken, String), ClientError> {
-    let puzzle = build_request_puzzle(&hex::decode(to_user_id_hex)?)?;
-    validate_request_puzzle(&puzzle, &hex::decode(to_user_id_hex)?)?;
+    let created_at = now_unix();
+    let recipient_key = hex::decode(to_user_id_hex)?;
+    let request_binding =
+        build_request_pow_binding(&identity.user_id_hex, to_user_id_hex, role, created_at)?;
+    let puzzle = build_request_puzzle_with_binding(&recipient_key, &request_binding)?;
+    validate_request_puzzle_internal(
+        &puzzle,
+        &recipient_key,
+        PowParamsPayload::minimum(),
+        Some(&request_binding),
+    )?;
     let request = RequestToken {
         from_user_id: identity.user_id_hex.clone(),
         to_user_id: to_user_id_hex.to_string(),
         role,
-        created_at: now_unix(),
+        created_at,
         puzzle: Some(puzzle),
     };
     let payload = serde_json::to_vec(&request)?;
@@ -1558,15 +1652,42 @@ pub fn accept_request_payload(
     identity: &IdentityState,
     request_payload: &str,
 ) -> Result<(RequestToken, SignedGrantToken), ClientError> {
+    accept_request_payload_with_policy(
+        identity,
+        request_payload,
+        RequestPowPolicy::default(),
+        now_unix(),
+    )
+}
+
+/// Accepts a request using an explicit trusted local PoW and freshness policy.
+pub fn accept_request_payload_with_policy(
+    identity: &IdentityState,
+    request_payload: &str,
+    policy: RequestPowPolicy,
+    now: u64,
+) -> Result<(RequestToken, SignedGrantToken), ClientError> {
     let request_token = parse_request_token(request_payload)?;
     if request_token.to_user_id != identity.user_id_hex {
         return Err(ClientError::RequestTargetMismatch);
     }
-    let puzzle = request_token
-        .puzzle
-        .as_ref()
-        .ok_or(ClientError::InvalidPuzzle)?;
-    validate_request_puzzle(puzzle, &hex::decode(&identity.user_id_hex)?)?;
+    validate_request_freshness(&request_token, policy, now)?;
+    let request_binding = build_request_pow_binding(
+        &request_token.from_user_id,
+        &request_token.to_user_id,
+        request_token.role,
+        request_token.created_at,
+    )?;
+    match request_token.puzzle.as_ref() {
+        Some(puzzle) => validate_request_puzzle_internal(
+            puzzle,
+            &hex::decode(&identity.user_id_hex)?,
+            policy.minimum_params,
+            Some(&request_binding),
+        )?,
+        None if policy.requires_pow => return Err(ClientError::InvalidPuzzle),
+        None => {}
+    }
     let grant = GrantToken {
         user_id: hex::decode(&request_token.from_user_id)?,
         role: request_token.role,
@@ -1583,8 +1704,28 @@ pub fn accept_request_for_state(
     state: &mut LocalState,
     request_payload: &str,
 ) -> Result<GrantAcceptanceOutcome, ClientError> {
+    accept_request_for_state_with_policy(
+        state,
+        request_payload,
+        RequestPowPolicy::default(),
+        now_unix(),
+    )
+}
+
+/// Accepts and persists a request under an explicit local policy with replay protection.
+pub fn accept_request_for_state_with_policy(
+    state: &mut LocalState,
+    request_payload: &str,
+    policy: RequestPowPolicy,
+    now: u64,
+) -> Result<GrantAcceptanceOutcome, ClientError> {
     let identity = clone_identity_from_state(state)?;
-    let (request_token, signed_grant) = accept_request_payload(&identity, request_payload)?;
+    let (request_token, signed_grant) =
+        accept_request_payload_with_policy(&identity, request_payload, policy, now)?;
+    let request_id = request_replay_id(&request_token)?;
+    if state.accepted_request_ids.contains(&request_id) {
+        return Err(ClientError::RequestReplay);
+    }
     let grant_token = BASE64_STANDARD.encode(serde_json::to_vec(&signed_grant)?);
     state.grants.push(GrantState {
         token_base64: grant_token.clone(),
@@ -1593,10 +1734,53 @@ pub fn accept_request_for_state(
         created_at: now_unix(),
         signature_base64: Some(signed_grant.signature.clone()),
     });
+    state.accepted_request_ids.push(request_id);
     Ok(GrantAcceptanceOutcome {
         request: request_token,
         grant_token_base64: grant_token,
     })
+}
+
+/// Builds an unambiguous domain-separated binding for request PoW validation.
+fn build_request_pow_binding(
+    from_user_id_hex: &str,
+    to_user_id_hex: &str,
+    role: u64,
+    created_at: u64,
+) -> Result<Vec<u8>, ClientError> {
+    let from_user_id = hex::decode(from_user_id_hex)?;
+    let to_user_id = hex::decode(to_user_id_hex)?;
+    if from_user_id.len() != 32 || to_user_id.len() != 32 {
+        return Err(ClientError::InvalidPuzzle);
+    }
+    let mut binding =
+        Vec::with_capacity(REQUEST_POW_CONTEXT.len() + from_user_id.len() + to_user_id.len() + 16);
+    binding.extend_from_slice(REQUEST_POW_CONTEXT);
+    binding.extend_from_slice(&from_user_id);
+    binding.extend_from_slice(&to_user_id);
+    binding.extend_from_slice(&role.to_be_bytes());
+    binding.extend_from_slice(&created_at.to_be_bytes());
+    Ok(binding)
+}
+
+/// Rejects stale or implausibly future-dated requests under the receiver's local policy.
+fn validate_request_freshness(
+    request: &RequestToken,
+    policy: RequestPowPolicy,
+    now: u64,
+) -> Result<(), ClientError> {
+    if request.created_at > now.saturating_add(policy.max_future_skew_seconds)
+        || now.saturating_sub(request.created_at) > policy.max_age_seconds
+    {
+        return Err(ClientError::RequestStale);
+    }
+    Ok(())
+}
+
+/// Computes a stable semantic request identifier for the persisted replay cache.
+fn request_replay_id(request: &RequestToken) -> Result<String, ClientError> {
+    let normalized = serde_json::to_vec(request)?;
+    Ok(hex::encode(hash_bytes(HashId::Sha256, &normalized)))
 }
 
 /// Applies an MLS commit to thread metadata and emits deterministic callback events.
@@ -2129,6 +2313,11 @@ pub fn decrypt_payload_with_aead(
 mod tests {
     use super::*;
 
+    /// Encodes a request token using the public JSON/base64 transport representation.
+    fn encode_request_token(request: &RequestToken) -> String {
+        BASE64_STANDARD.encode(serde_json::to_vec(request).expect("serialize request"))
+    }
+
     #[test]
     fn test_failure_reason_mapping() {
         let err = ClientError::GrantExpired;
@@ -2168,17 +2357,153 @@ mod tests {
     #[test]
     fn test_accept_request_payload_rejects_missing_puzzle() {
         let recipient = create_identity();
+        let sender = create_identity();
         let request = RequestToken {
-            from_user_id: "00".to_string(),
+            from_user_id: sender.user_id_hex,
             to_user_id: recipient.user_id_hex.clone(),
             role: 1,
             created_at: now_unix(),
             puzzle: None,
         };
-        let payload = BASE64_STANDARD.encode(serde_json::to_vec(&request).expect("serialize"));
+        let payload = encode_request_token(&request);
 
         let error = accept_request_payload(&recipient, &payload)
             .expect_err("request without proof of work must fail");
+        assert!(matches!(error, ClientError::InvalidPuzzle));
+    }
+
+    /// Allows a missing puzzle only when the trusted receiver policy explicitly disables PoW.
+    #[test]
+    fn test_accept_request_payload_honors_explicit_no_pow_policy() {
+        let recipient = create_identity();
+        let sender = create_identity();
+        let now = now_unix();
+        let request = RequestToken {
+            from_user_id: sender.user_id_hex,
+            to_user_id: recipient.user_id_hex.clone(),
+            role: 1,
+            created_at: now,
+            puzzle: None,
+        };
+        let policy = RequestPowPolicy {
+            requires_pow: false,
+            ..RequestPowPolicy::default()
+        };
+
+        accept_request_payload_with_policy(
+            &recipient,
+            &encode_request_token(&request),
+            policy,
+            now,
+        )
+        .expect("explicit local policy may disable request PoW");
+    }
+
+    /// Rejects a valid puzzle when it is below a stronger receiver-owned local minimum.
+    #[test]
+    fn test_accept_request_payload_rejects_local_difficulty_downgrade() {
+        let recipient = create_identity();
+        let sender = create_identity();
+        let (request, payload) =
+            create_request_payload(&sender, &recipient.user_id_hex, 1).expect("request");
+        let policy = RequestPowPolicy {
+            minimum_params: PowParamsPayload {
+                memory_kib: PowParamsPayload::minimum().memory_kib + 1,
+                ..PowParamsPayload::minimum()
+            },
+            ..RequestPowPolicy::default()
+        };
+
+        let error =
+            accept_request_payload_with_policy(&recipient, &payload, policy, request.created_at)
+                .expect_err("receiver minimum must prevent a difficulty downgrade");
+        assert!(matches!(error, ClientError::InvalidPuzzle));
+    }
+
+    /// Rejects malformed puzzle encoding before grant creation.
+    #[test]
+    fn test_accept_request_payload_rejects_malformed_puzzle() {
+        let recipient = create_identity();
+        let sender = create_identity();
+        let (mut request, _) =
+            create_request_payload(&sender, &recipient.user_id_hex, 1).expect("request");
+        request.puzzle.as_mut().expect("puzzle").puzzle_output = "not-base64".to_string();
+
+        let error = accept_request_payload_with_policy(
+            &recipient,
+            &encode_request_token(&request),
+            RequestPowPolicy::default(),
+            request.created_at,
+        )
+        .expect_err("malformed puzzle must fail");
+        assert!(matches!(error, ClientError::InvalidPuzzle));
+    }
+
+    /// Rejects requests older than the receiver-owned freshness window.
+    #[test]
+    fn test_accept_request_payload_rejects_stale_request() {
+        let recipient = create_identity();
+        let sender = create_identity();
+        let (request, payload) =
+            create_request_payload(&sender, &recipient.user_id_hex, 1).expect("request");
+        let policy = RequestPowPolicy::default();
+        let stale_now = request
+            .created_at
+            .saturating_add(policy.max_age_seconds)
+            .saturating_add(1);
+
+        let error = accept_request_payload_with_policy(&recipient, &payload, policy, stale_now)
+            .expect_err("stale request must fail");
+        assert!(matches!(error, ClientError::RequestStale));
+    }
+
+    /// Rejects an exact request replay after the first stateful acceptance.
+    #[test]
+    fn test_accept_request_for_state_rejects_replay() {
+        let recipient = create_identity();
+        let sender = create_identity();
+        let (request, payload) =
+            create_request_payload(&sender, &recipient.user_id_hex, 1).expect("request");
+        let mut state = LocalState {
+            identity: Some(recipient),
+            ..LocalState::default()
+        };
+
+        accept_request_for_state_with_policy(
+            &mut state,
+            &payload,
+            RequestPowPolicy::default(),
+            request.created_at,
+        )
+        .expect("first acceptance");
+        let error = accept_request_for_state_with_policy(
+            &mut state,
+            &payload,
+            RequestPowPolicy::default(),
+            request.created_at,
+        )
+        .expect_err("replayed request must fail");
+        assert!(matches!(error, ClientError::RequestReplay));
+        assert_eq!(state.grants.len(), 1);
+        assert_eq!(state.accepted_request_ids.len(), 1);
+    }
+
+    /// Rejects reuse of a valid puzzle after a request role is modified.
+    #[test]
+    fn test_accept_request_payload_rejects_substituted_request_fields() {
+        let recipient = create_identity();
+        let sender = create_identity();
+        let (mut request, _) =
+            create_request_payload(&sender, &recipient.user_id_hex, 1).expect("request");
+        request.role = 2;
+
+        let error = accept_request_payload_with_policy(
+            &recipient,
+            &encode_request_token(&request),
+            RequestPowPolicy::default(),
+            request.created_at,
+        )
+        .expect_err("puzzle must be bound to the authorized role");
         assert!(matches!(error, ClientError::InvalidPuzzle));
     }
 

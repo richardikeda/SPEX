@@ -17,6 +17,11 @@ https://semver.org/
 - Replaced the state-encryption salt's zero-filled temporary buffer with explicit
   OS-backed entropy generation. Each Argon2id-protected state save receives a
   distinct persisted salt, and regression coverage verifies the property.
+- Added an explicit receiver-owned request PoW policy, bound PoW inputs to the
+  request subject, target, role, and timestamp, enforced freshness, and persisted
+  accepted-request identifiers to reject replay.
+- Changed the P2P listener default from all interfaces to loopback. External P2P
+  exposure now requires an explicit `--listen-addr` value.
 
 ---
 

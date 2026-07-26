@@ -97,7 +97,11 @@ cargo clippy --workspace --locked -- -D warnings
 ## Security Notes
 
 - Use TLS for all HTTP integrations.
-- Validate grants and PoW at all trust boundaries.
+- Validate grants and PoW at all trust boundaries. Request acceptance uses a
+  receiver-owned minimum policy, request-field binding, freshness checks, and
+  persisted replay rejection in the normal stateful path.
+- P2P listeners default to loopback; external interfaces require an explicit
+  `--listen-addr` choice and operator network controls.
 - Treat key changes as critical events.
 - Protect local state at rest.
 - Never trust transport as a security boundary.

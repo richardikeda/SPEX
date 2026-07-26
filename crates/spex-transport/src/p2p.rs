@@ -210,10 +210,10 @@ impl P2pMetricsSnapshot {
 }
 
 impl Default for P2pNodeConfig {
-    /// Builds a default P2P node configuration with localhost listen and short timeouts.
+    /// Builds a loopback-only P2P configuration; external exposure requires explicit addresses.
     fn default() -> Self {
         Self {
-            listen_addrs: vec!["/ip4/0.0.0.0/tcp/0".parse().expect("default listen addr")],
+            listen_addrs: vec!["/ip4/127.0.0.1/tcp/0".parse().expect("default listen addr")],
             peers: Vec::new(),
             bootstrap_nodes: Vec::new(),
             publish_wait: Duration::from_secs(2),
@@ -1502,6 +1502,31 @@ fn extract_records(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Verifies the default P2P listener cannot be reached from external interfaces.
+    #[test]
+    fn test_default_p2p_listener_is_loopback_only() {
+        let config = P2pNodeConfig::default();
+        assert_eq!(
+            config.listen_addrs,
+            vec!["/ip4/127.0.0.1/tcp/0"
+                .parse::<Multiaddr>()
+                .expect("loopback multiaddr")]
+        );
+    }
+
+    /// Verifies operators can still make external P2P exposure an explicit configuration choice.
+    #[test]
+    fn test_explicit_external_p2p_listener_is_preserved() {
+        let external = "/ip4/0.0.0.0/tcp/9000"
+            .parse::<Multiaddr>()
+            .expect("external multiaddr");
+        let config = P2pNodeConfig {
+            listen_addrs: vec![external.clone()],
+            ..P2pNodeConfig::default()
+        };
+        assert_eq!(config.listen_addrs, vec![external]);
+    }
 
     /// Verifies metric rates are emitted deterministically for success and failure counters.
     #[test]

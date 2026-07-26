@@ -29,8 +29,22 @@ Unexpected key changes may indicate compromise or substitution attack.
 ## Request/Grant and Permission Controls
 
 - Always validate RequestToken before issuing grants.
-- Enforce minimum PoW when requires_puzzle is active (memory >= 64 MiB, iterations >= 3).
+- The receiver owns the trusted request PoW policy. Invitation and request fields
+  are untrusted inputs and cannot lower the receiver's configured minimum.
+- The client and CLI default policy requires PoW with memory >= 64 MiB,
+  iterations >= 3, parallelism >= 1, and output length >= 32 bytes.
+- Library integrations may provide an explicit `RequestPowPolicy`; disabling PoW
+  requires a deliberate receiver-side choice.
+- Request PoW is bound to the sender, recipient, requested role, and creation
+  timestamp. The default acceptance window is five minutes with at most
+  30 seconds of future clock skew.
+- Stateful acceptance persists normalized request identifiers and rejects exact
+  replay before creating another grant.
 - Restrict roles/flags under local least-privilege policy.
+
+The advertised invitation policy may request more work, but it is not a trust
+anchor and must never override a stronger receiver-owned minimum. This prevents
+difficulty downgrade by a malicious request producer.
 
 
 ## P2P Persistence and Anti-Eclipse Controls
@@ -41,6 +55,17 @@ To reduce state loss and eclipse risk:
 - Treat corrupted snapshots as untrusted input and recover with explicit warnings.
 - Use peer scoring penalties for invalid payloads, recurring timeouts, and inconsistent responses.
 - Apply temporary bans for peers crossing critical abuse thresholds.
+
+## P2P Exposure Policy
+
+The default P2P listener is loopback-only at `/ip4/127.0.0.1/tcp/0`.
+Listening on a LAN, VPN, container interface, or public interface is an explicit
+operator decision made with `--listen-addr`.
+
+Before external exposure, operators must configure host firewall policy, use
+explicit bootstrap/peer addresses, monitor abuse and reputation telemetry, and
+confirm that every received payload is independently validated. P2P reachability
+does not create a trusted security boundary.
 
 ## Mandatory TLS
 
