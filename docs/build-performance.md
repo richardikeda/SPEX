@@ -48,7 +48,7 @@ reuse the contributor's normal workspace cache.
 | Default-feature test compilation | 158.728 s | 197.106 s | +24.2% |
 | All-feature test compilation | 203.748 s | 271.268 s | +33.1% |
 | Final isolated target size | 14,591,443,045 bytes | 13,172,864,490 bytes | -9.7% |
-| Ubuntu stable Rust CI job | 539 s | Pending | Pending |
+| Ubuntu stable Rust CI job | 539 s | 559 s | +3.7% |
 
 The local wall-clock comparison is recorded for transparency but is not
 accepted as evidence of a compile-time regression or improvement. Host CPU load
@@ -57,8 +57,10 @@ start of the before run. Background load and real-time file scanning were not
 controlled. The deterministic result is the 1,418,578,555-byte reduction in
 the final isolated target (9.7%). After default-feature test compilation alone,
 the target fell from 8,630,469,440 to 7,644,446,770 bytes (11.4%), while
-Criterion and Native TLS were absent from the compilation log. CI timing on the
-same hosted runner class is the acceptance evidence for wall-clock impact.
+Criterion and Native TLS were absent from the compilation log. The hosted CI
+comparison confirms that the redundant build step was removed, but its single
+wall-clock sample does not demonstrate a net speedup: runner variance in the
+default-feature test and cache-finalization steps outweighed that saved step.
 
 The all-feature test value measures the transition after default-feature test
 compilation in the same isolated target. Enabling the optional `blake3_hash`
@@ -70,6 +72,17 @@ The `main` CI evidence is
 the Ubuntu stable Rust job took 539 seconds, including a 13-second workspace
 build, 250-second default-feature test step, and 255-second all-feature test
 step. `Swatinem/rust-cache` reported a 534 MB cache hit.
+
+The optimized PR evidence is
+[run 30209196954](https://github.com/richardikeda/SPEX/actions/runs/30209196954):
+the same job class took 559 seconds with the redundant workspace build skipped,
+a 275-second default-feature test step, and a 254-second all-feature test step.
+The cache again reported a 534 MB hit. The controlled workflow change therefore
+saved the 13-second duplicate build by construction, while the total job was
+20 seconds slower in this one sample. This is treated as runner noise rather
+than evidence that dependency reduction regressed compilation. Future
+optimization decisions require repeated comparable CI runs rather than this
+single paired observation.
 
 ## Measurement Method
 
