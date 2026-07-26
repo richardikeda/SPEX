@@ -94,13 +94,16 @@ Tests the HTTP relay server.
 
 Tests the high-level client library that ties everything together.
 
-*   `src/lib.rs` (Unit): Tests for failure reason mapping, request PoW presence, and internal helpers.
+*   `src/lib.rs` (Unit): Tests for failure reason mapping, receiver-owned request PoW policy, request-field binding, missing/malformed/stale/under-difficulty puzzle rejection, and persisted replay rejection.
 *   `tests/bridge_publish.rs`: Tests publishing envelopes to the bridge.
 *   `tests/e2e_flow.rs`: Simulates a complete conversation between two clients (identity creation, card exchange, messaging).
 *   `tests/inbox_decrypt.rs`: Verifies that inbox messages can be decrypted and parsed correctly.
 *   `tests/state_encryption.rs`: Tests the encryption of the local state file (At-Rest Encryption) using passphrases, including a fresh random Argon2id salt for every save.
 *   `tests/state_flow.rs`: Tests state transitions (e.g., updating thread state, redeeming cards).
 *   `tests/integration_scenarios.rs`: Multi-party conversation simulation (3 members) with mocked delivery.
+
+The `spex-transport` P2P unit suite also verifies that the default listener is
+loopback-only and that an explicitly configured external listener is preserved.
 
 ### 6. CLI (`spex-cli`)
 

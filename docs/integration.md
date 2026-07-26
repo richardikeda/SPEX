@@ -30,11 +30,24 @@ Validate on import:
 Reference flow:
 
 1. Receive ContactCard/InviteToken.
-2. Build RequestToken with PoW when required.
-3. Validate request and issue signed GrantToken.
+2. Build RequestToken with PoW bound to sender, recipient, role, and timestamp.
+3. Apply the receiver-owned `RequestPowPolicy`, freshness window, and replay
+   protection before issuing a signed GrantToken.
 4. Create ThreadConfig and start MLS-protected flow.
 
 Use shared validation primitives from core/transport before accepting untrusted payloads.
+
+The default client and CLI policy requires at least the protocol PoW floor
+(64 MiB memory, three iterations, parallelism one, 32-byte output), accepts
+requests no older than five minutes, and allows 30 seconds of future clock skew.
+An InviteToken is an advertised requirement, not a trusted way to reduce the
+receiver's local minimum. Library applications that intentionally disable PoW
+must pass an explicit receiver-side `RequestPowPolicy`.
+
+Use `accept_request_for_state` for the normal persisted path. It records a
+normalized request identifier and rejects exact replay. Stateless
+`accept_request_payload` validates policy and freshness but cannot provide
+cross-call replay memory.
 
 ## Thread and Message Flow
 

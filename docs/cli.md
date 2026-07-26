@@ -65,6 +65,12 @@ Optional P2P flags:
 - `--listen-addr <MULTIADDR>`
 - `--p2p-wait-secs <N>`
 
+The default P2P listener is `/ip4/127.0.0.1/tcp/0`, which is reachable only
+from the local host and uses an ephemeral port. External exposure is never
+implicit. To listen on another interface, provide `--listen-addr` explicitly,
+for example `/ip4/0.0.0.0/tcp/9000`, and apply the firewall and monitoring
+requirements in [security.md](security.md#p2p-exposure-policy).
+
 ### inbox
 
 - `inbox poll`
@@ -103,6 +109,13 @@ cargo run -p spex-cli -- msg send --thread <THREAD_ID_HEX> --text "hello" --p2p 
   --bootstrap /ip4/127.0.0.1/tcp/9001/p2p/<PEER_ID>
 cargo run -p spex-cli -- inbox poll --p2p --inbox-key <HEX_KEY> \
   --peer /ip4/127.0.0.1/tcp/9001/p2p/<PEER_ID>
+```
+
+External listener example (explicit exposure):
+
+```bash
+cargo run -p spex-cli -- inbox poll --p2p --inbox-key <HEX_KEY> \
+  --listen-addr /ip4/0.0.0.0/tcp/9000
 ```
 
 ## Fingerprints
