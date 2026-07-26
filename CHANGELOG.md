@@ -36,6 +36,15 @@ https://semver.org/
 - Removed the unused Native TLS/OpenSSL path from CLI tests, kept Criterion out
   of ordinary bridge tests behind an explicit benchmark feature, and removed a
   redundant workspace build from the stable CI test row.
+- Added the pinned Nextest runner with preserved doctests and JUnit timing
+  artifacts; the local default suite fell from 182.80 seconds with Cargo's
+  executor to 69.01 seconds with identical 214-test coverage.
+- Reduced development debug information to line tables, preserving source
+  locations while preventing multi-gigabyte PDB and incremental-artifact
+  growth from exhausting the Windows build disk.
+- Removed unused Axum, Criterion, and MLS parallel features, made `OsRng`
+  activation explicit, and reduced one cold MLS resynchronization callback
+  from 956 to 46 LLVM lines through a measured thin generic wrapper.
 
 ---
 

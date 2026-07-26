@@ -65,11 +65,18 @@ Contributions that weaken security guarantees are not accepted.
 
 ```bash
 cargo build --workspace
-cargo test --workspace
-cargo test --workspace --all-features
+cargo nextest run --workspace --locked --profile ci
+cargo test --workspace --locked --doc
+cargo nextest run --workspace --locked --all-features --profile ci
+cargo test --workspace --locked --all-features --doc
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 ```
+
+Install the CI-pinned runner with
+`cargo install cargo-nextest --version 0.9.137 --locked`. Nextest does not run
+doctests, which is why each feature configuration has a separate Cargo doctest
+command.
 
 Use package-scoped `cargo check --locked` during focused edits. The measured
 workflow and rebuild troubleshooting guide are in
@@ -194,8 +201,10 @@ Documentation is mandatory.
 Any contribution affecting release closure must preserve these reproducible gates:
 
 ```bash
-cargo test --workspace --locked --verbose
-cargo test --workspace --locked --all-features --verbose
+cargo nextest run --workspace --locked --profile ci
+cargo test --workspace --locked --doc
+cargo nextest run --workspace --locked --all-features --profile ci
+cargo test --workspace --locked --all-features --doc
 cargo fmt --all -- --check
 cargo clippy --workspace --locked --all-targets --all-features -- -D warnings
 ./scripts/release_gate_docs.sh

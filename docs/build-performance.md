@@ -159,10 +159,18 @@ behavior, security logic, dependency manifests, feature selection, workflows,
 or cross-crate integration:
 
 ```bash
-cargo test --workspace --locked
-cargo test --workspace --locked --all-features
+cargo nextest run --workspace --locked --profile ci
+cargo test --workspace --locked --doc
+cargo nextest run --workspace --locked --all-features --profile ci
+cargo test --workspace --locked --all-features --doc
 cargo fmt --all -- --check
 cargo clippy --workspace --locked --all-targets --all-features -- -D warnings
+```
+
+Install the CI-pinned runner with:
+
+```bash
+cargo install cargo-nextest --version 0.9.137 --locked
 ```
 
 Package-scoped checks accelerate iteration; they do not replace the full
@@ -208,11 +216,155 @@ slower and destroys useful evidence.
   security or protocol APIs are not forced into one version solely to reduce
   compile counts.
 
-## Deferred Experiments
+## Item 9 Implementation Results
 
-Faster linkers, `sccache`, nextest, profile changes, and monomorphization
-refactors remain measurement-driven follow-ups. They are not required defaults
-until cross-platform results demonstrate a benefit without changing test or
-release semantics.
+### Nextest and test timing
+
+The Cargo and Nextest inventories matched exactly:
+
+| Feature configuration | Cargo inventory | Nextest inventory |
+| --- | ---: | ---: |
+| Default | 214 | 214 |
+| All features | 215 | 215 |
+
+On the same Windows host, with already-built default-feature artifacts:
+
+| Executor | Total time | Test execution |
+| --- | ---: | ---: |
+| `cargo test --workspace --locked` | 182.80 s | Cargo serializes test binaries |
+| `cargo nextest run --workspace --locked --profile ci` | 69.01 s | 66.03 s |
+
+The measured total reduction is 62.2%. All 214 tests passed under concurrent
+execution, including tests that spawn processes, bind ephemeral ports, change
+environment for child processes, use timing, and create temporary persistent
+state. The all-feature Nextest run passed all 215 tests in 62.43 seconds after
+compilation.
+
+Nextest does not execute doctests. CI therefore keeps explicit default and
+all-feature `cargo test --doc` steps. The CI profile has no retries and disables
+fail-fast so flaky security failures cannot be hidden and independent failures
+remain visible. JUnit reports for both feature configurations are retained as
+GitHub Actions artifacts for 14 days.
+
+### Development profile and disk use
+
+Cargo's full development debug information produced very large Windows PDB,
+object, and incremental directories during the measurement session. The
+accumulated `target/debug` reached 133.9 GiB:
+
+| Directory | Observed size |
+| --- | ---: |
+| `target/debug/deps` | 87.60 GiB |
+| `target/debug/incremental` | 43.98 GiB |
+
+The workspace now sets `profile.dev.debug = "line-tables-only"`. Cargo's test
+profile inherits this value. File and line information remains available for
+backtraces, while local full-debug PDB growth is avoided.
+
+A clean default-feature test inventory with the new setting compiled in 148.85
+seconds and occupied 2.71 GiB. After default and all-feature test artifacts
+coexisted, the directory occupied 4.62 GiB. These values are not presented as a
+strict size ratio against the accumulated 133.9 GiB tree, which also contained
+historical feature hashes; they demonstrate that both required configurations
+fit comfortably after the controlled cleanup and profile change.
+
+When full debugger symbols are required, override the setting for that session:
+
+```bash
+CARGO_PROFILE_DEV_DEBUG=full cargo test -p <package> --locked
+```
+
+Changing this value changes Cargo fingerprints and intentionally creates a
+different artifact set. Keep it stable between comparable builds.
+
+### Dependency and feature reduction
+
+- `mls-rs` no longer receives its default `rayon` feature. SPEX explicitly
+  preserves `std`, `rfc_compliant`, `tree_index`, and `fast_serialize`.
+- Axum dependencies declare only the HTTP, JSON, query, and Tokio features each
+  crate uses. `axum-macros` is absent.
+- Criterion keeps `cargo_bench_support` but disables unused Rayon and Plotters
+  defaults. `cargo bench -p spex-bridge --features benchmarks --no-run` passes.
+- `spex-core` explicitly enables `rand_core/os_rng`. Isolated crate builds no
+  longer depend on accidental workspace feature unification.
+- `rayon`, `rayon-core`, `crossbeam-deque`, `crossbeam-epoch`, Plotters, and
+  `axum-macros` are absent even from the all-feature workspace graph.
+- `cargo tree -d` found no compatible direct-version duplicate that can be
+  removed safely. The remaining `sha2`, `digest`, `rand`, `hashbrown`,
+  `thiserror`, and Yamux versions belong to incompatible upstream API lines;
+  they are not downgraded or forced together for headline build numbers.
+
+### Monomorphization
+
+`cargo llvm-lines 0.4.46` identified
+`MlsRsGroup::process_external_commit_with_resync` as 956 LLVM lines across five
+closure-specific copies, representing 6.3% of the representative MLS test's
+LLVM IR. The public generic method is now a thin wrapper around one private
+dynamic-callback implementation. After the change, the wrapper accounts for 46
+LLVM lines across the same five call sites, a 95.2% reduction. All eight epoch
+recovery and malformed-input tests pass.
+
+The client callback wrapper did not appear as a material downstream
+instantiation in the representative analysis and was intentionally left
+unchanged.
+
+### Linker evaluation
+
+A clean `spex-cli` test build on Windows/MSVC used identical source, profile,
+toolchain, and isolated target directories:
+
+| Linker | Time | Target size |
+| --- | ---: | ---: |
+| MSVC `link.exe` | 99.88 s | 1.29 GiB |
+| toolchain `rust-lld` | 98.89 s | 1.29 GiB |
+
+The 1.0% difference is below the 10% adoption threshold, so SPEX does not
+require `rust-lld` on Windows. Linux `lld` and `mold` remain optional
+developer experiments until measured on a controlled Linux host. No linker
+override is committed, preserving contributor portability and normal opt-out.
+
+### `sccache` evaluation
+
+The official `sccache 0.16.0` Windows archive was verified against its published
+SHA-256 before testing. Results for a clean `spex-cli` test build were:
+
+| Scenario | Time | Cache evidence |
+| --- | ---: | --- |
+| Populate empty local sccache | 161.98 s | cold cache |
+| Different absolute `target` path | 128.24 s | 0 hits; not reusable as configured |
+| Same path after deliberate clean | 66.72 s | 280 hits, 33 misses; 89.46% hit rate |
+| Cargo without sccache | 99.88 s | normal clean build |
+
+Sccache helps after deleting a target at the same absolute path, but populating
+it is slower and changing the target/workspace path prevented reuse. The
+existing GitHub cache already restores compiled target artifacts directly and
+reported a 534 MB hit in the hosted baseline. Combining it with a second
+sccache store would add installation, storage, invalidation, and credential
+policy without demonstrated CI benefit. SPEX therefore keeps sccache optional
+and does not configure a remote backend.
+
+If a future ephemeral CI environment adopts it, its cache key must include the
+compiler, target, profile, feature set, flags, and relevant environment. Remote
+write credentials must never be exposed to untrusted pull requests. Suspected
+cache corruption requires disabling the wrapper, preserving logs and cache
+statistics, invalidating the affected namespace, and rebuilding from a clean
+target before restoring writes.
+
+## Build-time regression policy
+
+Compare only the same runner OS, toolchain, target, profile, feature set, and
+cache class. Use the median of at least three comparable scheduled samples:
+
+- a regression above 15% requires an explanation in the pull request;
+- a regression above 25% reproduced in two comparable runs blocks acceptance
+  until explained, fixed, or explicitly approved by the maintainer;
+- a single hosted-run outlier is evidence to investigate, not an automatic
+  failure;
+- dependency or feature additions must include `cargo tree -d` and feature-tree
+  review when they materially grow build time or artifacts.
+
+The stable and release-critical workflows upload Nextest JUnit timing reports.
+Review these artifacts on scheduled runs and repeat the full build audit before
+stable releases.
 
 Secure. Permissioned. Explicit.

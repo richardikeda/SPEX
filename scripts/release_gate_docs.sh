@@ -42,18 +42,26 @@ if ! grep -Eq "release-critical-tests" .github/workflows/release-readiness.yml; 
   exit 1
 fi
 
-if ! grep -Eq "cargo test -p spex-core --locked --all-features" .github/workflows/release-readiness.yml; then
-  echo "release-critical-tests must test spex-core" >&2
+if ! grep -Eq "cargo nextest run" .github/workflows/release-readiness.yml; then
+  echo "release-critical-tests must use cargo-nextest" >&2
   exit 1
 fi
 
-if ! grep -Eq "cargo test -p spex-mls --locked --all-features" .github/workflows/release-readiness.yml; then
-  echo "release-critical-tests must test spex-mls" >&2
+for package in spex-core spex-mls spex-transport; do
+  if ! grep -Eq -- "-p ${package}" .github/workflows/release-readiness.yml; then
+    echo "release-critical-tests must test ${package}" >&2
+    exit 1
+  fi
+done
+
+if ! grep -Eq "cargo test" .github/workflows/release-readiness.yml ||
+  ! grep -Eq -- "--doc" .github/workflows/release-readiness.yml; then
+  echo "release-critical-tests must preserve doctests outside nextest" >&2
   exit 1
 fi
 
-if ! grep -Eq "cargo test -p spex-transport --locked --all-features" .github/workflows/release-readiness.yml; then
-  echo "release-critical-tests must test spex-transport" >&2
+if ! grep -Eq "cargo-nextest@0\\.9\\.137" .github/workflows/release-readiness.yml; then
+  echo "release-critical-tests must pin the approved cargo-nextest version" >&2
   exit 1
 fi
 

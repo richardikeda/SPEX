@@ -1,0 +1,17 @@
+[profile.ci]
+# Report every failure in one run so CI does not hide independent regressions.
+fail-fast = false
+
+# Retries can mask flaky security and timing failures, so SPEX keeps them disabled.
+retries = 0
+
+# Nextest schedules tests from different binaries together while preserving
+# process-per-test isolation.
+test-threads = "num-cpus"
+
+[profile.ci.junit]
+# The workflow copies this report after each feature-set run before the next run
+# replaces it.
+path = "junit.xml"
+store-success-output = false
+store-failure-output = true
