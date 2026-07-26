@@ -14,6 +14,12 @@ https://semver.org/
 
 ### Security
 
+- Pinned every remote GitHub Action to a reviewed full commit SHA, reduced the
+  release workflow token to read-only by default, and added release-gate
+  enforcement for immutable action references and job-scoped release writes.
+- Regenerated and independently audited the fuzz lockfile, resolving its stale
+  vulnerable `quinn-proto` graph, and documented time-bounded controls for
+  upstream-retained Hickory, Yamux, `tls_codec`, and `paste` findings.
 - Replaced the state-encryption salt's zero-filled temporary buffer with explicit
   OS-backed entropy generation. Each Argon2id-protected state save receives a
   distinct persisted salt, and regression coverage verifies the property.
@@ -22,6 +28,14 @@ https://semver.org/
   accepted-request identifiers to reject replay.
 - Changed the P2P listener default from all interfaces to loopback. External P2P
   exposure now requires an explicit `--listen-addr` value.
+
+### Build performance
+
+- Recorded clean, warm, incremental, test-compilation, disk, and CI baselines
+  for the Rust workspace with a reproducible developer workflow.
+- Removed the unused Native TLS/OpenSSL path from CLI tests, kept Criterion out
+  of ordinary bridge tests behind an explicit benchmark feature, and removed a
+  redundant workspace build from the stable CI test row.
 
 ---
 

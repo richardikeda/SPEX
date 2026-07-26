@@ -71,6 +71,10 @@ cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 ```
 
+Use package-scoped `cargo check --locked` during focused edits. The measured
+workflow and rebuild troubleshooting guide are in
+[`docs/build-performance.md`](docs/build-performance.md).
+
 PRs with failing CI are not accepted.
 
 ---
