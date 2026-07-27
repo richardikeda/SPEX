@@ -880,6 +880,19 @@ impl MlsRsGroup {
     where
         F: FnMut(u64, u64) -> Result<Vec<ExternalCommit>, MlsRsError>,
     {
+        self.process_external_commit_with_resync_inner(external_commit, &mut fetch_missing)
+    }
+
+    /// Applies resynchronization through one concrete callback boundary.
+    ///
+    /// The public generic wrapper remains ergonomic, while this implementation
+    /// prevents the deterministic epoch-validation body from being monomorphized
+    /// once for every caller closure.
+    fn process_external_commit_with_resync_inner(
+        &mut self,
+        external_commit: ExternalCommit,
+        fetch_missing: &mut dyn FnMut(u64, u64) -> Result<Vec<ExternalCommit>, MlsRsError>,
+    ) -> Result<mls_rs::group::CommitMessageDescription, MlsRsError> {
         match self.detect_external_commit_gap(external_commit.epoch) {
             EpochGap::Current | EpochGap::Stale { .. } => {
                 Err(MlsRsError::OutOfOrderCommit(CommitOrderError {

@@ -14,6 +14,12 @@ https://semver.org/
 
 ### Security
 
+- Pinned every remote GitHub Action to a reviewed full commit SHA, reduced the
+  release workflow token to read-only by default, and added release-gate
+  enforcement for immutable action references and job-scoped release writes.
+- Regenerated and independently audited the fuzz lockfile, resolving its stale
+  vulnerable `quinn-proto` graph, and documented time-bounded controls for
+  upstream-retained Hickory, Yamux, `tls_codec`, and `paste` findings.
 - Replaced the state-encryption salt's zero-filled temporary buffer with explicit
   OS-backed entropy generation. Each Argon2id-protected state save receives a
   distinct persisted salt, and regression coverage verifies the property.
@@ -22,6 +28,23 @@ https://semver.org/
   accepted-request identifiers to reject replay.
 - Changed the P2P listener default from all interfaces to loopback. External P2P
   exposure now requires an explicit `--listen-addr` value.
+
+### Build performance
+
+- Recorded clean, warm, incremental, test-compilation, disk, and CI baselines
+  for the Rust workspace with a reproducible developer workflow.
+- Removed the unused Native TLS/OpenSSL path from CLI tests, kept Criterion out
+  of ordinary bridge tests behind an explicit benchmark feature, and removed a
+  redundant workspace build from the stable CI test row.
+- Added the pinned Nextest runner with preserved doctests and JUnit timing
+  artifacts; the local default suite fell from 182.80 seconds with Cargo's
+  executor to 69.01 seconds with identical 214-test coverage.
+- Reduced development debug information to line tables, preserving source
+  locations while preventing multi-gigabyte PDB and incremental-artifact
+  growth from exhausting the Windows build disk.
+- Removed unused Axum, Criterion, and MLS parallel features, made `OsRng`
+  activation explicit, and reduced one cold MLS resynchronization callback
+  from 956 to 46 LLVM lines through a measured thin generic wrapper.
 
 ---
 

@@ -39,18 +39,25 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install Rust toolchain (${{ matrix.toolchain }})
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
         with:
           toolchain: ${{ matrix.toolchain }}
 
       - name: Cache Rust build artifacts
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           shared-key: rust-ci-${{ runner.os }}-${{ matrix.toolchain }}
           cache-on-failure: true
+
+      - name: Install cargo-nextest
+        if: matrix.run_tests
+        uses: taiki-e/install-action@41049aa56687c35e0afa74eed4f09cec4f9afabf # v2
+        with:
+          tool: cargo-nextest@0.9.137
+          fallback: none
 
       - name: Fetch deps (warm cache)
         shell: bash
@@ -64,12 +71,46 @@ jobs:
           exit 1
 
       - name: Build (workspace)
+        if: matrix.run_tests == false
         run: cargo build --workspace --locked
 
       - name: Test (default features)
         if: matrix.run_tests
-        run: cargo test --workspace --locked
+        run: |
+          set +e
+          cargo nextest run --workspace --locked --profile ci
+          status=$?
+          set -e
+          if [[ -f target/nextest/ci/junit.xml ]]; then
+            cp target/nextest/ci/junit.xml target/nextest/ci/junit-default.xml
+          fi
+          exit "${status}"
+
+      - name: Doc tests (default features)
+        if: matrix.run_tests
+        run: cargo test --workspace --locked --doc
 
       - name: Test (all features)
         if: matrix.run_tests
-        run: cargo test --workspace --locked --all-features
+        run: |
+          set +e
+          cargo nextest run --workspace --locked --all-features --profile ci
+          status=$?
+          set -e
+          if [[ -f target/nextest/ci/junit.xml ]]; then
+            cp target/nextest/ci/junit.xml target/nextest/ci/junit-all-features.xml
+          fi
+          exit "${status}"
+
+      - name: Doc tests (all features)
+        if: matrix.run_tests
+        run: cargo test --workspace --locked --all-features --doc
+
+      - name: Upload test timing reports
+        if: ${{ always() && matrix.run_tests }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: rust-test-timings-${{ runner.os }}-${{ matrix.toolchain }}
+          path: target/nextest/ci/junit-*.xml
+          if-no-files-found: error
+          retention-days: 14

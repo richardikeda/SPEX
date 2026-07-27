@@ -15,3 +15,9 @@ license = "MPL-2.0"
 repository = "https://github.com/richardikeda/SPEX"
 homepage = "https://github.com/richardikeda/SPEX"
 readme = "README.md"
+
+[profile.dev]
+# Keep file/line backtraces while avoiding the very large full-debug PDB and
+# object footprint observed for the workspace on Windows. The test profile
+# inherits this setting from dev.
+debug = "line-tables-only"

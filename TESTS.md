@@ -13,21 +13,36 @@ This document outlines the testing strategy, structure, and coverage for the SPE
 
 ## Running Tests
 
-To run all tests in the workspace:
+Install the CI-pinned Nextest version once:
 
 ```bash
-cargo test --workspace
+cargo install cargo-nextest --version 0.9.137 --locked
+```
+
+Run the same default and all-feature suites used by CI:
+
+```bash
+cargo nextest run --workspace --locked --profile ci
+cargo test --workspace --locked --doc
+cargo nextest run --workspace --locked --all-features --profile ci
+cargo test --workspace --locked --all-features --doc
 ```
 
 To run a specific test file:
 
 ```bash
-cargo test --test <test_filename>
+cargo nextest run --test <test_filename>
 ```
 
-To run ignored tests (long-running or pending features):
+Nextest intentionally does not run doctests, so the explicit `cargo test
+--doc` commands are mandatory. The CI profile disables retries and fail-fast:
+security or timing failures remain visible, and one failure does not hide
+independent failures.
+
+The standard Cargo executor remains available for diagnosis and ignored tests:
 
 ```bash
+cargo test --workspace --locked
 cargo test -- --ignored
 ```
 

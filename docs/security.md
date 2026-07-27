@@ -177,3 +177,7 @@ When advisories are detected, treat as security incidents:
    - track follow-up to remove temporary workarounds
 
 Exit criterion: release only with green supply-chain pipeline and no unresolved advisories without formal approved exception.
+
+Time-bounded exceptions and their compensating controls are recorded in
+[security-advisory-exceptions.md](security-advisory-exceptions.md). The main and
+fuzz lockfiles are separate audit scopes and both must pass before release.

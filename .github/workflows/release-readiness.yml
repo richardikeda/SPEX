@@ -29,18 +29,24 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
         with:
           toolchain: stable
 
       - name: Cache Rust build artifacts
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           shared-key: release-critical-${{ runner.os }}
           cache-on-failure: true
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@41049aa56687c35e0afa74eed4f09cec4f9afabf # v2
+        with:
+          tool: cargo-nextest@0.9.137
+          fallback: none
 
       - name: Fetch deps (warm cache)
         run: |
@@ -52,15 +58,43 @@ jobs:
           echo "cargo fetch failed after retries"
           exit 1
 
-      # Run each critical crate individually for clear failure attribution.
-      - name: Test spex-core (all features)
-        run: cargo test -p spex-core --locked --all-features
+      # Nextest reports the package, test binary, and test name for attribution
+      # while scheduling the independent critical binaries concurrently.
+      - name: Test critical crates (all features)
+        run: |
+          set +e
+          cargo nextest run \
+            -p spex-core \
+            -p spex-mls \
+            -p spex-transport \
+            --locked \
+            --all-features \
+            --profile ci
+          status=$?
+          set -e
+          if [[ -f target/nextest/ci/junit.xml ]]; then
+            cp target/nextest/ci/junit.xml target/nextest/ci/junit-critical.xml
+          fi
+          exit "${status}"
 
-      - name: Test spex-mls (all features)
-        run: cargo test -p spex-mls --locked --all-features
+      - name: Doc tests for critical crates
+        run: |
+          cargo test \
+            -p spex-core \
+            -p spex-mls \
+            -p spex-transport \
+            --locked \
+            --all-features \
+            --doc
 
-      - name: Test spex-transport (all features)
-        run: cargo test -p spex-transport --locked --all-features
+      - name: Upload critical test timing report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-critical-test-timings
+          path: target/nextest/ci/junit-critical.xml
+          if-no-files-found: error
+          retention-days: 14
 
   # ── Gate 2: documentation quality and static analysis ───────────────────────
   release-docs-and-quality:
@@ -68,16 +102,16 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install Rust (fmt + clippy)
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
         with:
           toolchain: stable
           components: rustfmt, clippy
 
       - name: Cache Rust build artifacts
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           shared-key: release-docs-${{ runner.os }}
           cache-on-failure: true
@@ -112,7 +146,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Validate block-on-failure behavior
         run: ./scripts/release_gate_negative_test.sh
@@ -124,24 +158,30 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install Rust (stable)
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
         with:
           toolchain: stable
 
       - name: Install Rust (nightly — required for cargo-fuzz)
-        uses: dtolnay/rust-toolchain@nightly
+        uses: dtolnay/rust-toolchain@4fd1da8b0805d2d2e936788875a7d65dbd677dc2 # nightly
         with:
           toolchain: nightly
 
       - name: Cache Rust build artifacts
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           # Separate key: nightly toolchain produces a different artifact tree.
           shared-key: release-robustness-${{ runner.os }}-nightly
           cache-on-failure: true
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@41049aa56687c35e0afa74eed4f09cec4f9afabf # v2
+        with:
+          tool: cargo-nextest@0.9.137
+          fallback: none
 
       - name: Fetch deps (warm cache)
         run: |
@@ -158,12 +198,8 @@ jobs:
 
       - name: Crate-level robustness suites
         run: |
-          cargo test -p spex-core --locked
-          cargo test -p spex-mls --locked
-          cargo test -p spex-transport --locked
-          cargo test -p spex-bridge --locked
-          cargo test -p spex-client --locked
-          cargo test -p spex-cli --locked
+          cargo nextest run --workspace --locked --profile ci
+          cargo test --workspace --locked --doc
 
       - name: Fuzz smoke (deterministic 30 s per target, seed=1)
         run: |
@@ -181,17 +217,17 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
         with:
           toolchain: stable
 
       # rust-cache also caches ~/.cargo/bin, so cargo-audit and cargo-deny are
       # restored on subsequent runs without recompilation.
       - name: Cache Rust build artifacts
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           shared-key: release-supply-chain-${{ runner.os }}
           cache-on-failure: true
@@ -199,7 +235,7 @@ jobs:
       # taiki-e/install-action downloads pre-built binaries — much faster than
       # compiling cargo-audit and cargo-deny from source.
       - name: Install cargo-audit and cargo-deny
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@41049aa56687c35e0afa74eed4f09cec4f9afabf # v2
         with:
           tool: cargo-audit,cargo-deny
 
@@ -217,6 +253,8 @@ jobs:
             fi
           done
           cargo audit --ignore RUSTSEC-2026-0118 --ignore RUSTSEC-2026-0119
+          cargo metadata --manifest-path fuzz/Cargo.toml --locked --format-version 1 --no-deps >/dev/null
+          cargo audit --file fuzz/Cargo.lock --ignore RUSTSEC-2026-0118 --ignore RUSTSEC-2026-0119
 
       - name: cargo deny check (licenses + bans + advisories + sources)
         run: cargo deny check

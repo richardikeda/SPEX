@@ -29,6 +29,10 @@ spex-mls = { version = "0.1.0", path = "../spex-mls" }
 spex-transport = { version = "0.1.0", path = "../spex-transport" }
 
 [dev-dependencies]
-axum = { version = "0.8", features = ["macros"] }
+axum = { version = "0.8", default-features = false, features = [
+  "http1",
+  "json",
+  "tokio",
+] }
 tempfile = "3.27"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

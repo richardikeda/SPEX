@@ -11,7 +11,12 @@ keywords = ["protocol", "security", "bridge", "http", "messaging"]
 categories = ["network-programming", "web-programming::http-server", "cryptography"]
 
 [dependencies]
-axum = { version = "0.8", features = ["macros"] }
+axum = { version = "0.8", default-features = false, features = [
+  "http1",
+  "json",
+  "query",
+  "tokio",
+] }
 base64 = "0.22.1"
 ed25519-dalek = "2.1"
 hex = "0.4"
@@ -23,11 +28,22 @@ thiserror = "2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+criterion = { version = "0.8", optional = true, default-features = false, features = [
+  "cargo_bench_support",
+] }
 
 spex-core = { version = "0.1.1", path = "../../spex-core" }
 
+[features]
+default = []
+benchmarks = ["dep:criterion"]
+
+[[bench]]
+name = "db_bench"
+harness = false
+required-features = ["benchmarks"]
+
 [dev-dependencies]
-criterion = "0.8"
 proptest = "1"
 ed25519-dalek = "2.1"
 ciborium = "0.2"
