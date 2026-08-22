@@ -14,6 +14,10 @@ https://semver.org/
 
 ### Security
 
+- Patched active `h2` and `event-listener` supply-chain findings in the root
+  and fuzz lockfiles, revalidated every retained advisory exception, renewed
+  them through 2026-09-22 with explicit maintainer approval, and made the
+  release documentation gate fail closed on expired exception dates.
 - Pinned every remote GitHub Action to a reviewed full commit SHA, reduced the
   release workflow token to read-only by default, and added release-gate
   enforcement for immutable action references and job-scoped release writes.

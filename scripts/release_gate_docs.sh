@@ -11,7 +11,9 @@ required_files=(
   "docs/build-performance.md"
   "docs/release-v1-checklist.md"
   "docs/runbook-release-operations.md"
+  "docs/security-advisory-exceptions.md"
   ".github/branch-protection/main.json"
+  "scripts/check_advisory_exception_expiry.sh"
 )
 
 for file in "${required_files[@]}"; do
@@ -20,6 +22,9 @@ for file in "${required_files[@]}"; do
     exit 1
   fi
 done
+
+# Active advisory exceptions are temporary controls and fail closed on expiry.
+bash scripts/check_advisory_exception_expiry.sh
 
 if ! grep -Eq "docs/release-v1-checklist\.md" README.md; then
   echo "README.md must reference docs/release-v1-checklist.md" >&2
