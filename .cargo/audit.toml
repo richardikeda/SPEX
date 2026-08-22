@@ -1,5 +1,7 @@
 [advisories]
+# Maintainer-approved through 2026-09-22. Both packages are retained only in
+# lockfile metadata; the DNS/mDNS features are absent from every SPEX build.
 ignore = [
-    "RUSTSEC-2026-0118", # hickory-proto NSEC3 loop, unresolvable without libp2p upgrade
-    "RUSTSEC-2026-0119", # hickory-proto CPU exhaustion, unresolvable without libp2p upgrade
+    "RUSTSEC-2026-0118", # hickory-proto NSEC3 loop; no compatible libp2p upgrade
+    "RUSTSEC-2026-0119", # hickory-proto CPU exhaustion; no compatible libp2p upgrade
 ]

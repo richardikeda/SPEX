@@ -14,4 +14,17 @@ if [[ "$status" -eq 0 ]]; then
   exit 1
 fi
 
+# The expiry checker must reject a deterministic expired exception without
+# modifying the normative document or relying on the runner's wall clock.
+set +e
+printf '%s\n' '| TEST-ADVISORY | `test` 1.0 | Fixture | Test approval | 2026-08-21 |' |
+  bash scripts/check_advisory_exception_expiry.sh - 2026-08-22 >/dev/null 2>&1
+expiry_status=$?
+set -e
+
+if [[ "$expiry_status" -eq 0 ]]; then
+  echo "negative gate check failed: expired advisory exception was accepted" >&2
+  exit 1
+fi
+
 echo "negative gate check passed (detected failure status=$status)"
