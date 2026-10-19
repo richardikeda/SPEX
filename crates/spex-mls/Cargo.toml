@@ -11,7 +11,7 @@ keywords = ["protocol", "security", "mls", "group-messaging", "cryptography"]
 categories = ["cryptography", "network-programming"]
 
 [dependencies]
-mls-rs = { version = "0.55", default-features = false, features = [
+mls-rs = { version = "0.56", default-features = false, features = [
   "fast_serialize",
   "rfc_compliant",
   "std",
@@ -19,7 +19,7 @@ mls-rs = { version = "0.55", default-features = false, features = [
 ] }
 mls-rs-crypto-rustcrypto = "0.22"
 spex-core = { version = "0.1.1", path = "../../spex-core" }
-chacha20poly1305 = "0.10"
+chacha20poly1305 = "0.11"
 
 [dev-dependencies]
 hex = "0.4"
