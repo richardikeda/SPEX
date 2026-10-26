@@ -11,8 +11,8 @@ keywords = ["protocol", "security", "transport", "p2p", "messaging"]
 categories = ["network-programming", "cryptography"]
 
 [dependencies]
-base64 = "0.22"
-ed25519-dalek = "2.1"
+base64 = "0.23"
+ed25519-dalek = "3.0"
 futures = "0.3"
 hex = "0.4"
 libp2p = { version = "0.56", default-features = false, features = [
@@ -42,7 +42,7 @@ axum = { version = "0.8", default-features = false, features = [
   "tokio",
 ] }
 proptest = "1"
-ed25519-dalek = "2.1"
+ed25519-dalek = "3.0"
 ciborium = "0.2"
 spex-mls = { version = "0.1.0", path = "../spex-mls" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
