@@ -15,7 +15,7 @@ name = "spex"
 path = "main.rs"
 
 [dependencies]
-base64 = "0.22"
+base64 = "0.23"
 clap = { version = "4.6", features = ["derive"] }
 hex = "0.4"
 libp2p = { version = "0.56", default-features = false, features = ["gossipsub", "identify", "kad", "macros", "noise", "tcp", "tokio", "yamux"] }
